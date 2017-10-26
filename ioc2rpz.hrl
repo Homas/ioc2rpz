@@ -12,15 +12,15 @@
 %See the License for the specific language governing permissions and
 %limitations under the License.
 
-%IOC2RPZ
+%IOC2RPZ headers
 
--define(ioc2rpz_ver, 2017082501).
+-define(ioc2rpz_ver, 2017102101).
 -define(Port,53).
 -define(TTL,900).
 -define(DNSPktMax,16384). %Max DNS packet size. DNS Label Zip is available up to 16384 bytes 65000/max
 -define(Compression,6). % 0 - no compression, 9 - highest, 6 - default do it depending on the list/bin size.
 -define(SaveETS,true). % Save DB into files if DB is ETS.
--define(ZoneRefTime,300000). %Zone refresh check interval
+-define(ZoneRefTime,120000). %300000 Zone refresh check interval
 
 %hosts.ioc2rpz - 100000 - 16384
 %Query time: 10393 msec
@@ -28,7 +28,7 @@
 %hosts.ioc2rpz - 100000 - 65000 - 18% more data, 4 times less packets
 %Query time: 12492 msec
 %199791 records (messages 85, bytes 5494450)
--define(HotCacheTime,900). %Time to cache IOCs/Records/Pkts in a hot cache. More usefull for online rpz.
+-define(HotCacheTime,30). %900 Time to cache IOCs/Records/Pkts in a hot cache. More usefull for online rpz.
 
 -define(MaxZipPSize,16#3FFF:16). %Max packet size to zip DNS labels
 -define(DBStorage,ets). %Defines DBStorage to use. CFG and HotCache are always ETC (may be will be switched to MAP, need profiling)
@@ -76,5 +76,6 @@
 -record(key, {name,alg,key}).
 %SOA timers refresh, retry, expiration, neg_ttl
 %status: notready, updating, ready
--record(rpz, {rpzid, zone, zone_str, soa_timers, cache, wildcards, notify, action, akeys, ioc_type, axfr_time, ixfr_time, sources, status, serial, serial_new, notifylist, whitelist, ioc_md5, update_time, ixfr_update_time}).
+%serial_ixfr - minimum serial for ixfr - first ixfr update after axfr
+-record(rpz, {rpzid, zone, zone_str, soa_timers, cache, wildcards, notify, action, akeys, ioc_type, axfr_time, ixfr_time, sources, status, serial, serial_new, serial_ixfr, notifylist, whitelist, ioc_md5, update_time, ixfr_update_time}).
 -record(source, {name, axfr_url, ixfr_url, regex}).
