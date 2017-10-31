@@ -37,29 +37,31 @@ IXFR is not cached in the hot cache
 - [X] Cache for IXFR (save IOC rules with Exp.Time) and rebuild AXFR cache
 -- [X] check AXFR zone update with new records
 -- [X] check zone update with expired records
-- [ ] Support DNS UDP IXFR/SOA request
-- [ ] Incremental zone transfer/IXFR
-- [ ] Save "cache config"
+- [X] Incremental zone transfer/IXFR
+- [ ] Support DNS UDP IXFR/SOA request. IXFR - tcp only
 - [ ] DNS Notify messages
-- [ ] Add source RPZ
-- [ ] Add source MySQL
 - [ ] http/https/ftp errors handling - source status in the record
 - [ ] Reread CFG by a signal/TCP DNS request from localhost
 - [ ] Refresh a zone by a signal/TCP DNS request from localhost
+- [ ] Create dirs: src, bin, cfg
+- [ ] Add source RPZ
+- [ ] Add source MySQL
 - [ ] Mnesia for storage (and automatic creation)
 - [ ] Distributed configuration based on mnesia
 - [ ] Fix IPv6 reversing "cleanup"
-- [ ] Fool proof cfg
 - [ ] Hot cache for IXFR IOC
 - [ ] source based on files check by mod. date and size
 
 ## Other/optimization TODO
 - [ ] Clean up the code & add comments
 - [X] Move connectors to a new file
+- [ ] Move DB fun to a new file e.g. ioc2rpz_db
 - [ ] Documentation
 - [ ] IOC to lowercase - check performance impact
 - [x] Do not save in IXFR cache zonex w/o IXFR
 - [ ] Memory optimization for huge zones
+- [ ] Do not cache expired IOCs if ExpDateTime<Serial_IXFR
+- [ ] Check zones IXFR update from multiple sources
 
 ## Bugs
 - [x] Live zone - ;; Got bad packet: bad compression pointer
@@ -68,6 +70,8 @@ IXFR is not cached in the hot cache
 2017-10-24 00:45:39 Zone "last50.ioc2rpz" serial 1508830899, refresh time 3600 current status ready
 2017-10-24 00:45:40 Zone "last50.ioc2rpz", Last packet ACOUNT 24, packets 1
 2017-10-24 00:45:40 Zone "last50.ioc2rpz" updated in 1 seconds, new serial 1508831139
+- [x] IXFR with multiple packets - no TSIG on the previous packets ;; WARNING -- Some TSIG could not be validated   (IF didn't work)
+- [ ] IXFR for noncached zones - error
 
 ### References
 
@@ -96,3 +100,6 @@ https://tools.ietf.org/html/rfc5966
 
 DNS Notify
 https://tools.ietf.org/html/rfc1996
+
+
+https://technet.microsoft.com/en-us/library/cc772774(v=ws.10).aspx
