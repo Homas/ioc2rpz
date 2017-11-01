@@ -80,14 +80,22 @@ IXFR is not cached in the hot cache
 
 - Domain Name System (DNS) IANA Considerations
 https://tools.ietf.org/html/rfc6895
-- Domain Names - Implementation and Specification (https://tools.ietf.org/html/rfc1035)
-- Incremental Zone Transfer in DNS (https://tools.ietf.org/html/rfc1995)
-- DNS Response Policy Zones (RPZ) (https://tools.ietf.org/html/draft-ietf-dnsop-dns-rpz-00)
-- Secret Key Transaction Authentication for DNS (TSIG) (https://tools.ietf.org/html/rfc2845)
-- HMAC: Keyed-Hashing for Message Authentication (https://tools.ietf.org/html/rfc2104)
-- HMAC SHA TSIG Algorithm Identifiers (https://tools.ietf.org/html/rfc4635)
-- DNS Transport over TCP - Implementation Requirements (https://tools.ietf.org/html/rfc5966)
-- A Mechanism for Prompt Notification of Zone Changes (DNS NOTIFY) (https://tools.ietf.org/html/rfc1996)
+- Domain Names - Implementation and Specification
+https://tools.ietf.org/html/rfc1035
+- Incremental Zone Transfer in DNS
+https://tools.ietf.org/html/rfc1995
+- DNS Response Policy Zones (RPZ)
+https://tools.ietf.org/html/draft-ietf-dnsop-dns-rpz-00
+- Secret Key Transaction Authentication for DNS (TSIG)
+https://tools.ietf.org/html/rfc2845
+- HMAC: Keyed-Hashing for Message Authentication
+https://tools.ietf.org/html/rfc2104
+- HMAC SHA TSIG Algorithm Identifiers
+https://tools.ietf.org/html/rfc4635
+- DNS Transport over TCP - Implementation Requirements
+https://tools.ietf.org/html/rfc5966
+- A Mechanism for Prompt Notification of Zone Changes (DNS NOTIFY)
+https://tools.ietf.org/html/rfc1996
 
 DNS Headers
 https://github.com/blackberry/Erlang-OTP/blob/master/lib/kernel/src/inet_dns.hrl
