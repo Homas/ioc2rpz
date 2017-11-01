@@ -38,12 +38,12 @@ IXFR is not cached in the hot cache
 -- [X] check AXFR zone update with new records
 -- [X] check zone update with expired records
 - [X] Incremental zone transfer/IXFR
-- [ ] Support DNS UDP IXFR/SOA request. IXFR - tcp only
-- [ ] DNS Notify messages
+- [x] Support DNS UDP IXFR/SOA request. IXFR - tcp only
+- [x] DNS Notify messages
 - [ ] http/https/ftp errors handling - source status in the record
 - [ ] Reread CFG by a signal/TCP DNS request from localhost
 - [ ] Refresh a zone by a signal/TCP DNS request from localhost
-- [ ] Create dirs: src, bin, cfg
+- [x] Create dirs: src, bin, cfg
 - [ ] Add source RPZ
 - [ ] Add source MySQL
 - [ ] Mnesia for storage (and automatic creation)
@@ -51,16 +51,17 @@ IXFR is not cached in the hot cache
 - [ ] Fix IPv6 reversing "cleanup"
 - [ ] Hot cache for IXFR IOC
 - [ ] source based on files check by mod. date and size
+- [ ] Clean cache tables if a zone was removed from CFG
 
 ## Other/optimization TODO
 - [ ] Clean up the code & add comments
 - [X] Move connectors to a new file
-- [ ] Move DB fun to a new file e.g. ioc2rpz_db
+- [x] Move DB fun to a new file e.g. ioc2rpz_db
 - [ ] Documentation
 - [ ] IOC to lowercase - check performance impact
 - [x] Do not save in IXFR cache zonex w/o IXFR
 - [ ] Memory optimization for huge zones
-- [ ] Do not cache expired IOCs if ExpDateTime<Serial_IXFR
+- [ ] Do not cache expired IOCs if ExpDateTime<Serial_IXFR / update ExpDateTime if exists
 - [ ] Check zones IXFR update from multiple sources
 
 ## Bugs
@@ -71,35 +72,24 @@ IXFR is not cached in the hot cache
 2017-10-24 00:45:40 Zone "last50.ioc2rpz", Last packet ACOUNT 24, packets 1
 2017-10-24 00:45:40 Zone "last50.ioc2rpz" updated in 1 seconds, new serial 1508831139
 - [x] IXFR with multiple packets - no TSIG on the previous packets ;; WARNING -- Some TSIG could not be validated   (IF didn't work)
-- [ ] IXFR for noncached zones - error
+- [x] IXFR for noncached zones - error
+- [x] Если только удаление - нужно две SOA текущих
+
 
 ### References
 
-Packets
+- Domain Name System (DNS) IANA Considerations
 https://tools.ietf.org/html/rfc6895
-
-Records
-https://www.ietf.org/rfc/rfc1035.txt
-
-IXFR
-https://tools.ietf.org/html/rfc1995
+- Domain Names - Implementation and Specification (https://tools.ietf.org/html/rfc1035)
+- Incremental Zone Transfer in DNS (https://tools.ietf.org/html/rfc1995)
+- DNS Response Policy Zones (RPZ) (https://tools.ietf.org/html/draft-ietf-dnsop-dns-rpz-00)
+- Secret Key Transaction Authentication for DNS (TSIG) (https://tools.ietf.org/html/rfc2845)
+- HMAC: Keyed-Hashing for Message Authentication (https://tools.ietf.org/html/rfc2104)
+- HMAC SHA TSIG Algorithm Identifiers (https://tools.ietf.org/html/rfc4635)
+- DNS Transport over TCP - Implementation Requirements (https://tools.ietf.org/html/rfc5966)
+- A Mechanism for Prompt Notification of Zone Changes (DNS NOTIFY) (https://tools.ietf.org/html/rfc1996)
 
 DNS Headers
 https://github.com/blackberry/Erlang-OTP/blob/master/lib/kernel/src/inet_dns.hrl
-
-RPZ
-https://tools.ietf.org/html/draft-ietf-dnsop-dns-rpz-00
-
-TSIG etc
-https://tools.ietf.org/html/rfc2845
-https://tools.ietf.org/html/rfc2104
-https://tools.ietf.org/html/rfc4635
-
-DNS over TCP
-https://tools.ietf.org/html/rfc5966
-
-DNS Notify
-https://tools.ietf.org/html/rfc1996
-
 
 https://technet.microsoft.com/en-us/library/cc772774(v=ws.10).aspx

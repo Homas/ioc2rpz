@@ -22,6 +22,8 @@
 -define(SaveETS,true). % Save DB into files if DB is ETS.
 -define(ZoneRefTime,120000). %300000 Zone refresh check interval
 
+-define(TCPTimeout, 3000). %in milliseconds
+
 %hosts.ioc2rpz - 100000 - 16384
 %Query time: 10393 msec
 %199791 records (messages 275, bytes 4540252)
@@ -74,6 +76,9 @@
 
 %State record
 -record(state, {socket,params}).
+
+%Protocol udp/tcp
+-record(proto, {proto,rip,rport}).
 
 %Config
 -record(srv, {server,email,mkeys}).
