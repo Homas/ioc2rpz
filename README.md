@@ -1,4 +1,14 @@
 #  IOC2RPZ - turns your threat intelligence into RPZ feeds.
+## Overview
+
+## ioc2rpz vs bind:
+- ioc2rpz built to handle RPZ distribution only
+- ioc2rpz supports as many RPZ as you need. bind supports only 32 zones per DNS view
+- live zones
+- indicators via REST API calls
+- IOC expiration time
+- configurable packet size --> zone transfer optimization
+- performace
 
 ## How to start ioc2rpz service
 
@@ -11,12 +21,20 @@
 [:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z", [:FTimestamp:] = 1507946281
 [:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z", [:ToTimestamp:] = 1507946281
 
+
+Action can be: single value, list of tuples. Single value defines a single action for an RPZ. A list depending on the param can define multiple results.
+- Single value: "nodata", "nxdomain", "passthru", "drop", "tcp-only", "blockns" ("nsdname", "nsip")
+- List:
+-- Single action: {"redirect_domain", "www.example.com"}, {"redirect_ip", "127.0.0.1"} - as a response CNAME or A/AAAA records will be returned
+-- Multiple actions: {"local_a","127.0.0.1"}, {"local_aaaa", "fe80::1"}, {"local_cname","www.example.com"}, {"local_txt","Just TXT record"}
+-- [TODO] An action per source: {"",action,locdata} //default action ,{"source_name",action,locdata}
+
 ### Constants - ioc2rpz.hrl
 
 
 ### How the Full (AXFR) and Incremental(IXFR) caches are updated
-- AXFR cache always contains prebuilt zones w/o SOA/NS/TSIG records. Prebuilt means all records are splitted by packets and labels were shortened/zipped.
-- If server recieve an AXFR request it retrieve packets from the AXFR cache, add SOA/NS records and if needed TSIG.
+- AXFR cache always contains prebuilt zones without SOA/NS/TSIG records. Prebuilt means all records are splitted by packets and labels were shortened/zipped.
+- If server recieve an AXFR request it retrieve packets from the AXFR cache, add SOA/NS records and TSIG if needed.
 - AXFR zones update should be considered as a clean up procedure, which should periodicaly take place. Just to be sure that there is no desynchronization between the sources and the cache.
 - For large zones, AXFR updates should be scheduled infrequently to minimize impact on server's performance and ammount of transferred data to all clients.
 - All changes if it is possible should be done via incremental zone updates. In that case the AXFR cache will be rebuilt only in case if a zone was updated.
@@ -25,10 +43,11 @@
 - RPZ record contains current zone Serial and Serial_IXFR. Serial_IXFR serve as a minimum incremental zone serial which is available for an incremental zone transfer.
 - IXFR cache is flushed after full zone update (AXFR). Serial_IXFR = Serial. Clients will recieve full zone update in any case, this is why it is important to have AXFR zone transfer infrequently.
 - When IXFR is updated, AXFR cache must be rebuilt.
-- If a zone does not support IXFR updates -> it doesn't saved in the IXFR table
+- If a zone does not support IXFR updates -> it doesn't saved in the IXFR table.
+- Live zones are not cached in the AXFR, IXFR caches but the sources (IOCs) can be cached in the hot cache.
 
 ### Hot cache
-IXFR is not cached in the hot cache
+IXFR updates are not cached in the hot cache
 
 ## TODO features
 - [x] IOC individual expiration time - update time will be used as minimum time for full zone refresh + check the SOA
@@ -40,44 +59,62 @@ IXFR is not cached in the hot cache
 - [X] Incremental zone transfer/IXFR
 - [x] Support DNS UDP IXFR/SOA request. IXFR - tcp only
 - [x] DNS Notify messages
-- [ ] http/https/ftp errors handling - source status in the record
-- [ ] Reread CFG by a signal/TCP DNS request from localhost
-- [ ] Refresh a zone by a signal/TCP DNS request from localhost
-- [x] Create dirs: src, bin, cfg
-- [ ] Add source RPZ
-- [ ] Add source MySQL
-- [ ] Mnesia for storage (and automatic creation)
-- [ ] Distributed configuration based on mnesia
+- [x] Local response for the IOCs
+- [x] Hot cache for IXFR IOC/sources - таймштамп округляем до минут
+- [ ] http/https/ftp errors handling - source status in the record. If a source is not available - work w/o it
+- [ ] Source based on files check by mod.date and size -> read by chunks
+- [ ] Performance testing vs bind:
+-- [ ] 1 core/8Gb RAM: start time, zone transfer time, zone size, CPU, Memory
+---[ ] 100k rules
+---[ ] 1M rules
+---[ ] 10M rules
+-- [ ] 4 cores/32 Gb RAM: start time, zone transfer time, zone size
+---[ ] 100k rules
+---[ ] 1M rules
+---[ ] 10M rules
+- [ ] By a signal and DNS request
+-- [ ][x] Reread CFG
+-- [ ][x] Refresh a zone
+-- [ ][x] Refresh all zones
+-- [ ][x] Terminate processes/Exit
+- [ ] Path for DB
+- [ ] If Zone not ready - respond NODATA
+- [ ] Statistics per zone
 - [ ] Fix IPv6 reversing "cleanup"
-- [ ] Hot cache for IXFR IOC
-- [ ] source based on files check by mod. date and size
-- [ ] Clean cache tables if a zone was removed from CFG
+- [ ] Container
+- [ ] Documentation
+- [ ] Add source RPZ
+- [ ] Add source SQL
+- [ ] Mnesia for storage (and auto creation)
+- [ ] Distributed configuration based on mnesia
 
 ## Other/optimization TODO
+- [ ] Check if we can substitute an A/AAAA record because of IP
+- [ ] UDP under supervisor
+- [ ] EDNS0 RR
+- [ ] Check all TODO in the code
 - [ ] Clean up the code & add comments
-- [X] Move connectors to a new file
-- [x] Move DB fun to a new file e.g. ioc2rpz_db
-- [ ] Documentation
 - [ ] IOC to lowercase - check performance impact
-- [x] Do not save in IXFR cache zonex w/o IXFR
 - [ ] Memory optimization for huge zones
 - [ ] Do not cache expired IOCs if ExpDateTime<Serial_IXFR / update ExpDateTime if exists
 - [ ] Check zones IXFR update from multiple sources
+- [X] Move connectors to a new file
+- [x] Move DB fun to a new file e.g. ioc2rpz_db
+- [x] Move additional fun to ioc2rpz_fun
+- [x] Do not save in IXFR cache zonex w/o IXFR
+- [x] Create dirs: src, bin, cfg
+- [ ] Share IOC between the feedx in IXFR table
+
+## Free threat intel
+http://www.malwaredomains.com/?page_id=66
+http://mirror1.malwaredomains.com/files/spywaredomains.zones
+http://data.netlab.360.com
 
 ## Bugs
-- [x] Live zone - ;; Got bad packet: bad compression pointer
-- [x] Updated by IXFR zone - +2 answer записи в заголовке ;; Warning: Message parser reports malformed message packet.
-- [x] После AXFR запустился IXFR ---- похоже это не баг. просто время IXFR пришло, а AXFR не было
-2017-10-24 00:45:39 Zone "last50.ioc2rpz" serial 1508830899, refresh time 3600 current status ready
-2017-10-24 00:45:40 Zone "last50.ioc2rpz", Last packet ACOUNT 24, packets 1
-2017-10-24 00:45:40 Zone "last50.ioc2rpz" updated in 1 seconds, new serial 1508831139
-- [x] IXFR with multiple packets - no TSIG on the previous packets ;; WARNING -- Some TSIG could not be validated   (IF didn't work)
-- [x] IXFR for noncached zones - error
-- [x] Если только удаление - нужно две SOA текущих
-
+- [ ] saveZones - doesn't correctly save zones if there a lot of updates. Save strategy based on update size and time.
+- [x] Clean cache tables if a zone was removed from CFG --- данные удаляются, но таблица особо не читстится
 
 ### References
-
 - Domain Name System (DNS) IANA Considerations
 https://tools.ietf.org/html/rfc6895
 - Domain Names - Implementation and Specification
@@ -86,6 +123,7 @@ https://tools.ietf.org/html/rfc1035
 https://tools.ietf.org/html/rfc1995
 - DNS Response Policy Zones (RPZ)
 https://tools.ietf.org/html/draft-ietf-dnsop-dns-rpz-00
+https://tools.ietf.org/html/draft-vixie-dns-rpz-02
 - Secret Key Transaction Authentication for DNS (TSIG)
 https://tools.ietf.org/html/rfc2845
 - HMAC: Keyed-Hashing for Message Authentication
@@ -96,8 +134,3 @@ https://tools.ietf.org/html/rfc4635
 https://tools.ietf.org/html/rfc5966
 - A Mechanism for Prompt Notification of Zone Changes (DNS NOTIFY)
 https://tools.ietf.org/html/rfc1996
-
-DNS Headers
-https://github.com/blackberry/Erlang-OTP/blob/master/lib/kernel/src/inet_dns.hrl
-
-https://technet.microsoft.com/en-us/library/cc772774(v=ws.10).aspx

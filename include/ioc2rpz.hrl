@@ -24,13 +24,16 @@
 
 -define(TCPTimeout, 3000). %in milliseconds
 
+-define(MGMToDNS,true). %Defines if management ioc2rpz over DNS is enabled
+
 %hosts.ioc2rpz - 100000 - 16384
 %Query time: 10393 msec
 %199791 records (messages 275, bytes 4540252)
 %hosts.ioc2rpz - 100000 - 65000 - 18% more data, 4 times less packets
 %Query time: 12492 msec
 %199791 records (messages 85, bytes 5494450)
--define(HotCacheTime,30). %900 Time to cache IOCs/Records/Pkts in a hot cache. More usefull for online rpz.
+-define(HotCacheTime,1). %900 Time to cache IOCs/Records/Pkts in a hot cache. More usefull for online rpz.
+-define(HotCacheTimeIXFR,0). %Time to cache IXFR IOCs in a hot cache. By default it is cached for a minute because of curr_serial_60.
 
 -define(MaxZipPSize,16#3FFF:16). %Max packet size to zip DNS labels
 -define(DBStorage,ets). %Defines DBStorage to use. CFG and HotCache are always ETC (may be will be switched to MAP, need profiling)
