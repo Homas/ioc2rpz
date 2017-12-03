@@ -50,17 +50,7 @@ Action can be: single value, list of tuples. Single value defines a single actio
 IXFR updates are not cached in the hot cache
 
 ## TODO features
-- [x] IOC individual expiration time - update time will be used as minimum time for full zone refresh + check the SOA
-- [x] Logs: Good timestamp, IP into normal format
 - [ ] TSIG Found Key ... 2017-10-24 10:58:58 Bad timestamp ... Valid MAC
-- [X] Cache for IXFR (save IOC rules with Exp.Time) and rebuild AXFR cache
--- [X] check AXFR zone update with new records
--- [X] check zone update with expired records
-- [X] Incremental zone transfer/IXFR
-- [x] Support DNS UDP IXFR/SOA request. IXFR - tcp only
-- [x] DNS Notify messages
-- [x] Local response for the IOCs
-- [x] Hot cache for IXFR IOC/sources - таймштамп округляем до минут
 - [ ] http/https/ftp errors handling - source status in the record. If a source is not available - work w/o it
 - [ ] Source based on files check by mod.date and size -> read by chunks
 - [ ] Performance testing vs bind:
@@ -98,21 +88,17 @@ IXFR updates are not cached in the hot cache
 - [ ] Memory optimization for huge zones
 - [ ] Do not cache expired IOCs if ExpDateTime<Serial_IXFR / update ExpDateTime if exists
 - [ ] Check zones IXFR update from multiple sources
-- [X] Move connectors to a new file
-- [x] Move DB fun to a new file e.g. ioc2rpz_db
-- [x] Move additional fun to ioc2rpz_fun
-- [x] Do not save in IXFR cache zonex w/o IXFR
-- [x] Create dirs: src, bin, cfg
 - [ ] Share IOC between the feedx in IXFR table
 
 ## Free threat intel
 http://www.malwaredomains.com/?page_id=66
 http://mirror1.malwaredomains.com/files/spywaredomains.zones
 http://data.netlab.360.com
+(Tor Exit Nodes) [https://torstatus.blutmagie.de/ip_list_exit.php/Tor_ip_list_EXIT.csv]
+
 
 ## Bugs
 - [ ] saveZones - doesn't correctly save zones if there a lot of updates. Save strategy based on update size and time.
-- [x] Clean cache tables if a zone was removed from CFG --- данные удаляются, но таблица особо не читстится
 
 ### References
 - Domain Name System (DNS) IANA Considerations
