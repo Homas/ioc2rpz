@@ -91,10 +91,10 @@ IXFR updates are not cached in the hot cache
 - [ ] Share IOC between the feedx in IXFR table
 
 ## Free threat intel
-http://www.malwaredomains.com/?page_id=66
-http://mirror1.malwaredomains.com/files/spywaredomains.zones
-http://data.netlab.360.com
-(Tor Exit Nodes) [https://torstatus.blutmagie.de/ip_list_exit.php/Tor_ip_list_EXIT.csv]
+- http://www.malwaredomains.com/?page_id=66
+- http://mirror1.malwaredomains.com/files/spywaredomains.zones
+- http://data.netlab.360.com
+- [Tor Exit Nodes](https://torstatus.blutmagie.de/ip_list_exit.php/Tor_ip_list_EXIT.csv)
 
 
 ## Bugs
