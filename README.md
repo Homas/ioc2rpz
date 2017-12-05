@@ -12,10 +12,22 @@
 
 ## How to start ioc2rpz service
 
+## ioc2rpz management
+- reload config
+- refresh all zones
+- refresh a zone
+- terminate ioc2rpz
+
 ## Configuration
 1. AXFR update time - full Zone update and rebuild if MD5 is different. IOC added as insert_new (zone, ioc) -> to have an ability support IXFR
 2. IXFR update time - incremental zone update
 ### Config file
+
+srv
+key
+whitelist
+source
+rpz
 
 [:AXFR:] = url,
 [:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z", [:FTimestamp:] = 1507946281
@@ -50,55 +62,61 @@ Action can be: single value, list of tuples. Single value defines a single actio
 IXFR updates are not cached in the hot cache
 
 ## TODO features
-- [ ] TSIG Found Key ... 2017-10-24 10:58:58 Bad timestamp ... Valid MAC
-- [ ] http/https/ftp errors handling - source status in the record. If a source is not available - work w/o it
-- [ ] Source based on files check by mod.date and size -> read by chunks
+- [x] (*) TSIG Found Key ... 2017-10-24 10:58:58 Bad timestamp ... Valid MAC
+- [ ] (*) http/https/ftp errors handling - source status in the record. If a source is not available - work w/o it
+- [ ] (*) Source based on files check by mod.date and size -> read by chunks
+- [ ] RPZ behaviour: ignore unreachable sources, use old data for unreachable sources, do not update the zone
+- [ ] ACL for MGMT
+- [ ] Statistics per zone (# records, last update, # AXFR, # IXFR, last axfr update time, avg axfr update time, last ixfr update time, avg ixfr update time)
 - [ ] Performance testing vs bind:
--- [ ] 1 core/8Gb RAM: start time, zone transfer time, zone size, CPU, Memory
----[ ] 100k rules
----[ ] 1M rules
----[ ] 10M rules
--- [ ] 4 cores/32 Gb RAM: start time, zone transfer time, zone size
----[ ] 100k rules
----[ ] 1M rules
----[ ] 10M rules
-- [ ] By a signal and DNS request
--- [ ][x] Reread CFG
--- [ ][x] Refresh a zone
--- [ ][x] Refresh all zones
--- [ ][x] Terminate processes/Exit
-- [ ] Path for DB
-- [ ] If Zone not ready - respond NODATA
-- [ ] Statistics per zone
-- [ ] Fix IPv6 reversing "cleanup"
-- [ ] Container
-- [ ] Documentation
+ - [ ] 1 core/8Gb RAM: start time, zone transfer time, zone size, CPU, Memory
+  -[ ] 100k rules
+  -[ ] 1M rules
+  -[ ] 10M rules
+ - [ ] 4 cores/32 Gb RAM: start time, zone transfer time, zone size
+  -[ ] 100k rules
+  -[ ] 1M rules
+  -[ ] 10M rules
+- [ ] By a signal
+ - [ ] Reload CFG
+ - [ ] Refresh a zone
+ - [ ] Refresh all zones
+ - [ ] Terminate processes/Exit
+- [x] (*) Path for DB
+- [x] (*) Fix IPv6 reversing
+- [ ] (*) Sample cfg
+- [ ] (*) Docker container
+- [ ] (*) Documentation
 - [ ] Add source RPZ
 - [ ] Add source SQL
 - [ ] Mnesia for storage (and auto creation)
 - [ ] Distributed configuration based on mnesia
+- [ ] Wait for a remote server confirms receiving a notification
+- [ ] Additional local records: ptr, srv, mx etc
 
 ## Other/optimization TODO
-- [ ] Check if we can substitute an A/AAAA record because of IP
-- [ ] UDP under supervisor
-- [ ] EDNS0 RR
-- [ ] Check all TODO in the code
-- [ ] Clean up the code & add comments
-- [ ] IOC to lowercase - check performance impact
-- [ ] Memory optimization for huge zones
-- [ ] Do not cache expired IOCs if ExpDateTime<Serial_IXFR / update ExpDateTime if exists
-- [ ] Check zones IXFR update from multiple sources
-- [ ] Share IOC between the feedx in IXFR table
+- [ ] (*) Do not cache expired IOCs if ExpDateTime<Serial_IXFR / update ExpDateTime if exists
+- [x] (*) IOC to lowercase - check performance impact
+- [ ] (*) Check zones IXFR update from multiple sources
+- [x] (*) Check all TODO in the code
+- [ ] (1) Clean up the code & add comments
+- [ ] (1) EDNS0 Support: DNS Cookie, edns-tcp-keepalive, NSID
+- [ ] (2) IOC to lowercase - check memory usage impact (in ioc2rpz_conn)
+- [ ] (3) UDP under supervisor
+- [ ] (3) Memory optimization for huge zones (erl -pa ebin +MEas bf ?????)
+- [ ] (3) Share IOC between the feeds in IXFR table
+- [ ] (*) Sample zone - fix redirect_domain, redirect_ip
 
 ## Free threat intel
 - http://www.malwaredomains.com/?page_id=66
 - http://mirror1.malwaredomains.com/files/spywaredomains.zones
-- http://data.netlab.360.com
+- [Malware DGA](http://data.netlab.360.com)
 - [Tor Exit Nodes](https://torstatus.blutmagie.de/ip_list_exit.php/Tor_ip_list_EXIT.csv)
 
 
 ## Bugs
 - [ ] saveZones - doesn't correctly save zones if there a lot of updates. Save strategy based on update size and time.
+- [x] Fix response if Zone not ready - respond SERVFAIL + add TSIG
 
 ### References
 - Domain Name System (DNS) IANA Considerations
@@ -120,3 +138,8 @@ https://tools.ietf.org/html/rfc4635
 https://tools.ietf.org/html/rfc5966
 - A Mechanism for Prompt Notification of Zone Changes (DNS NOTIFY)
 https://tools.ietf.org/html/rfc1996
+- Extension Mechanisms for DNS (EDNS(0))
+https://tools.ietf.org/html/rfc6891
+https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
+- Domain Name System (DNS) Cookies
+https://tools.ietf.org/html/rfc7873

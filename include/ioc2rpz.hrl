@@ -14,25 +14,26 @@
 
 %IOC2RPZ headers
 
--define(ioc2rpz_ver, 2017102101).
+-define(ioc2rpz_ver, 2017120401).
 -define(Port,53).
 -define(TTL,900).
 -define(DNSPktMax,16384). %Max DNS packet size. DNS Label Zip is available up to 16384 bytes 65000/max
--define(Compression,6). % 0 - no compression, 9 - highest, 6 - default do it depending on the list/bin size.
--define(SaveETS,true). % Save DB into files if DB is ETS.
--define(ZoneRefTime,120000). %300000 Zone refresh check interval
-
--define(TCPTimeout, 3000). %in milliseconds
-
--define(MGMToDNS,true). %Defines if management ioc2rpz over DNS is enabled
-
 %hosts.ioc2rpz - 100000 - 16384
 %Query time: 10393 msec
 %199791 records (messages 275, bytes 4540252)
 %hosts.ioc2rpz - 100000 - 65000 - 18% more data, 4 times less packets
 %Query time: 12492 msec
 %199791 records (messages 85, bytes 5494450)
--define(HotCacheTime,1). %900 Time to cache IOCs/Records/Pkts in a hot cache. More usefull for online rpz.
+
+-define(Compression,6). % 0 - no compression, 9 - highest, 6 - default do it depending on the list/bin size.
+-define(SaveETS,true). % Save DB into files if DB is ETS.
+-define(ZoneRefTime,60000). %300000 Zone refresh check interval
+
+-define(TCPTimeout,3000). %in milliseconds
+
+-define(MGMToDNS,true). %Defines if management ioc2rpz over DNS is enabled
+
+-define(HotCacheTime,900). %900 Time to cache IOCs/Records/Pkts in the hot cache. More usefull for online rpz.
 -define(HotCacheTimeIXFR,0). %Time to cache IXFR IOCs in a hot cache. By default it is cached for a minute because of curr_serial_60.
 
 -define(MaxZipPSize,16#3FFF:16). %Max packet size to zip DNS labels
@@ -40,6 +41,7 @@
 
 -define(ZNameZip,16#c00c:16). %Zone name/original fqdn from a request is always at byte 10 in the response
 
+%DNS Response codes
 -define(NOERROR,0).
 -define(FORMERR,1).
 -define(SERVFAIL,2).
@@ -48,34 +50,38 @@
 -define(REFUSED,5).
 -define(NOTAUTH,9).
 
+%TSIG Errors
 -define(TSIG_BADSIG,16).
 -define(TSIG_BADKEY,17).
 -define(TSIG_BADTIME,18).
 
-
+%DNS Request Class
 -define(C_IN,1).
 -define(C_CHAOS,3).
 -define(C_ANY,255).
 
+%DNS Request/Record Type
 -define(T_A,1).
 -define(T_NS,2).
 -define(T_CNAME,5).
 -define(T_SOA,6).
 -define(T_TXT,16).
 -define(T_AAAA,28).
+-define(T_OPT,41).
 -define(T_IXFR,251).
 -define(T_AXFR,252).
 -define(T_ANY,255).
 
 -define(RT_TSIG,250).
 
+%DNS Operation
 -define(OP_QUERY,0:4).
 -define(OP_NOTIFY,4:4).
 
+%DNS Resourse Records
 -record(dns_RR, {name, type, class, ttl, rdlength, rdata}).
 -record(dns_TSIG_RR, {name, type, class, ttl, rdlength, alg, alg_str, key, time, fudge, mac_len, mac, oid, error, olen, odata, time_only}).
 -record(dns_SOA_RR, {name, type, class, ttl, rdlength, mname, rname, serial, refresh, retry, expire, minimum}).
-
 
 %State record
 -record(state, {socket,params}).
@@ -83,7 +89,7 @@
 %Protocol udp/tcp
 -record(proto, {proto,rip,rport}).
 
-%Config
+%Config params
 -record(srv, {server,email,mkeys}).
 -record(key, {name,alg,key}).
 %SOA timers refresh, retry, expiration, neg_ttl
