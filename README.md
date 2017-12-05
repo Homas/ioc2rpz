@@ -27,7 +27,7 @@ srv
 key
 whitelist
 source
-rpz  
+rpz
 
 [:AXFR:] = url,
 [:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z", [:FTimestamp:] = 1507946281
@@ -37,9 +37,9 @@ rpz
 Action can be: single value, list of tuples. Single value defines a single action for an RPZ. A list depending on the param can define multiple results.
 - Single value: "nodata", "nxdomain", "passthru", "drop", "tcp-only", "blockns" ("nsdname", "nsip")
 - List:
- - Single action: {"redirect_domain", "www.example.com"}, {"redirect_ip", "127.0.0.1"} - as a response CNAME or A/AAAA records will be returned
- - Multiple actions: {"local_a","127.0.0.1"}, {"local_aaaa", "fe80::1"}, {"local_cname","www.example.com"}, {"local_txt","Just TXT record"}
- - [TODO] An action per source: {"",action,locdata} //default action ,{"source_name",action,locdata}
+  - Single action: {"redirect_domain", "www.example.com"}, {"redirect_ip", "127.0.0.1"} - as a response CNAME or A/AAAA records will be returned
+  - Multiple actions: {"local_a","127.0.0.1"}, {"local_aaaa", "fe80::1"}, {"local_cname","www.example.com"}, {"local_txt","Just TXT record"}
+  - [TODO] An action per source: {"",action,locdata} //default action ,{"source_name",action,locdata}
 
 ### Constants - ioc2rpz.hrl
 
