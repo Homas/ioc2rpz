@@ -70,13 +70,13 @@ IXFR updates are not cached in the hot cache
 - [ ] Statistics per zone (# records, last update, # AXFR, # IXFR, last axfr update time, avg axfr update time, last ixfr update time, avg ixfr update time)
 - [ ] Performance testing vs bind:
   - [ ] 1 core/8Gb RAM: start time, zone transfer time, zone size, CPU, Memory
-     -[ ] 100k rules
-     -[ ] 1M rules
-     -[ ] 10M rules
+        -[ ] 100k rules
+        -[ ] 1M rules
+        -[ ] 10M rules
   - [ ] 4 cores/32 Gb RAM: start time, zone transfer time, zone size
-     -[ ] 100k rules
-     -[ ] 1M rules
-     -[ ] 10M rules
+        -[ ] 100k rules
+        -[ ] 1M rules
+        -[ ] 10M rules
 - [ ] By a signal
   - [ ] Reload CFG
   - [ ] Refresh a zone
