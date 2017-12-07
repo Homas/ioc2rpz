@@ -41,9 +41,7 @@ The configuration consist of:
 - ioc2rpz management TSIG keys. Please refer [the management section](#ioc2rpz-management) for the details.
 
 Sample **srv** record:
-```
-{srv,{"ns1.rpz-proxy.com","support.rpz-proxy.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"]}}.
-```
+```{srv,{"ns1.rpz-proxy.com","support.rpz-proxy.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"]}}.```
 #### **key** record
 #### **whitelist** record
 #### **source** record
