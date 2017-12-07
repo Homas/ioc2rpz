@@ -13,6 +13,7 @@
 ## How to start ioc2rpz service
 
 ## ioc2rpz management
+- ioc2rpz status
 - reload config
 - refresh all zones
 - refresh a zone
@@ -38,12 +39,13 @@ The configuration consist of:
 **srv** record defines:
 - NS and email fields for SOA DNS record;
 - ioc2rpz management TSIG keys. Please refer [the management section](#ioc2rpz-management) for the details.
+Sample **srv** record:
+``{srv,{"ns1.rpz-proxy.com","support.rpz-proxy.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"]}}.``
 #### **key** record
 #### **whitelist** record
 #### **source** record
 #### **rpz** record
 
-{srv,{"ns1.rpz-proxy.com","support.rpz-proxy.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"]}}.
 {key,{"dnsproxykey_1","md5","Hbxw9kzCdDp5XgWSWT/5OfRc1+jDIaSvFjpbv/V3IT2ah6xUfLGFcoA7cCLaPh40ni9nvmzlAArj856v3xEnBw=="}}.
 {whitelist,{"whitelist_1","file:cfg/whitelist1.txt",none}}.
           default regex "^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"
