@@ -12,7 +12,7 @@
 
 ## How to start ioc2rpz service
 
-[ioc2rpz_mgmt]: ## ioc2rpz management
+## [ioc2rpz_mgmt]: ioc2rpz management
 - reload config
 - refresh all zones
 - refresh a zone
@@ -37,7 +37,7 @@ The configuration consist of:
 #### **srv** record
 **srv** record defines:
 - NS and email fields for SOA DNS record;
-- ioc2rpz management TSIG keys. Please refer [the management section][ioc2rpz_mgmt] for the details.
+- ioc2rpz management TSIG keys. Please refer [the management section] [ioc2rpz_mgmt] for the details.
 #### **key** record
 #### **whitelist** record
 #### **source** record
