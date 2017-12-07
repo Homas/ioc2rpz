@@ -29,13 +29,13 @@ dnssec-keygen -a HMAC-MD5 -b512 -n USER tsig-key
 ### Config file
 The configuration is a file which consists of Erlang terms so the configuration must comply with Erlang syntax. ioc2rpz does not check the configuration file for possible errors, typos etc.
 The configuration consist of:
-- one *srv* record;
-- zero or more *key* records;
-- zero or more *whitelist* records;
-- one or more *source* records;
-- one or more *rpz* records.
-#### *srv* record
-#### *key* record
+- one **srv** record;
+- zero or more **key** records;
+- zero or more **whitelist** records;
+- one or more **source** records;
+- one or more **rpz** records.
+#### **srv** record
+#### **key** record
 
 {srv,{"ns1.rpz-proxy.com","support.rpz-proxy.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"]}}.
 {key,{"dnsproxykey_1","md5","Hbxw9kzCdDp5XgWSWT/5OfRc1+jDIaSvFjpbv/V3IT2ah6xUfLGFcoA7cCLaPh40ni9nvmzlAArj856v3xEnBw=="}}.
