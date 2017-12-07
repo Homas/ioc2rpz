@@ -21,17 +21,46 @@
 ## Configuration
 1. AXFR update time - full Zone update and rebuild if MD5 is different. IOC added as insert_new (zone, ioc) -> to have an ability support IXFR
 2. IXFR update time - incremental zone update
-### Config file
 
-srv
-key
-whitelist
-source
-rpz
+## TSIG keys
+
+dnssec-keygen -a HMAC-MD5 -b512 -n USER tsig-key
+
+### Config file
+The configuration is a file which consists of Erlang terms so the configuration must comply with Erlang syntax. ioc2rpz does not check the configuration file for possible errors, typos etc.
+The configuration consist of:
+- one *srv* record;
+- zero or more *key* records;
+- zero or more *whitelist* records;
+- one or more *source* records;
+- one or more *rpz* records.
+#### *srv* record
+#### *key* record
+
+{srv,{"ns1.rpz-proxy.com","support.rpz-proxy.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"]}}.
+{key,{"dnsproxykey_1","md5","Hbxw9kzCdDp5XgWSWT/5OfRc1+jDIaSvFjpbv/V3IT2ah6xUfLGFcoA7cCLaPh40ni9nvmzlAArj856v3xEnBw=="}}.
+{whitelist,{"whitelist_1","file:cfg/whitelist1.txt",none}}.
+          default regex "^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"
+{source,{"blackhole_exp","http://data.netlab.360.com/feeds/dga/blackhole.txt","[:AXFR:]","^([A-Za-z0-9][A-Za-z0-9\-\._]+)\t.*:00\t([0-9: -]+)$"}}.
+
+{rpz,{"zone_name",soa_refresh, soa_update_retry,soa_expire,soa_nxdomain_ttl,"cache","wildcards","action",["key1","key2"],"zone_type",AXFT_Time, IXFR_Time,["source1","source2"],["notify_ip1","notify_ip2"],["whitelist_1","whitelist_2"]}}.
+
+{rpz,{"mixed.ioc2rpz",7202,3600,2592000,7200,"true","true","passthru",["dnsproxykey_1", "dnsproxykey_2"],"mixed",86400,3600,["small_ioc","blackhole","bot.list"],[],["whitelist_1","whitelist_2"]}}.
+actions: nxdomain, nodata, passthru, drop, tcp-only, [{"redirect_domain","example.com"},{"redirect_ip","127.0.0.1"},{"local_aaaa","fe80::1"},{"local_a","127.0.0.1"},{"local_cname","www.example.com"},{"local_txt","Text Record"}]
+redirect_domain is an alias for local_cname
+redirect_ip is an alias for local_a, local_aaaa
+
 
 [:AXFR:] = url,
 [:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z", [:FTimestamp:] = 1507946281
 [:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z", [:ToTimestamp:] = 1507946281
+
+
+cache - cache the RPZ zones or request on a fly. Possible values: true/false
+wildcards - generate wildcard rules to block sub-domain. Possible values: true/false
+notify - send notifications about feed update to the systems which downloaded the feed. Possible values: true/false
+action: (nxdomain, nodata, drop, redirect=domain/ip)
+if RPZ feed is not cached anyway it is temporary put into a hot cache. Just in case if the request timeouts from a client, we will be able to respond next time. axfr_time will be used to derermine cache life. 0 - means not cache at all.
 
 
 Action can be: single value, list of tuples. Single value defines a single action for an RPZ. A list depending on the param can define multiple results.
@@ -84,9 +113,11 @@ IXFR updates are not cached in the hot cache
   - [ ] Terminate processes/Exit
 - [x] (*) Path for DB
 - [x] (*) Fix IPv6 reversing
-- [ ] (*) Sample cfg
+- [ ] (*) FDateTime,ToDateTime,FDateTimeZ,ToDateTimeZ
+- [x] (*) Sample cfg
 - [ ] (*) Docker container
 - [ ] (*) Documentation
+- [ ] Check if RPZs are propertly configured.
 - [ ] Add source RPZ
 - [ ] Add source SQL
 - [ ] Mnesia for storage (and auto creation)
@@ -105,18 +136,17 @@ IXFR updates are not cached in the hot cache
 - [ ] (3) UDP under supervisor
 - [ ] (3) Memory optimization for huge zones (erl -pa ebin +MEas bf ?????)
 - [ ] (3) Share IOC between the feeds in IXFR table
+
+## TODO Bugs
 - [ ] (*) Sample zone - fix redirect_domain, redirect_ip
-
-## Free threat intel
-- http://www.malwaredomains.com/?page_id=66
-- http://mirror1.malwaredomains.com/files/spywaredomains.zones
-- [Malware DGA](http://data.netlab.360.com)
-- [Tor Exit Nodes](https://torstatus.blutmagie.de/ip_list_exit.php/Tor_ip_list_EXIT.csv)
-
-
-## Bugs
 - [ ] saveZones - doesn't correctly save zones if there a lot of updates. Save strategy based on update size and time.
 - [x] Fix response if Zone not ready - respond SERVFAIL + add TSIG
+
+
+## Free threat intel
+- [DNS-BH – Malware Domain Blocklist by RiskAnalytics](http://www.malwaredomains.com/)
+- [Malware DGA](http://data.netlab.360.com)
+- [Tor Exit Nodes](https://torstatus.blutmagie.de/ip_list_exit.php/Tor_ip_list_EXIT.csv)
 
 ### References
 - Domain Name System (DNS) IANA Considerations
