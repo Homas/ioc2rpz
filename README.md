@@ -192,27 +192,14 @@ IXFR updates are not cached in the hot cache
 - [Tor Exit Nodes](https://torstatus.blutmagie.de/ip_list_exit.php/Tor_ip_list_EXIT.csv)
 
 ### References
-- Domain Name System (DNS) IANA Considerations
-https://tools.ietf.org/html/rfc6895
-- Domain Names - Implementation and Specification
-https://tools.ietf.org/html/rfc1035
-- Incremental Zone Transfer in DNS
-https://tools.ietf.org/html/rfc1995
-- DNS Response Policy Zones (RPZ)
-https://tools.ietf.org/html/draft-ietf-dnsop-dns-rpz-00
-https://tools.ietf.org/html/draft-vixie-dns-rpz-02
-- Secret Key Transaction Authentication for DNS (TSIG)
-https://tools.ietf.org/html/rfc2845
-- HMAC: Keyed-Hashing for Message Authentication
-https://tools.ietf.org/html/rfc2104
-- HMAC SHA TSIG Algorithm Identifiers
-https://tools.ietf.org/html/rfc4635
-- DNS Transport over TCP - Implementation Requirements
-https://tools.ietf.org/html/rfc5966
-- A Mechanism for Prompt Notification of Zone Changes (DNS NOTIFY)
-https://tools.ietf.org/html/rfc1996
-- Extension Mechanisms for DNS (EDNS(0))
-https://tools.ietf.org/html/rfc6891
-https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11
-- Domain Name System (DNS) Cookies
-https://tools.ietf.org/html/rfc7873
+- [Domain Name System (DNS) IANA Considerations](https://tools.ietf.org/html/rfc6895)
+- [Domain Names - Implementation and Specification](https://tools.ietf.org/html/rfc1035)
+- [Incremental Zone Transfer in DNS](https://tools.ietf.org/html/rfc1995)
+- [DNS Response Policy Zones (RPZ)](https://tools.ietf.org/html/draft-ietf-dnsop-dns-rpz-00) + [vixie](https://tools.ietf.org/html/draft-vixie-dns-rpz-02)
+- [Secret Key Transaction Authentication for DNS (TSIG)](https://tools.ietf.org/html/rfc2845)
+- [HMAC: Keyed-Hashing for Message Authentication](https://tools.ietf.org/html/rfc2104)
+- [HMAC SHA TSIG Algorithm Identifiers](https://tools.ietf.org/html/rfc4635)
+- [DNS Transport over TCP - Implementation Requirements](https://tools.ietf.org/html/rfc5966)
+- [A Mechanism for Prompt Notification of Zone Changes (DNS NOTIFY)](https://tools.ietf.org/html/rfc1996)
+- [Extension Mechanisms for DNS (EDNS(0))](https://tools.ietf.org/html/rfc6891) + [ENDS Option Codes](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11)
+- [Domain Name System (DNS) Cookies](https://tools.ietf.org/html/rfc7873)
