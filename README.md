@@ -39,40 +39,53 @@ The configuration consist of:
 - one or more **source** records;
 - one or more **rpz** records.
 #### **srv** record
-srv record contains of 3 parameters:
-- NS server name which is used in SOA record;
+**srv** record contains 3 parameters:
+- NS server name used in SOA record;
 - an email address for SOA record;
-- list of the TSIG keys (names only) which are used for management. Please refer [the management section](#ioc2rpz-management) for the details.   
+- list of management TSIG keys (names only). Please refer [the management section](#ioc2rpz-management) for the details.   
 Sample **srv** record:  
 ```
 {srv,{"ns1.example.com","support.email.example.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"]}}.
 ```
 #### **key** record
-key records contain TSIG keys used for zone transfers and ioc2rpz management. ioc2rpz supports: md5, sha256 and sha512 algorythms.
+Keys are used for zone transfers and management. It is recomended to use different keys for management and zones transfers.
+**key** record contain:
+- TSIG key name;
+- algorythm. md5, sha256 and sha512 are supported';
+- the key.
 Sample **key** record:  
 ```
 {key,{"key_name_1","md5","Hbxw9kzCdDp5XgWSWT/5OfRc1+jDIaSvFjpbv/V3IT2ah6xUfLGFcoA7cCLaPh40ni9nvmzlAArj856v3xEnBw=="}}.
 ```
-dnssec-keygen utility can be used to generate TSIG keys. E.g. the command below will generate a TSIG key 512 bits lenght with "tsig-key" name using MD5 algorithm, and save the key in the files with extensions "key" and "private". For TSIG the key will be the same in the both files.
+dnssec-keygen utility can be used to generate TSIG keys. E.g. the command below will generate a TSIG key 512 bits lenght with "tsig-key" name using MD5 algorithm, and save the key in the files with extensions "key" and "private". A TSIG the key will be the same in the both files.
 ```
 dnssec-keygen -a HMAC-MD5 -b512 -n USER tsig-key
 ```
 For other details please refer "dnssec-keygen" documentation.
 #### **whitelist** record
-whitelists define the list of domains,IP-addresses which should be removed from RPZ zones
+Whitelists are used to prevent clean/important domains and IPs from blocking by RPZ. The whitelisted IOCs are removed from the feeds. Whitelists must contain valid FQDNs and IP addresses. Indicators must be on separate lines.
+**whitelists** record contains:
+- whitelist name;
+- whitelist path. URLs(http/https/fts) and local files are supported. Prefix "file:" is used for local files;
+- REGEX which is used to extract indicators. A regular expression must be included in double quotes. If you specify an empty REGEX (`""`), a default REGEX will be used (`"^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"`). `none` is used if no REGEX is required (the source already provides data in the required format).
+Sample **whitelist** record:
 ```
 {whitelist,{"whitelist_1","file:cfg/whitelist1.txt",none}}.
 ```
-default regex `"^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"`
 #### **source** record
+Sources are malicious indicators feeds. The indicators must be on separate lines. FQDNs, IPv4 and IPv6-addresses are supported.
+**source** record contains:
+- source name;
+- source path for full source transfer (AXFR). URLs(http/https/fts) and local files are supported. Prefix "file:" is used for local files;
+- source path for incremental source transfer (IXFR). AXFR,IXFR paths support keywords to shortern URLs and provide zone update timestamps:
+  - [:AXFR:] - full AXFR path. Can be used only in IXFR paths;
+  - [:FTimestamp:] - timestamp when the source was last time updated  (e.g. 1507946281)
+  - [:ToTimestamp:] - current timestamp;
+- REGEX which is used to extract indicators and their expiration time. The first match is an indicator, the second match is expiration time. Expiration time is an optional parameter. 
+Sample **source** record:
 ```
 {source,{"blackhole_exp","http://data.netlab.360.com/feeds/dga/blackhole.txt","[:AXFR:]","^([A-Za-z0-9][A-Za-z0-9\-\._]+)\t.*:00\t([0-9: -]+)$"}}.
 ```
-[:AXFR:] = url,
-[:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z", [:FTimestamp:] = 1507946281
-[:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z", [:ToTimestamp:] = 1507946281
-
-
 #### **rpz** record
 
 {rpz,{"zone_name",soa_refresh, soa_update_retry,soa_expire,soa_nxdomain_ttl,"cache" true/false,"wildcards","action",["key1","key2"],"zone_type" mixed/fqdn/ip,AXFT_Time, IXFR_Time,["source1","source2"],["notify_ip1","notify_ip2"],["whitelist_1","whitelist_2"]}}.
@@ -123,6 +136,7 @@ IXFR updates are not cached in the hot cache
 - [ ] (*) Source based on files check by mod.date and size -> read by chunks
 - [ ] RPZ behaviour: ignore unreachable sources, use old data for unreachable sources, do not update the zone
 - [ ] ACL for MGMT
+- [ ] "intellectual" configuration update
 - [ ] Statistics per zone (# records, last update, # AXFR, # IXFR, last axfr update time, avg axfr update time, last ixfr update time, avg ixfr update time)
 - [ ] Performance testing vs bind:
   - [ ] 1 core/8Gb RAM: start time, zone transfer time, zone size, CPU, Memory
@@ -140,7 +154,9 @@ IXFR updates are not cached in the hot cache
   - [ ] Terminate processes/Exit
 - [x] (*) Path for DB
 - [x] (*) Fix IPv6 reversing
-- [ ] (*) FDateTime,ToDateTime,FDateTimeZ,ToDateTimeZ
+- [ ] (*) FDateTime,ToDateTime,FDateTimeZ,ToDateTimeZ + support them for AXFR  
+[:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z"  
+[:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z"
 - [x] (*) Sample cfg
 - [ ] (*) Docker container
 - [ ] (*) Documentation
