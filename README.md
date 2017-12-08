@@ -78,9 +78,9 @@ Sources are malicious indicators feeds. The indicators must be on separate lines
 - source name;
 - source path for full source transfer (AXFR). URLs(http/https/fts) and local files are supported. Prefix "file:" is used for local files;
 - source path for incremental source transfer (IXFR). AXFR,IXFR paths support keywords to shortern URLs and provide zone update timestamps:
-  - [:AXFR:] - full AXFR path. Can be used only in IXFR paths;
-  - [:FTimestamp:] - timestamp when the source was last time updated  (e.g. 1507946281)
-  - [:ToTimestamp:] - current timestamp;
+  - **[:AXFR:]** - full AXFR path. Can be used only in IXFR paths;
+  - **[:FTimestamp:]** - timestamp when the source was last time updated  (e.g. 1507946281)
+  - **[:ToTimestamp:]** - current timestamp;
 - REGEX which is used to extract indicators and their expiration time. The first match is an indicator, the second match is expiration time. Expiration time is an optional parameter. 
 Sample **source** record:
 ```
