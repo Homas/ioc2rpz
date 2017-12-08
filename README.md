@@ -1,5 +1,10 @@
-#  IOC2RPZ - turns your threat intelligence into RPZ feeds.
+#  ioc2rpz - makes your threat intelligence actionable
+turns your threat intelligence into RPZ feeds.
+ioc2rpz is a place there threat intelligence meets DNS
 ## Overview
+
+## Where to use
+You can use ioc2rpz with any DNS server which supports Responce Policy Zones e.g. recent versions of bind.
 
 ## ioc2rpz vs bind:
 - ioc2rpz built to handle RPZ distribution only
@@ -23,9 +28,7 @@
 1. AXFR update time - full Zone update and rebuild if MD5 is different. IOC added as insert_new (zone, ioc) -> to have an ability support IXFR
 2. IXFR update time - incremental zone update
 
-## TSIG keys
 
-dnssec-keygen -a HMAC-MD5 -b512 -n USER tsig-key
 
 ### Config file
 The configuration is a file which consists of Erlang terms so the configuration must comply with Erlang syntax. ioc2rpz does not check the configuration file for possible errors, typos etc.
@@ -36,36 +39,49 @@ The configuration consist of:
 - one or more **source** records;
 - one or more **rpz** records.
 #### **srv** record
-**srv** record defines:
-- NS and email fields for SOA DNS record;
-- ioc2rpz management TSIG keys. Please refer [the management section](#ioc2rpz-management) for the details.
-
+srv record contains of 3 parameters:
+- NS server name which is used in SOA record;
+- an email address for SOA record;
+- list of the TSIG keys (names only) which are used for management. Please refer [the management section](#ioc2rpz-management) for the details.   
 Sample **srv** record:  
 ```
-{srv,{"ns1.rpz-proxy.com","support.rpz-proxy.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"]}}.
+{srv,{"ns1.example.com","support.email.example.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"]}}.
 ```
 #### **key** record
+key records contain TSIG keys used for zone transfers and ioc2rpz management. ioc2rpz supports: md5, sha256 and sha512 algorythms.
+Sample **key** record:  
+```
+{key,{"key_name_1","md5","Hbxw9kzCdDp5XgWSWT/5OfRc1+jDIaSvFjpbv/V3IT2ah6xUfLGFcoA7cCLaPh40ni9nvmzlAArj856v3xEnBw=="}}.
+```
+dnssec-keygen utility can be used to generate TSIG keys. E.g. the command below will generate a TSIG key 512 bits lenght with "tsig-key" name using MD5 algorithm, and save the key in the files with extensions "key" and "private". For TSIG the key will be the same in the both files.
+```
+dnssec-keygen -a HMAC-MD5 -b512 -n USER tsig-key
+```
+For other details please refer "dnssec-keygen" documentation.
 #### **whitelist** record
-#### **source** record
-#### **rpz** record
-
-{key,{"dnsproxykey_1","md5","Hbxw9kzCdDp5XgWSWT/5OfRc1+jDIaSvFjpbv/V3IT2ah6xUfLGFcoA7cCLaPh40ni9nvmzlAArj856v3xEnBw=="}}.
+whitelists define the list of domains,IP-addresses which should be removed from RPZ zones
+```
 {whitelist,{"whitelist_1","file:cfg/whitelist1.txt",none}}.
-          default regex "^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"
+```
+default regex `"^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"`
+#### **source** record
+```
 {source,{"blackhole_exp","http://data.netlab.360.com/feeds/dga/blackhole.txt","[:AXFR:]","^([A-Za-z0-9][A-Za-z0-9\-\._]+)\t.*:00\t([0-9: -]+)$"}}.
-
-{rpz,{"zone_name",soa_refresh, soa_update_retry,soa_expire,soa_nxdomain_ttl,"cache","wildcards","action",["key1","key2"],"zone_type",AXFT_Time, IXFR_Time,["source1","source2"],["notify_ip1","notify_ip2"],["whitelist_1","whitelist_2"]}}.
-
-{rpz,{"mixed.ioc2rpz",7202,3600,2592000,7200,"true","true","passthru",["dnsproxykey_1", "dnsproxykey_2"],"mixed",86400,3600,["small_ioc","blackhole","bot.list"],[],["whitelist_1","whitelist_2"]}}.
-actions: nxdomain, nodata, passthru, drop, tcp-only, [{"redirect_domain","example.com"},{"redirect_ip","127.0.0.1"},{"local_aaaa","fe80::1"},{"local_a","127.0.0.1"},{"local_cname","www.example.com"},{"local_txt","Text Record"}]
-redirect_domain is an alias for local_cname
-redirect_ip is an alias for local_a, local_aaaa
-
-
+```
 [:AXFR:] = url,
 [:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z", [:FTimestamp:] = 1507946281
 [:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z", [:ToTimestamp:] = 1507946281
 
+
+#### **rpz** record
+
+{rpz,{"zone_name",soa_refresh, soa_update_retry,soa_expire,soa_nxdomain_ttl,"cache" true/false,"wildcards","action",["key1","key2"],"zone_type" mixed/fqdn/ip,AXFT_Time, IXFR_Time,["source1","source2"],["notify_ip1","notify_ip2"],["whitelist_1","whitelist_2"]}}.
+```
+{rpz,{"mixed.ioc2rpz",7202,3600,2592000,7200,"true","true","passthru",["dnsproxykey_1","dnsproxykey_2"],"mixed",86400,3600,["small_ioc","blackhole","bot.list"],[],["whitelist_1","whitelist_2"]}}.
+```
+actions: nxdomain, nodata, passthru, drop, tcp-only, [{"redirect_domain","example.com"},{"redirect_ip","127.0.0.1"},{"local_aaaa","fe80::1"},{"local_a","127.0.0.1"},{"local_cname","www.example.com"},{"local_txt","Text Record"}]
+redirect_domain is an alias for local_cname
+redirect_ip is an alias for local_a, local_aaaa
 
 cache - cache the RPZ zones or request on a fly. Possible values: true/false
 wildcards - generate wildcard rules to block sub-domain. Possible values: true/false
