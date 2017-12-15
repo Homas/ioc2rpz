@@ -3,7 +3,7 @@ turns your threat intelligence into RPZ feeds.
 ioc2rpz is a place there threat intelligence meets DNS
 ## Overview
 
-## Where to use
+## How to use
 You can use ioc2rpz with any DNS server which supports Responce Policy Zones e.g. recent versions of bind.
 
 ## ioc2rpz vs bind:
@@ -26,13 +26,7 @@ You can use ioc2rpz with any DNS server which supports Responce Policy Zones e.g
 - refresh a zone
 - terminate ioc2rpz
 
-## Configuration
-1. AXFR update time - full Zone update and rebuild if MD5 is different. IOC added as insert_new (zone, ioc) -> to have an ability support IXFR
-2. IXFR update time - incremental zone update
-
-
-
-### Config file
+## Configuration file
 The configuration is an Erlang file. Every configuration option is an Erlang term so the configuration must comply with Erlang syntax. ioc2rpz does not check the configuration file for possible errors, typos etc.
 ioc2rpz supports the following configuration parameters:
 - a single **srv** record (required);
@@ -40,7 +34,7 @@ ioc2rpz supports the following configuration parameters:
 - zero or more **whitelist** records (optional);
 - one or more **source** records (minimum one source is required);
 - one or more **rpz** records (minimum one rpz is required).
-#### **srv** record
+### **srv** record
 **srv** record contains 3 parameters:
 - NS server name used in SOA record;
 - an email address for SOA record;
@@ -49,7 +43,7 @@ Sample **srv** record:
 ```
 {srv,{"ns1.example.com","support.email.example.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"]}}.
 ```
-#### **key** record
+### **key** record
 Keys are used for zone transfers and management. It is recomended to use different keys for management and zones transfers.
 **key** record contain:
 - TSIG key name;
@@ -64,7 +58,7 @@ dnssec-keygen utility can be used to generate TSIG keys. E.g. the command below 
 dnssec-keygen -a HMAC-MD5 -b512 -n USER tsig-key
 ```
 For other information please refer "dnssec-keygen" documentation.
-#### **whitelist** record
+### **whitelist** record
 Whitelists are used to prevent good domains and IPs from blocking by RPZ. The whitelisted IOCs are removed from response policy zones. A white list is a text file of feed of text data. Indicators should be separated by newline characters (/n,/r or both /n/r).  Whitelists must contain valid FQDNs and/or IP addresses. ioc2rpz supports unlimited count of indicators.
 **whitelists** record contains:
 - whitelist name;
@@ -74,7 +68,7 @@ Sample **whitelist** record:
 ```
 {whitelist,{"whitelist_1","file:cfg/whitelist1.txt",none}}.
 ```
-#### **source** record
+### **source** record
 A source is a feed of malicious indicators. FQDNs, IPv4 and IPv6-addresses are supported. A source is a text file of feed of text data. Indicators should be separated by newline/carriage return characters (/n,/r or both /r/n). ioc2rpz supports unlimited count of indicators.
 **source** record contains:
 - source name;
@@ -88,7 +82,7 @@ Sample **source** record:
 ```
 {source,{"blackhole_exp","http://data.netlab.360.com/feeds/dga/blackhole.txt","[:AXFR:]","^([A-Za-z0-9][A-Za-z0-9\-\._]+)\t.*:00\t([0-9: -]+)$"}}.
 ```
-#### **rpz** record
+### **rpz** record
 RPZ term defines a response policy zone.
 **rpz** record contains:
 - rpz name;
@@ -101,18 +95,18 @@ RPZ term defines a response policy zone.
 - Action. Supported actions: ``nxdomain``, ``nodata``, ``passthru``, ``drop``, ``tcp-only`` and list of local records ``[{"redirect_domain","example.com"}, {"redirect_ip","127.0.0.1"}, {"local_aaaa","fe80::1"}, {"local_a","127.0.0.1"}, {"local_cname","www.example.com"}, {"local_txt","Text Record"}]``. ``redirect_domain`` is an alias for ``local_cname``. ``redirect_ip`` is an alias for ``local_a``, ``local_aaaa``;
 - List of TSIG keys;
 - Type of IOCs used in the RPZ: ``mixed``, ``fqdn``, ``ip``. It is used for optimisation. 
-- Full zone update time in seconds (AXFR Time);
+- Full zone update time in seconds (AXFR Time). Full Zone update and rebuild if MD5 for IOCs is different;
 - Incremental zone update time  (IXFR Time). Sources should support incremental updates. "0" means no incremental zone updates;
 - List of the sources;
 - List of DNS servers (IP addresses) which should be notified on an RPZ updates;
 - List of whitelists.
 
 ```
-{rpz,{"zone_name",soa_refresh, soa_update_retry,soa_expire,soa_nxdomain_ttl,"cache","wildcards","action",["key1","key2"],"zone_type" mixed/fqdn/ip,AXFT_Time, IXFR_Time,["source1","source2"],["notify_ip1","notify_ip2"],["whitelist_1","whitelist_2"]}}.
+{rpz,{"zone_name",soa_refresh, soa_update_retry,soa_expire,soa_nxdomain_ttl,"cache","wildcards","action",["key1","key2"],"Zone_type",AXFT_Time, IXFR_Time,["source1","source2"],["notify_ip1","notify_ip2"],["whitelist_1","whitelist_2"]}}.
 
 {rpz,{"mixed.ioc2rpz",7202,3600,2592000,7200,"true","true","passthru",["dnsproxykey_1","dnsproxykey_2"],"mixed",86400,3600,["small_ioc","blackhole","bot.list"],[],["whitelist_1","whitelist_2"]}}.
 ```
-### Sample configuration file
+## Sample configuration file
 ```
 {srv,{"ns1.rpz-proxy.com","support.rpz-proxy.com",["dnsmkey_3"]}}.
 
@@ -135,10 +129,10 @@ RPZ term defines a response policy zone.
 {rpz,{"tor-exit-ip.ioc2rpz",7202,3600,2592000,7200,"false","true","nxdomain",["dnsproxykey_1","dnsproxykey_2"],"ip",172800,0,["tor-exit"],[],[]}}.
 ```
 
-### Constants - ioc2rpz.hrl
+## Constants - ioc2rpz.hrl
 
 
-### How the Full (AXFR) and Incremental(IXFR) caches are updated
+## How the Full (AXFR) and Incremental(IXFR) caches are updated
 - AXFR cache always contains prebuilt zones without SOA/NS/TSIG records. Prebuilt means all records are splitted by packets and labels were shortened/zipped.
 - If server recieve an AXFR request it retrieve packets from the AXFR cache, add SOA/NS records and TSIG if needed.
 - AXFR zones update should be considered as a clean up procedure, which should periodicaly take place. Just to be sure that there is no desynchronization between the sources and the cache.
@@ -152,7 +146,7 @@ RPZ term defines a response policy zone.
 - If a zone does not support IXFR updates -> it doesn't saved in the IXFR table.
 - Live zones are not cached in the AXFR, IXFR caches but the sources (IOCs) can be cached in the hot cache.
 
-### Hot cache
+## Hot cache
 IXFR updates are not cached in the hot cache
 
 ## TODO features
@@ -217,7 +211,7 @@ IXFR updates are not cached in the hot cache
 - [Malware DGA](http://data.netlab.360.com)
 - [Tor Exit Nodes](https://torstatus.blutmagie.de/ip_list_exit.php/Tor_ip_list_EXIT.csv)
 
-### References
+## References
 - [Domain Name System (DNS) IANA Considerations](https://tools.ietf.org/html/rfc6895)
 - [Domain Names - Implementation and Specification](https://tools.ietf.org/html/rfc1035)
 - [Incremental Zone Transfer in DNS](https://tools.ietf.org/html/rfc1995)
