@@ -151,7 +151,6 @@ RPZ term defines a response policy zone.
 IXFR updates are not cached in the hot cache
 
 ## TODO features
-- [x] (*) TSIG Found Key ... 2017-10-24 10:58:58 Bad timestamp ... Valid MAC
 - [ ] (*) http/https/ftp errors handling - source status in the record. If a source is not available - work w/o it
 - [ ] (*) Source based on files check by mod.date and size -> read by chunks
 - [ ] RPZ behaviour: ignore unreachable sources, use old data for unreachable sources, do not update the zone
@@ -172,12 +171,9 @@ IXFR updates are not cached in the hot cache
   - [ ] Refresh a zone
   - [ ] Refresh all zones
   - [ ] Terminate processes/Exit
-- [x] (*) Path for DB
-- [x] (*) Fix IPv6 reversing
 - [ ] (*) FDateTime,ToDateTime,FDateTimeZ,ToDateTimeZ + support them for AXFR  
 [:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z"  
 [:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z"
-- [x] (*) Sample cfg
 - [ ] (*) Docker container
 - [ ] (*) Documentation
 - [ ] Check if RPZs are propertly configured.
@@ -191,20 +187,17 @@ IXFR updates are not cached in the hot cache
 
 ## Other/optimization TODO
 - [ ] (*) Do not cache expired IOCs if ExpDateTime<Serial_IXFR / update ExpDateTime if exists
-- [x] (*) IOC to lowercase - check performance impact
 - [ ] (*) Check zones IXFR update from multiple sources
-- [x] (*) Check all TODO in the code
 - [ ] (1) Clean up the code & add comments
 - [ ] (1) EDNS0 Support: DNS Cookie, edns-tcp-keepalive, NSID
 - [ ] (2) IOC to lowercase - check memory usage impact (in ioc2rpz_conn)
 - [ ] (3) UDP under supervisor
 - [ ] (3) Memory optimization for huge zones (erl -pa ebin +MEas bf ?????)
 - [ ] (3) Share IOC between the feeds in IXFR table
+- [ ] saveZones - doesn't correctly save zones if there a lot of updates. Save strategy based on update size and time.
 
 ## TODO Bugs
 - [ ] (*) Sample zone - fix redirect_domain, redirect_ip
-- [ ] saveZones - doesn't correctly save zones if there a lot of updates. Save strategy based on update size and time.
-- [x] Fix response if Zone not ready - respond SERVFAIL + add TSIG
 
 
 ## Free threat intel
