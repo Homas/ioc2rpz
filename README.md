@@ -1,5 +1,5 @@
 #  ioc2rpz makes your threat intelligence actionable
-ioc2rpz is a place there threat intelligence meet DNS.
+ioc2rpz is a place there threat intelligence meets DNS.
 ## Overview
 ioc2rpz transforms IOC feeds into response policy zones. You can mix sources to generate a single RPZ or multiple RPZs. Good domains and IPs can be whitelisted. ioc2rpz supports expiration of indicators and accordingly rebuilding zones.  
 ![Alt ioc2rpz](https://github.com/Homas/ioc2rpz/blob/master/IOC2RPZ.jpg)
