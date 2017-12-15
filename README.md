@@ -11,7 +11,7 @@ You can use ioc2rpz with any DNS server which supports Responce Policy Zones e.g
 ## ioc2rpz vs bind:
 - ioc2rpz was built to handle RPZ distribution only;
 - ioc2rpz supports as many RPZ as you need. bind supports only 32 zones per DNS view;
-- ioc2rpz supports "live"/non cached zones;
+- ioc2rpz supports live/non cached zones;
 - indicators availble from different sources e.g. via REST API calls and RPZs are automatically updated;
 - IOC expiration time is used to remove expired indicators in a timely manner;
 - Performance and zone transfer time/size/packets optimizations.
@@ -38,14 +38,14 @@ ioc2rpz supports the following configuration parameters:
 ### **srv** record
 **srv** record contains 3 parameters:
 - NS server name used in SOA record;
-- an email address for SOA record;
+- an email address for SOA record (in SOA format);
 - list of management TSIG keys (names only). Please refer [the management section](#ioc2rpz-management) for the details.   
 Sample **srv** record:  
 ```
 {srv,{"ns1.example.com","support.email.example.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"]}}.
 ```
 ### **key** record
-Keys are used for zone transfers and management. It is recomended to use different keys for management and zones transfers.
+Keys are used for authentication and authorization. It is recomended to use different keys for ioc2rpz management and zones transfers.
 **key** record contain:
 - TSIG key name;
 - algorythm. md5, sha256 and sha512 are supported';
@@ -58,9 +58,9 @@ dnssec-keygen utility can be used to generate TSIG keys. E.g. the command below 
 ```
 dnssec-keygen -a HMAC-MD5 -b512 -n USER tsig-key
 ```
-For other information please refer "dnssec-keygen" documentation.
+Please refer "dnssec-keygen" documentation for details.
 ### **whitelist** record
-Whitelists are used to prevent good domains and IPs from blocking by RPZ. The whitelisted IOCs are removed from response policy zones. A white list is a text file of feed of text data. Indicators should be separated by newline characters (/n,/r or both /n/r).  Whitelists must contain valid FQDNs and/or IP addresses. ioc2rpz supports unlimited count of indicators.
+Whitelists are used to prevent possible errors and blocking trusted domains and IP addresses. The whitelisted IOCs are removed from response policy zones. ioc2rpz does check only exact match, so it will not split or discard a network if a whitelisted IP address is included into a blocked subnet and vice versa. A white list is a text file of feed of text data. Indicators should be separated by newline characters (/n,/r or both /n/r).  Whitelists must contain valid FQDNs and/or IP addresses. ioc2rpz supports unlimited count of indicators.
 **whitelists** record contains:
 - whitelist name;
 - whitelist path. URLs(http/https/fts) and local files are supported. Prefix "file:" is used for local files;
