@@ -1,8 +1,9 @@
 #  ioc2rpz makes your threat intelligence actionable
 ioc2rpz is a place there threat intelligence meets DNS.
 ## Overview
-ioc2rpz transforms IOC feeds into response policy zones. Currently local files, http/https/ftp URLs are supported as sources of indicators. You can do file transfers or REST API calls to retrive indicators from remote servers.  
+ioc2rpz transforms IOC feeds into response policy zones. Currently ioc2rpz supports local files, http/https/ftp. You can do file transfers or REST API calls to retrive indicators from remote servers.  
 ![Alt ioc2rpz](https://github.com/Homas/ioc2rpz/blob/master/IOC2RPZ.jpg)
+You can mix sources to generate a single RPZ or multiple RPZs. Good domains and IPs can be whitelisted. ioc2rpz supports expiration of indicators and accordingly rebuilding zones.
 
 ## How to use
 You can use ioc2rpz with any DNS server which supports Responce Policy Zones e.g. recent versions of bind. A sample bind's configuration file is provided in cfg folder.
@@ -224,3 +225,13 @@ IXFR updates are not cached in the hot cache
 - [A Mechanism for Prompt Notification of Zone Changes (DNS NOTIFY)](https://tools.ietf.org/html/rfc1996)
 - [Extension Mechanisms for DNS (EDNS(0))](https://tools.ietf.org/html/rfc6891) + [ENDS Option Codes](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11)
 - [Domain Name System (DNS) Cookies](https://tools.ietf.org/html/rfc7873)
+
+# License
+Copyright 2017 Vadim Pavlov pvm(dot)del[at]gmail[.]com
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
+You may obtain a copy of the License at  
+  
+    http://www.apache.org/licenses/LICENSE-2.0  
+  
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
