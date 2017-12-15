@@ -2,6 +2,7 @@
 ioc2rpz is a place there threat intelligence meets DNS.
 ## Overview
 ioc2rpz transforms IOC feeds into response policy zones. Currently local files, http/https/ftp URLs are supported as sources of indicators. You can do file transfers or REST API calls to retrive indicators from remote servers.
+[!Alt ioc2rpz](https://github.com/Homas/ioc2rpz/blob/master/IOC2RPZ.jpg)
 
 ## How to use
 You can use ioc2rpz with any DNS server which supports Responce Policy Zones e.g. recent versions of bind. A sample bind's configuration file is provided in cfg folder.
