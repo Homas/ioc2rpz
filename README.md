@@ -1,5 +1,5 @@
 #  ioc2rpz makes your threat intelligence actionable
-ioc2rpz is a place there threat intelligence meets DNS.
+ioc2rpz is a place there threat intelligence meet DNS.
 ## Overview
 ioc2rpz transforms IOC feeds into response policy zones. Currently ioc2rpz supports local files, http/https/ftp. You can do file transfers or REST API calls to retrive indicators from remote servers.  
 ![Alt ioc2rpz](https://github.com/Homas/ioc2rpz/blob/master/IOC2RPZ.jpg)
