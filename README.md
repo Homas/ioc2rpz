@@ -9,13 +9,12 @@ Currently ioc2rpz supports local files, http/https/ftp. You can do file transfer
 You can use ioc2rpz with any DNS server which supports Responce Policy Zones e.g. recent versions of bind. A sample bind's configuration file is provided in the cfg folder.
 
 ## ioc2rpz vs bind:
-- ioc2rpz built to handle RPZ distribution only
-- ioc2rpz supports as many RPZ as you need. bind supports only 32 zones per DNS view
-- live zones
-- indicators via REST API calls
-- IOC expiration time
-- configurable packet size --> zone transfer optimization
-- performace
+- ioc2rpz was built to handle RPZ distribution only;
+- ioc2rpz supports as many RPZ as you need. bind supports only 32 zones per DNS view;
+- ioc2rpz supports "live"/non cached zones;
+- indicators availble from different sources e.g. via REST API calls and RPZs are automatically updated;
+- IOC expiration time is used to remove expired indicators in a timely manner;
+- Performance and zone transfer time/size/packets optimizations.
 
 ## How to start ioc2rpz service
 
