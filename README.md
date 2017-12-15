@@ -133,7 +133,7 @@ RPZ term defines a response policy zone.
 ## Constants - ioc2rpz.hrl
 
 
-## How the Full (AXFR) and Incremental(IXFR) caches are updated
+## How the AXFR (full) and IXFR (incremental) caches are updated
 - AXFR cache always contains prebuilt zones without SOA/NS/TSIG records. Prebuilt means all records are splitted by packets and labels were shortened/zipped.
 - If server recieve an AXFR request it retrieve packets from the AXFR cache, add SOA/NS records and TSIG if needed.
 - AXFR zones update should be considered as a clean up procedure, which should periodicaly take place. Just to be sure that there is no desynchronization between the sources and the cache.
