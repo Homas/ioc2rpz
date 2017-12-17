@@ -14,7 +14,6 @@
 
 #ioc2rpz container
 
-
 FROM erlang:alpine
 MAINTAINER Vadim Pavlov<pvm.del@gmail.com>
 WORKDIR /opt/ioc2rpz
