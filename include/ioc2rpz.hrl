@@ -14,7 +14,7 @@
 
 %IOC2RPZ headers
 
--define(ioc2rpz_ver, 2017120401).
+-define(ioc2rpz_ver, "0.9.0-2017121601").
 -define(Port,53).
 -define(TTL,900).
 -define(DNSPktMax,16384). %Max DNS packet size. DNS Label Zip is available up to 16384 bytes 65000/max
