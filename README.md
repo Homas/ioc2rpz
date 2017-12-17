@@ -1,18 +1,18 @@
 #  ioc2rpz makes your threat intelligence actionable
 ioc2rpz is a place where threat intelligence meets DNS.
 ## Overview
-ioc2rpz transforms IOC feeds into response policy zones (RPZ). You can mix feeds to generate a single RPZ or multiple RPZs. Good domains and IPs can be whitelisted. ioc2rpz supports expiration of indicators and accordingly rebuilds zones.  
+ioc2rpz transforms IOC feeds into response policy zones (RPZ). You can mix feeds to generate a single RPZ or multiple RPZs. Trusted domains and IPs can be whitelisted. ioc2rpz supports expiration of indicators and accordingly rebuilds zones.  
 ![Alt ioc2rpz](https://github.com/Homas/ioc2rpz/blob/master/IOC2RPZ.jpg)
 Currently ioc2rpz supports local files and/or http/https/ftp protocols. You can download files or make REST API calls to retrive indicators from remote servers.
 
 ## How to use ioc2rpz
 You can use ioc2rpz with any DNS server which supports Responce Policy Zones e.g. recent versions of bind. A sample bind's configuration file is provided in the cfg folder.
 
-## ioc2rpz vs bind:
+## ioc2rpz vs bind vs other DNS:
 - ioc2rpz was built to handle RPZ distribution only;
 - ioc2rpz supports as many RPZ as you need. bind supports only 32 zones per DNS view;
 - ioc2rpz supports live/non cached zones;
-- indicators availble from different sources e.g. via REST API calls and RPZs are automatically updated;
+- indicators can be pulled from different sources and via different protocols (e.g. via REST API calls) and RPZs are automatically updated;
 - IOC expiration time is used to remove expired indicators in a timely manner;
 - Performance and zone transfer time/size/packets optimizations.
 
@@ -168,7 +168,7 @@ IXFR updates are not cached in the hot cache
 - [ ] (*) http/https/ftp errors handling - source status in the record. If a source is not available - work w/o it
 - [ ] (*) Source based on files check by mod.date and size -> read by chunks
 - [ ] RPZ behaviour: ignore unreachable sources, use old data for unreachable sources, do not update the zone
-- [ ] ACL for MGMT
+- [ ] (*) ACL for MGMT
 - [ ] "intellectual" configuration update
 - [ ] Statistics per zone (# records, last update, # AXFR, # IXFR, last axfr update time, avg axfr update time, last ixfr update time, avg ixfr update time)
 - [ ] Performance testing vs bind:
