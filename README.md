@@ -28,7 +28,7 @@ Prerequisites:
 - ioc2rpz use 53/udp and 53/tcp ports. Both ports should be exposed to the host system.
 - ioc2rpz saves ETS database into files for faster startup you may mount /opt/ioc2rpz/db to a directory on a host system to preserve DB over restarts.
 You can start ioc2rpz with the following command:
-``docker run --mount type=bind,source=/home/ioc2rpz/cfg,target=/opt/ioc2rpz/cfg --mount type=bind,source=/home/ioc2rpz/db,target=/opt/ioc2rpz/db -p53:53 -p53:53/udp ioc2rpz``
+```docker run --mount type=bind,source=/home/ioc2rpz/cfg,target=/opt/ioc2rpz/cfg --mount type=bind,source=/home/ioc2rpz/db,target=/opt/ioc2rpz/db -p53:53 -p53:53/udp ioc2rpz```
 where /home/ioc2rpz/cfg, /home/ioc2rpz/db direcrories on a host system.
 
 ## ioc2rpz management
