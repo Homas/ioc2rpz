@@ -34,6 +34,7 @@ docker run --mount type=bind,source=/home/ioc2rpz/cfg,target=/opt/ioc2rpz/cfg --
 where /home/ioc2rpz/cfg, /home/ioc2rpz/db direcrories on a host system.
 
 ## ioc2rpz management
+ioc2rpz supports management over DNS
 - ioc2rpz status
 - reload config
 - refresh all zones
