@@ -17,8 +17,19 @@ You can use ioc2rpz with any DNS server which supports Responce Policy Zones e.g
 - Performance and zone transfer time/size/packets optimizations.
 
 ## How to start ioc2rpz service
+ioc2rpz by default reads configuration from ./cfg/ioc2rpz.conf, listens on all network interfaces and save DB backup in ./db directory. You can change the default values in the erlang application configuration, which is located in ``ebin/ioc2rpz.app``.  
+If you downloaded sources, before running ioc2rpz you have to compile the code. You can do it with the following command ``erlc -I include/ -o ebin/ src/*.erl``.  
+After that you can start the application using ``sudo erl -pa ebin -eval "application:start(ioc2rpz)" -noshell``.  
 
 ## Docker container
+ioc2rpz is available on the docker hub under it's own name.
+Prerequisites:
+- ioc2rpz doesn't contain a configuration file, you need to mount /opt/ioc2rpz/cfg to a directory on a host system with the configuration file (ioc2rpz.conf).
+- ioc2rpz use 53/udp and 53/tcp ports. Both ports should be exposed to the host system.
+- ioc2rpz saves ETS database into files for faster startup you may mount /opt/ioc2rpz/db to a directory on a host system to preserve DB over restarts.
+You can start ioc2rpz with the following command:
+``docker run --mount type=bind,source=/home/ioc2rpz/cfg,target=/opt/ioc2rpz/cfg --mount type=bind,source=/home/ioc2rpz/db,target=/opt/ioc2rpz/db -p53:53 -p53:53/udp ioc2rpz``
+where /home/ioc2rpz/cfg, /home/ioc2rpz/db direcrories on a host system.
 
 ## ioc2rpz management
 - ioc2rpz status
@@ -174,7 +185,7 @@ IXFR updates are not cached in the hot cache
 - [ ] (*) FDateTime,ToDateTime,FDateTimeZ,ToDateTimeZ + support them for AXFR  
 [:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z"  
 [:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z"
-- [ ] (*) Docker container
+- [x] (*) Docker container
 - [ ] (*) Documentation
 - [ ] Check if RPZs are propertly configured.
 - [ ] Add source RPZ
