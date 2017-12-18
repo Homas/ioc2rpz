@@ -28,12 +28,12 @@ You can use ioc2rpz with any DNS server which supports Response Policy Zones e.g
 - Performance and zone transfer time/size/packets optimizations.
 
 ## How to start ioc2rpz service
-ioc2rpz by default reads configuration from ./cfg/ioc2rpz.conf, listens on all network interfaces and save DB backup in ./db directory. You can change the default values in the erlang application configuration, which is located in ``ebin/ioc2rpz.app``.  
-If you downloaded sources, before running ioc2rpz you have to compile the code. You can do it with the following command: ``erlc -I include/ -o ebin/ src/*.erl``.  
+ioc2rpz by default reads configuration from ./cfg/ioc2rpz.conf, listens on all network interfaces and saves DB backup in ./db directory. You can change the default values in the erlang application configuration, which is located in ``ebin/ioc2rpz.app``.  
+If you downloaded sources, before running ioc2rpz you have to compile the code with the following command: ``erlc -I include/ -o ebin/ src/*.erl``.  
 You can start the application by ``sudo erl -pa ebin -eval "application:start(ioc2rpz)" -noshell`` command.  
 
 ## Docker container
-ioc2rpz is available on the docker hub. Just look for ioc2rpz.
+ioc2rpz is available on the Docker Hub. Just look for ioc2rpz.
 Prerequisites:
 - ioc2rpz doesn't contain a configuration file, you need to mount /opt/ioc2rpz/cfg to a directory on a host system with the configuration file (ioc2rpz.conf);
 - ioc2rpz use 53/udp and 53/tcp ports. The ports should be exposed to a host system;
@@ -45,7 +45,7 @@ docker run --mount type=bind,source=/home/ioc2rpz/cfg,target=/opt/ioc2rpz/cfg --
 where /home/ioc2rpz/cfg, /home/ioc2rpz/db directories on a host system.
 
 ## ioc2rpz management
-ioc2rpz supports management over DNS/TCP. The current version of ioc2rpz does not support ACL or a separate management IP. In any case it is highly recommended to create a separate TSIG key which will be used for management only. You can turn off management over DNS.
+ioc2rpz supports management over DNS/TCP. The current version of ioc2rpz does not support ACL or a separate management IP. In any case it is highly recommended to create a designated TSIG key which will be used for management only. You can turn off management over DNS.  
 Supported actions:
 - ioc2rpz current status. Request ``ioc2rpz-status``, class ``CHAOS``, record ``TXT``. e.g.:  
 ```
@@ -72,7 +72,8 @@ ioc2rpz supports the following configuration parameters:
 **srv** record contains 3 parameters:
 - NS server name used in SOA record;
 - an email address for SOA record (in SOA format);
-- list of management TSIG keys (names only). Please refer [the management section](#ioc2rpz-management) for the details.   
+- list of management TSIG keys (names only). Please refer [the management section](#ioc2rpz-management) for the details.
+
 Sample **srv** record:  
 ```
 {srv,{"ns1.example.com","support.email.example.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"]}}.
