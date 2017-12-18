@@ -233,6 +233,7 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [x] (*) Docker container
 - [x] (*) Docker container to docker hub
 - [x] (*) Documentation
+- [ ] (*) Sample ISC BIND's configuration file
 - [ ] Check if RPZs are properly configured.
 - [ ] Add source RPZ
 - [ ] Add source SQL
