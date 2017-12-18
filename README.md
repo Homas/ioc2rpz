@@ -69,7 +69,7 @@ ioc2rpz supports the following configuration parameters:
 - one or more **source** records (minimum one source is required);
 - one or more **rpz** records (minimum one rpz is required).
 ### **srv** record
-**srv** record contains 3 parameters:
+**srv** record consist of:
 - NS server name used in SOA record;
 - an email address for SOA record (in SOA format);
 - list of management TSIG keys (names only). Please refer [the management section](#ioc2rpz-management) for the details.
@@ -79,8 +79,8 @@ Sample **srv** record:
 {srv,{"ns1.example.com","support.email.example.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"]}}.
 ```
 ### **key** record
-Keys are used for authentication and authorization. It is recommended to use different keys for ioc2rpz management and zones transfers.
-**key** record contain:
+Keys are used for authentication and authorization. It is recommended to use different keys for ioc2rpz management and zones transfers.  
+**key** record consist of:
 - TSIG key name;
 - algorithm. md5, sha256 and sha512 are supported';
 - the key.
@@ -95,8 +95,8 @@ dnssec-keygen -a HMAC-MD5 -b512 -n USER tsig-key
 ```
 Please refer "dnssec-keygen" documentation for details.
 ### **whitelist** record
-Whitelists are used to prevent possible errors and blocking trusted domains and IP addresses. The whitelisted IOCs are removed from response policy zones. ioc2rpz does check only exact match, so it will not split or discard a network if a whitelisted IP address is included into a blocked subnet and vice versa. A white list is a text file of feed of text data. Indicators should be separated by newline characters (/n,/r or both /n/r).  Whitelists must contain valid FQDNs and/or IP addresses. ioc2rpz supports unlimited count of indicators.
-**whitelists** record contains:
+Whitelists are used to prevent possible errors and blocking trusted domains and IP addresses. The whitelisted IOCs are removed from response policy zones. ioc2rpz does check only exact match, so it will not split or discard a network if a whitelisted IP address is included into a blocked subnet and vice versa. A whitelist is a text file of feed of text data. Indicators should be separated by newline characters (/n,/r or both /n/r).  Whitelists must contain valid FQDNs and/or IP addresses. ioc2rpz supports unlimited count of indicators.  
+**whitelists** record consist of:
 - whitelist name;
 - whitelist path. URLs(http/https/ftp) and local files are supported. Prefix "file:" is used for local files;
 - REGEX which is used to extract indicators. A regular expression must be included in double quotes. If you specify an empty REGEX (`""`), a default REGEX will be used (`"^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"`). `none` is used if no REGEX is required (the source already provides data in the required format).
@@ -106,8 +106,8 @@ Sample **whitelist** record:
 {whitelist,{"whitelist_1","file:cfg/whitelist1.txt",none}}.
 ```
 ### **source** record
-A source is a feed of malicious indicators. FQDNs, IPv4 and IPv6-addresses are supported. A source is a text file of feed of text data. Indicators should be separated by newline/carriage return characters (/n,/r or both /r/n). ioc2rpz supports unlimited count of indicators.
-**source** record contains:
+A source is a feed of malicious indicators. FQDNs, IPv4 and IPv6-addresses are supported. A source is a text file of feed of text data. Indicators should be separated by newline/carriage return characters (/n,/r or both /r/n). ioc2rpz supports unlimited count of indicators.  
+**source** record consist of:
 - source name;
 - source path for full source transfer (AXFR). URLs(http/https/ftp) and local files are supported. Prefix "file:" is used for local files;
 - source path for incremental source transfer (IXFR). AXFR,IXFR paths support keywords to shorten URLs and provide zone update timestamps:
@@ -121,8 +121,8 @@ Sample **source** record:
 {source,{"blackhole_exp","http://data.netlab.360.com/feeds/dga/blackhole.txt","[:AXFR:]","^([A-Za-z0-9][A-Za-z0-9\-\._]+)\t.*:00\t([0-9: -]+)$"}}.
 ```
 ### **rpz** record
-RPZ term defines a response policy zone.
-**rpz** record contains:
+RPZ term defines a response policy zone.  
+**rpz** record consist of:
 - rpz name;
 - SOA refresh time in seconds;
 - SOA update retry time in seconds;
