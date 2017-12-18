@@ -79,10 +79,10 @@ Sample **srv** record:
 {srv,{"ns1.example.com","support.email.example.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"]}}.
 ```
 ### **key** record
-Keys are used for authentication and authorization. It is recommended to use different keys for ioc2rpz management and zones transfers.  
+TSIG keys are used for authentication and authorization. It is recommended to use different TSIG keys for ioc2rpz management and zones transfers.  
 **key** record consist of:
 - TSIG key name;
-- algorithm. md5, sha256 and sha512 are supported';
+- algorithm. ``md5``, ``sha256`` and ``sha512`` are supported;
 - the key.
 
 Sample **key** record:  
@@ -95,7 +95,7 @@ dnssec-keygen -a HMAC-MD5 -b512 -n USER tsig-key
 ```
 Please refer "dnssec-keygen" documentation for details.
 ### **whitelist** record
-Whitelists are used to prevent possible errors and blocking trusted domains and IP addresses. The whitelisted IOCs are removed from response policy zones. ioc2rpz does check only exact match, so it will not split or discard a network if a whitelisted IP address is included into a blocked subnet and vice versa. A whitelist is a text file of feed of text data. Indicators should be separated by newline characters (/n,/r or both /n/r).  Whitelists must contain valid FQDNs and/or IP addresses. ioc2rpz supports unlimited count of indicators.  
+Whitelists are used to prevent possible errors and blocking trusted domains and IP addresses. The whitelisted IOCs are removed from response policy zones. ioc2rpz does check only exact match, so it will not split or discard a network if a whitelisted IP address is included into a blocked subnet and vice versa. A whitelist is a text file or a feed of text data. Indicators should be separated by newline characters (/n,/r or both /n/r).  Whitelists must contain valid FQDNs and/or IP addresses. ioc2rpz supports unlimited count of indicators.  
 **whitelists** record consist of:
 - whitelist name;
 - whitelist path. URLs(http/https/ftp) and local files are supported. Prefix "file:" is used for local files;
@@ -106,7 +106,7 @@ Sample **whitelist** record:
 {whitelist,{"whitelist_1","file:cfg/whitelist1.txt",none}}.
 ```
 ### **source** record
-A source is a feed of malicious indicators. FQDNs, IPv4 and IPv6-addresses are supported. A source is a text file of feed of text data. Indicators should be separated by newline/carriage return characters (/n,/r or both /r/n). ioc2rpz supports unlimited count of indicators.  
+A source is a feed of malicious indicators. FQDNs, IPv4 and IPv6-addresses are supported. A source is a text file or a feed of text data. Indicators should be separated by newline/carriage return characters (/n,/r or both /r/n). ioc2rpz supports unlimited count of indicators.  
 **source** record consist of:
 - source name;
 - source path for full source transfer (AXFR). URLs(http/https/ftp) and local files are supported. Prefix "file:" is used for local files;
@@ -114,7 +114,7 @@ A source is a feed of malicious indicators. FQDNs, IPv4 and IPv6-addresses are s
   - **[:AXFR:]** - full AXFR path. Can be used only in IXFR paths;
   - **[:FTimestamp:]** - timestamp when the source was last time updated  (e.g. 1507946281)
   - **[:ToTimestamp:]** - current timestamp;
-- REGEX which is used to extract indicators and their expiration time. The first match is an indicator, the second match is expiration time. Expiration time is an optional parameter. A regular expression must be included in double quotes. If you specify an empty REGEX (`""`), a default REGEX will be used (`"^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"`). `none` is used if no REGEX is required (the source already provides data in the required format).
+- REGEX which is used to extract indicators and their expiration time. The first match is an indicator, the second match is an expiration time. Expiration time is an optional parameter. A regular expression must be included in double quotes. If you specify an empty REGEX (`""`), a default REGEX will be used (`"^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"`). `none` is used if no REGEX is required (the source already provides data in the required format).
 
 Sample **source** record:
 ```
@@ -139,7 +139,7 @@ RPZ term defines a response policy zone.
 - List of DNS servers (IP addresses) which should be notified on an RPZ updates;
 - List of whitelists.  
 
-Sample **source** record:
+Sample **rpz** record:
 ```
 {rpz,{"zone_name",soa_refresh, soa_update_retry,soa_expire,soa_nxdomain_ttl,"cache","wildcards","action",["key1","key2"],"Zone_type",AXFT_Time, IXFR_Time,["source1","source2"],["notify_ip1","notify_ip2"],["whitelist_1","whitelist_2"]}}.
 
@@ -210,7 +210,7 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [ ] (2) Source based on files check by mod.date and size -> read by chunks
 - [ ] RPZ behavior: ignore unreachable sources, use old data for unreachable sources, do not update the zone
 - [ ] (1) ACL for MGMT
-- [ ] "intellectual" configuration update
+- [ ] "intellectual" configuration update/reload
 - [ ] Statistics per zone (# records, last update, # AXFR, # IXFR, last axfr update time, avg axfr update time, last ixfr update time, avg ixfr update time)
 - [ ] Performance testing vs bind:
   - [ ] 1 core/8GB RAM: start time, zone transfer time, zone size, CPU, Memory
@@ -231,7 +231,7 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 [:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z"  
 [:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z"
 - [x] (*) Docker container
-- [ ] (*) Docker container to docker hub
+- [x] (*) Docker container to docker hub
 - [x] (*) Documentation
 - [ ] Check if RPZs are properly configured.
 - [ ] Add source RPZ
@@ -251,7 +251,7 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [ ] (2) UDP & TableMGMT under supervisors
 - [ ] (3) Memory optimization for huge zones (erl -pa ebin +MEas bf ?????)
 - [ ] (3) Share IOC between the feeds in IXFR table
-- [ ] saveZones - doesn't correctly save zones if there a lot of updates. Save strategy based on update size and time.
+- [ ] (1) saveZones - doesn't correctly save zones if there a lot of updates. Save strategy based on update size and time.
 
 ## TODO Bugs
 - [x] (*) Sample zone - fix redirect_domain, redirect_ip
