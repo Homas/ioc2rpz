@@ -83,7 +83,8 @@ Keys are used for authentication and authorization. It is recommended to use dif
 **key** record contain:
 - TSIG key name;
 - algorithm. md5, sha256 and sha512 are supported';
-- the key.  
+- the key.
+
 Sample **key** record:  
 ```
 {key,{"key_name_1","md5","Hbxw9kzCdDp5XgWSWT/5OfRc1+jDIaSvFjpbv/V3IT2ah6xUfLGFcoA7cCLaPh40ni9nvmzlAArj856v3xEnBw=="}}.
