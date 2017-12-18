@@ -100,6 +100,7 @@ Whitelists are used to prevent possible errors and blocking trusted domains and 
 - whitelist name;
 - whitelist path. URLs(http/https/ftp) and local files are supported. Prefix "file:" is used for local files;
 - REGEX which is used to extract indicators. A regular expression must be included in double quotes. If you specify an empty REGEX (`""`), a default REGEX will be used (`"^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"`). `none` is used if no REGEX is required (the source already provides data in the required format).
+
 Sample **whitelist** record:
 ```
 {whitelist,{"whitelist_1","file:cfg/whitelist1.txt",none}}.
@@ -113,7 +114,8 @@ A source is a feed of malicious indicators. FQDNs, IPv4 and IPv6-addresses are s
   - **[:AXFR:]** - full AXFR path. Can be used only in IXFR paths;
   - **[:FTimestamp:]** - timestamp when the source was last time updated  (e.g. 1507946281)
   - **[:ToTimestamp:]** - current timestamp;
-- REGEX which is used to extract indicators and their expiration time. The first match is an indicator, the second match is expiration time. Expiration time is an optional parameter. A regular expression must be included in double quotes. If you specify an empty REGEX (`""`), a default REGEX will be used (`"^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"`). `none` is used if no REGEX is required (the source already provides data in the required format). 
+- REGEX which is used to extract indicators and their expiration time. The first match is an indicator, the second match is expiration time. Expiration time is an optional parameter. A regular expression must be included in double quotes. If you specify an empty REGEX (`""`), a default REGEX will be used (`"^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"`). `none` is used if no REGEX is required (the source already provides data in the required format).
+
 Sample **source** record:
 ```
 {source,{"blackhole_exp","http://data.netlab.360.com/feeds/dga/blackhole.txt","[:AXFR:]","^([A-Za-z0-9][A-Za-z0-9\-\._]+)\t.*:00\t([0-9: -]+)$"}}.
@@ -135,8 +137,9 @@ RPZ term defines a response policy zone.
 - Incremental zone update time  (IXFR Time). Sources should support incremental updates. "0" means no incremental zone updates;
 - List of the sources;
 - List of DNS servers (IP addresses) which should be notified on an RPZ updates;
-- List of whitelists.
+- List of whitelists.  
 
+Sample **source** record:
 ```
 {rpz,{"zone_name",soa_refresh, soa_update_retry,soa_expire,soa_nxdomain_ttl,"cache","wildcards","action",["key1","key2"],"Zone_type",AXFT_Time, IXFR_Time,["source1","source2"],["notify_ip1","notify_ip2"],["whitelist_1","whitelist_2"]}}.
 
