@@ -3,7 +3,7 @@ ioc2rpz is a place where threat intelligence meets DNS.
 ## Overview
 ioc2rpz transforms IOC feeds into response policy zones (RPZ). You can mix feeds to generate a single RPZ or multiple RPZs. Trusted domains and IPs can be whitelisted. ioc2rpz supports expiration of indicators and accordingly rebuilds zones.  
 ![Alt ioc2rpz](https://github.com/Homas/ioc2rpz/blob/master/IOC2RPZ.jpg)
-Currently ioc2rpz supports local files and/or http/https/ftp protocols. You can download files or make REST API calls to retrive indicators from remote servers.
+The current release supports: local files and files/requests via http/https/ftp protocols. You can use any file format if you can write a REGEX to extract indicators and indicators are separated by newline or/and return carriage chars (/n, /r, /r/n).
 
 ## How to use ioc2rpz
 You can use ioc2rpz with any DNS server which supports Responce Policy Zones e.g. recent versions of bind. A sample bind's configuration file is provided in the cfg folder.
@@ -34,12 +34,20 @@ docker run --mount type=bind,source=/home/ioc2rpz/cfg,target=/opt/ioc2rpz/cfg --
 where /home/ioc2rpz/cfg, /home/ioc2rpz/db direcrories on a host system.
 
 ## ioc2rpz management
-ioc2rpz supports management over DNS
-- ioc2rpz status
-- reload config
-- refresh all zones
-- refresh a zone
-- terminate ioc2rpz
+ioc2rpz supports management over DNS/TCP. The current version of ioc2rpz does not support ACL, or a separate management IP. In any case it is highly recommended to create a separate TSIG key which will be used for management only.
+Supported actions:
+- ioc2rpz current status. Request ``ioc2rpz-status``, class ``CHAOS``, record ``TXT``. e.g.:  
+```
+dig +tcp -y dnsmkey_1:Hbxw9kzCdDp5XgWSWT/5OfRc1+jDIaSvFjpbv/V3IT2ah6xUfLGFcoA7cCLaPh40ni9nvmzlAArj856v3xEnBw== @127.0.0.1 ioc2rpz-status TXT -c CHAOS
+```
+- Reload configuration file. RR Name ``ioc2rpz-reload-cfg``, RR Class ``CHAOS``, RR Type ``TXT``
+- Full refresh of all zones. RR Name ``ioc2rpz-update-all-rpz``, RR Class ``CHAOS``, RR Type ``TXT``
+- Full refresh a zone. RR Name ``zone_name``, RR Class ``CHAOS``, RR Type ``TXT``. E.g. full refresh of ``dga.ioc2rpz`` can be envoked by: 
+```
+dig +tcp -y dnsmkey_1:Hbxw9kzCdDp5XgWSWT/5OfRc1+jDIaSvFjpbv/V3IT2ah6xUfLGFcoA7cCLaPh40ni9nvmzlAArj856v3xEnBw== @127.0.0.1 dga.ioc2rpz TXT -c CHAOS
+```
+- Terminate ioc2rpz. RR Name ``ioc2rpz-terminate``, RR Class ``CHAOS``, RR Type ``TXT``
+- Request a sample zone. RR Name ``sample-zone.ioc2rpz``, RR Class ``IN``, RR Type ``AXFR``
 
 ## Configuration file
 The configuration is an Erlang file. Every configuration option is an Erlang term so the configuration must comply with Erlang syntax. ioc2rpz does not check the configuration file for possible errors, typos etc.
@@ -180,11 +188,12 @@ IXFR updates are not cached in the hot cache
     - [ ] 100k rules
     - [ ] 1M rules
     - [ ] 10M rules
-- [ ] By a signal
+- [ ] MGMT by a signal
   - [ ] Reload CFG
   - [ ] Refresh a zone
   - [ ] Refresh all zones
   - [ ] Terminate processes/Exit
+- [ ] MGMT via DNS move to a separate port/IP
 - [ ] (*) FDateTime,ToDateTime,FDateTimeZ,ToDateTimeZ + support them for AXFR  
 [:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z"  
 [:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z"
