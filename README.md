@@ -255,6 +255,7 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [DNS-BH – Malware Domain Blocklist by RiskAnalytics](http://www.malwaredomains.com/)
 - [Malware DGA](http://data.netlab.360.com)
 - [Tor Exit Nodes](https://torstatus.blutmagie.de/ip_list_exit.php/Tor_ip_list_EXIT.csv)
+- [awesome-threat-intelligence list on github](https://github.com/hslatman/awesome-threat-intelligence)
 
 ## References
 - [Domain Name System (DNS) IANA Considerations](https://tools.ietf.org/html/rfc6895)
