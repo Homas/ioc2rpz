@@ -18,12 +18,6 @@
 -define(Port,53).
 -define(TTL,900).
 -define(DNSPktMax,16384). %Max DNS packet size. DNS Label Zip is available up to 16384 bytes 65000/max
-%hosts.ioc2rpz - 100000 - 16384
-%Query time: 10393 msec
-%199791 records (messages 275, bytes 4540252)
-%hosts.ioc2rpz - 100000 - 65000 - 18% more data, 4 times less packets
-%Query time: 12492 msec
-%199791 records (messages 85, bytes 5494450)
 
 -define(Compression,6). % 0 - no compression, 9 - highest, 6 - default do it depending on the list/bin size.
 -define(SaveETS,true). % Save DB into files if DB is ETS.
@@ -38,6 +32,11 @@
 
 -define(MaxZipPSize,16#3FFF:16). %Max packet size to zip DNS labels
 -define(DBStorage,ets). %Defines DBStorage to use. CFG and HotCache are always ETC (may be will be switched to MAP, need profiling)
+
+
+%%%%%%
+%%%%%%
+%%%%%%
 
 -define(ZNameZip,16#c00c:16). %Zone name/original fqdn from a request is always at byte 10 in the response
 
