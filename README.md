@@ -2,8 +2,8 @@
 According with [Cisco's 2016 annual security report](https://github.com/Homas/ioc2rpz/blob/master/Cisco_2016_ASR.pdf) 91.3% of malware use DNS in the following ways:
 - to gain command and control;
 - to exfiltrate data;
-- to redirect traffic.
-![Alt 91% of malware use DNS](https://github.com/Homas/ioc2rpz/blob/master/DNS_Malware.png){:width="400px"}  
+- to redirect traffic.  
+![Alt 91% of malware use DNS](https://github.com/Homas/ioc2rpz/blob/master/DNS_Malware.png)  
 From one side with introduction of Response Policy Zones in the BIND nameserver 9.8 it is became a simple task to monitor and contain malware on DNS layer. You can push millions of indicators which can be blocked/changed by a DNS server. From other side there is no automated and efficient (keeping in mind millions of indicators) way to maintain response policy zones on primary DNS servers. ioc2rpz is a specially built DNS server which natively support different file formats, protocols and transforms threat intelligense into actionable RPZ feeds. The feeds can be used on any DNS server which support RPZ.
 **ioc2rpz is a place where threat intelligence meets DNS.**
 ## Overview
