@@ -6,7 +6,7 @@ According with [Cisco's 2016 annual security report](https://github.com/Homas/io
 <p align="center"><img src="https://github.com/Homas/ioc2rpz/blob/master/DNS_Malware.png"></p>
 With introduction of Response Policy Zones in the BIND nameserver 9.8 it is became a simple task to monitor and contain malware on DNS layer. A DNS server can handle millions of indicators but there is no automated and efficient way to maintain response policy zones on primary DNS servers.
 
-ioc2rpz is a specially built DNS server which natively support different file formats, protocols and transforms threat intelligense into actionable RPZ feeds. The feeds can be used on any DNS server which support RPZ.  
+ioc2rpz is a specially built DNS server which natively support different file formats, protocols and transforms threat intelligence into actionable RPZ feeds. The feeds can be used on any DNS server which support RPZ.  
 
 <b>ioc2rpz is a place where threat intelligence meets DNS.</b>
 
@@ -16,32 +16,33 @@ ioc2rpz transforms IOC feeds into response policy zones (RPZ). You can mix feeds
 The current release supports: local files and files/requests via http/https/ftp protocols. You can use any file format if you can write a REGEX to extract indicators and indicators are separated by newline or/and return carriage chars (/n, /r, /r/n).
 
 ## How to use ioc2rpz
-You can use ioc2rpz with any DNS server which supports Responce Policy Zones e.g. recent versions of ISC BIND. A sample bind's configuration file is provided in the cfg folder.
+You can use ioc2rpz with any DNS server which supports Response Policy Zones e.g. recent versions of ISC BIND. A sample bind's configuration file is provided in the cfg folder.
 
 ## ioc2rpz vs ISC BIND vs other DNS:
 - ioc2rpz was built to handle RPZ distribution only;
-- ioc2rpz supports as many RPZ as you need. ISC BIND supports only 32 zones per DNS view;
-- ioc2rpz supports live/non cached zones;
-- indicators can be pulled from different sources and via different protocols (e.g. via REST API calls) and RPZs are automatically updated;
+- ioc2rpz supports as many RPZs as you need. ISC BIND supports only 32 zones per DNS view;
+- ioc2rpz supports live/non cached zones. It creates zones by an incoming request;
+- indicators can be pulled from different sources and via different protocols (e.g. via REST API calls);
+- RPZs are automatically updated;
 - IOC expiration time is used to remove expired indicators in a timely manner;
 - Performance and zone transfer time/size/packets optimizations.
 
 ## How to start ioc2rpz service
 ioc2rpz by default reads configuration from ./cfg/ioc2rpz.conf, listens on all network interfaces and save DB backup in ./db directory. You can change the default values in the erlang application configuration, which is located in ``ebin/ioc2rpz.app``.  
-If you downloaded sources, before running ioc2rpz you have to compile the code. You can do it with the following command ``erlc -I include/ -o ebin/ src/*.erl``.  
-After that you can start the application using ``sudo erl -pa ebin -eval "application:start(ioc2rpz)" -noshell``.  
+If you downloaded sources, before running ioc2rpz you have to compile the code. You can do it with the following command: ``erlc -I include/ -o ebin/ src/*.erl``.  
+You can start the application by ``sudo erl -pa ebin -eval "application:start(ioc2rpz)" -noshell`` command.  
 
 ## Docker container
-ioc2rpz is available on the docker hub under it's own name.
+ioc2rpz is available on the docker hub. Just look for ioc2rpz.
 Prerequisites:
-- ioc2rpz doesn't contain a configuration file, you need to mount /opt/ioc2rpz/cfg to a directory on a host system with the configuration file (ioc2rpz.conf).
-- ioc2rpz use 53/udp and 53/tcp ports. Both ports should be exposed to the host system.
-- ioc2rpz saves ETS database into files for faster startup you may mount /opt/ioc2rpz/db to a directory on a host system to preserve DB over restarts.
+- ioc2rpz doesn't contain a configuration file, you need to mount /opt/ioc2rpz/cfg to a directory on a host system with the configuration file (ioc2rpz.conf);
+- ioc2rpz use 53/udp and 53/tcp ports. Both ports should be exposed to the host system;
+- ioc2rpz saves ETS database into files for faster start up you may mount /opt/ioc2rpz/db to a directory on a host system to preserve DB over restarts;
 You can start ioc2rpz with the following command:
 ```
 docker run --mount type=bind,source=/home/ioc2rpz/cfg,target=/opt/ioc2rpz/cfg --mount type=bind,source=/home/ioc2rpz/db,target=/opt/ioc2rpz/db -p53:53 -p53:53/udp ioc2rpz
 ```
-where /home/ioc2rpz/cfg, /home/ioc2rpz/db direcrories on a host system.
+where /home/ioc2rpz/cfg, /home/ioc2rpz/db directories on a host system.
 
 ## ioc2rpz management
 ioc2rpz supports management over DNS/TCP. The current version of ioc2rpz does not support ACL or a separate management IP. In any case it is highly recommended to create a separate TSIG key which will be used for management only.
@@ -52,7 +53,7 @@ dig +tcp -y dnsmkey_1:Hbxw9kzCdDp5XgWSWT/5OfRc1+jDIaSvFjpbv/V3IT2ah6xUfLGFcoA7cC
 ```
 - Reload configuration file. RR Name ``ioc2rpz-reload-cfg``, RR Class ``CHAOS``, RR Type ``TXT``
 - Full refresh of all zones. RR Name ``ioc2rpz-update-all-rpz``, RR Class ``CHAOS``, RR Type ``TXT``
-- Full refresh a zone. RR Name ``zone_name``, RR Class ``CHAOS``, RR Type ``TXT``. E.g. full refresh of ``dga.ioc2rpz`` can be envoked by: 
+- Full refresh a zone. RR Name ``zone_name``, RR Class ``CHAOS``, RR Type ``TXT``. E.g. full refresh of ``dga.ioc2rpz`` can be invoked by: 
 ```
 dig +tcp -y dnsmkey_1:Hbxw9kzCdDp5XgWSWT/5OfRc1+jDIaSvFjpbv/V3IT2ah6xUfLGFcoA7cCLaPh40ni9nvmzlAArj856v3xEnBw== @127.0.0.1 dga.ioc2rpz TXT -c CHAOS
 ```
@@ -77,16 +78,16 @@ Sample **srv** record:
 {srv,{"ns1.example.com","support.email.example.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"]}}.
 ```
 ### **key** record
-Keys are used for authentication and authorization. It is recomended to use different keys for ioc2rpz management and zones transfers.
+Keys are used for authentication and authorization. It is recommended to use different keys for ioc2rpz management and zones transfers.
 **key** record contain:
 - TSIG key name;
-- algorythm. md5, sha256 and sha512 are supported';
+- algorithm. md5, sha256 and sha512 are supported';
 - the key.
 Sample **key** record:  
 ```
 {key,{"key_name_1","md5","Hbxw9kzCdDp5XgWSWT/5OfRc1+jDIaSvFjpbv/V3IT2ah6xUfLGFcoA7cCLaPh40ni9nvmzlAArj856v3xEnBw=="}}.
 ```
-dnssec-keygen utility can be used to generate TSIG keys. E.g. the command below will generate a TSIG key 512 bits lenght with "tsig-key" name using MD5 algorithm, and save the key in the files with extensions "key" and "private". A TSIG the key will be the same in the both files.
+dnssec-keygen utility can be used to generate TSIG keys. E.g. the command below will generate a TSIG key 512 bits length with "tsig-key" name using MD5 algorithm, and save the key in the files with extensions "key" and "private". A TSIG the key will be the same in the both files.
 ```
 dnssec-keygen -a HMAC-MD5 -b512 -n USER tsig-key
 ```
@@ -95,7 +96,7 @@ Please refer "dnssec-keygen" documentation for details.
 Whitelists are used to prevent possible errors and blocking trusted domains and IP addresses. The whitelisted IOCs are removed from response policy zones. ioc2rpz does check only exact match, so it will not split or discard a network if a whitelisted IP address is included into a blocked subnet and vice versa. A white list is a text file of feed of text data. Indicators should be separated by newline characters (/n,/r or both /n/r).  Whitelists must contain valid FQDNs and/or IP addresses. ioc2rpz supports unlimited count of indicators.
 **whitelists** record contains:
 - whitelist name;
-- whitelist path. URLs(http/https/fts) and local files are supported. Prefix "file:" is used for local files;
+- whitelist path. URLs(http/https/ftp) and local files are supported. Prefix "file:" is used for local files;
 - REGEX which is used to extract indicators. A regular expression must be included in double quotes. If you specify an empty REGEX (`""`), a default REGEX will be used (`"^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"`). `none` is used if no REGEX is required (the source already provides data in the required format).
 Sample **whitelist** record:
 ```
@@ -105,8 +106,8 @@ Sample **whitelist** record:
 A source is a feed of malicious indicators. FQDNs, IPv4 and IPv6-addresses are supported. A source is a text file of feed of text data. Indicators should be separated by newline/carriage return characters (/n,/r or both /r/n). ioc2rpz supports unlimited count of indicators.
 **source** record contains:
 - source name;
-- source path for full source transfer (AXFR). URLs(http/https/fts) and local files are supported. Prefix "file:" is used for local files;
-- source path for incremental source transfer (IXFR). AXFR,IXFR paths support keywords to shortern URLs and provide zone update timestamps:
+- source path for full source transfer (AXFR). URLs(http/https/ftp) and local files are supported. Prefix "file:" is used for local files;
+- source path for incremental source transfer (IXFR). AXFR,IXFR paths support keywords to shorten URLs and provide zone update timestamps:
   - **[:AXFR:]** - full AXFR path. Can be used only in IXFR paths;
   - **[:FTimestamp:]** - timestamp when the source was last time updated  (e.g. 1507946281)
   - **[:ToTimestamp:]** - current timestamp;
@@ -127,7 +128,7 @@ RPZ term defines a response policy zone.
 - Wildcards. Possible values: ``true`` or ``false``. Defines if wildcard rules should be generated;
 - Action. Supported actions: ``nxdomain``, ``nodata``, ``passthru``, ``drop``, ``tcp-only`` and list of local records ``[{"redirect_domain","example.com"}, {"redirect_ip","127.0.0.1"}, {"local_aaaa","fe80::1"}, {"local_a","127.0.0.1"}, {"local_cname","www.example.com"}, {"local_txt","Text Record"}]``. ``redirect_domain`` is an alias for ``local_cname``. ``redirect_ip`` is an alias for ``local_a``, ``local_aaaa``;
 - List of TSIG keys;
-- Type of IOCs used in the RPZ: ``mixed``, ``fqdn``, ``ip``. It is used for optimisation. 
+- Type of IOCs used in the RPZ: ``mixed``, ``fqdn``, ``ip``. It is used for optimization. 
 - Full zone update time in seconds (AXFR Time). Full Zone update and rebuild if MD5 for IOCs is different;
 - Incremental zone update time  (IXFR Time). Sources should support incremental updates. "0" means no incremental zone updates;
 - List of the sources;
@@ -167,14 +168,14 @@ RPZ term defines a response policy zone.
 
 ## How the AXFR (full) and IXFR (incremental) caches are updated
 - AXFR cache always contains prebuilt zones without SOA/NS/TSIG records. Prebuilt means all records are splitted by packets and labels were shortened/zipped.
-- If server recieve an AXFR request it retrieve packets from the AXFR cache, add SOA/NS records and TSIG if needed.
-- AXFR zones update should be considered as a clean up procedure, which should periodicaly take place. Just to be sure that there is no desynchronization between the sources and the cache.
-- For large zones, AXFR updates should be scheduled infrequently to minimize impact on server's performance and ammount of transferred data to all clients.
+- If server receive an AXFR request it retrieve packets from the AXFR cache, add SOA/NS records and TSIG if needed.
+- AXFR zones update should be considered as a clean up procedure, which should periodically take place. Just to be sure that there is no desynchronization between the sources and the cache.
+- For large zones, AXFR updates should be scheduled infrequently to minimize impact on server's performance and amount of transferred data to all clients.
 - All changes if it is possible should be done via incremental zone updates. In that case the AXFR cache will be rebuilt only in case if a zone was updated.
 - [TODO] Due to an optimization, only last packet will be rebuilt for new IOCs and relevant and accordant packets for the expired IOCs.
 - IXFR cache contains only IOCs and expiration dates. [TODO] and packets ID's (to make it possible rebuild the zone fast).
 - RPZ record contains current zone Serial and Serial_IXFR. Serial_IXFR serve as a minimum incremental zone serial which is available for an incremental zone transfer.
-- IXFR cache is flushed after full zone update (AXFR). Serial_IXFR = Serial. Clients will recieve full zone update in any case, this is why it is important to have AXFR zone transfer infrequently.
+- IXFR cache is flushed after full zone update (AXFR). Serial_IXFR = Serial. Clients will receive full zone update in any case, this is why it is important to have AXFR zone transfer infrequently.
 - When IXFR is updated, AXFR cache must be rebuilt.
 - If a zone does not support IXFR updates -> it doesn't saved in the IXFR table.
 - Live zones are not cached in the AXFR, IXFR caches but the sources (IOCs) can be cached in the hot cache.
@@ -185,16 +186,16 @@ IXFR updates are not cached in the hot cache
 ## TODO features
 - [ ] (*) http/https/ftp errors handling - source status in the record. If a source is not available - work w/o it
 - [ ] (*) Source based on files check by mod.date and size -> read by chunks
-- [ ] RPZ behaviour: ignore unreachable sources, use old data for unreachable sources, do not update the zone
+- [ ] RPZ behavior: ignore unreachable sources, use old data for unreachable sources, do not update the zone
 - [ ] (*) ACL for MGMT
 - [ ] "intellectual" configuration update
 - [ ] Statistics per zone (# records, last update, # AXFR, # IXFR, last axfr update time, avg axfr update time, last ixfr update time, avg ixfr update time)
 - [ ] Performance testing vs bind:
-  - [ ] 1 core/8Gb RAM: start time, zone transfer time, zone size, CPU, Memory
+  - [ ] 1 core/8GB RAM: start time, zone transfer time, zone size, CPU, Memory
     - [ ] 100k rules
     - [ ] 1M rules
     - [ ] 10M rules
-  - [ ] 4 cores/32 Gb RAM: start time, zone transfer time, zone size
+  - [ ] 4 cores/32 GB RAM: start time, zone transfer time, zone size
     - [ ] 100k rules
     - [ ] 1M rules
     - [ ] 10M rules
@@ -209,7 +210,7 @@ IXFR updates are not cached in the hot cache
 [:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z"
 - [x] (*) Docker container
 - [ ] (*) Documentation
-- [ ] Check if RPZs are propertly configured.
+- [ ] Check if RPZs are properly configured.
 - [ ] Add source RPZ
 - [ ] Add source SQL
 - [ ] Mnesia for storage (and auto creation)
@@ -231,7 +232,7 @@ IXFR updates are not cached in the hot cache
 
 ## TODO Bugs
 - [ ] (*) Sample zone - fix redirect_domain, redirect_ip
-
+- [ ] Possibility to turn off saving ETS on disk
 
 ## Free threat intel
 - [DNS-BH – Malware Domain Blocklist by RiskAnalytics](http://www.malwaredomains.com/)
