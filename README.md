@@ -174,13 +174,13 @@ Standard parameters:
 - ``TTL`` (numerical value, in secodns) - default TTL for DNS records/RPZ rules.
 
 Optimization parameters:
-- ``DNSPktMax`` (numerical value, 100 - 65535) - maximum packet size. Recomended values:
+- ``DNSPktMax`` (numerical value, 100 - 65535) - maximum packet size. Recommended values:
   - 16384 - minimal zone transfer size;
   - 65535 - minimal count of DNS packets;
 - ``Compression`` (numerical value, 0 - 9) - Compression level (0 - no compression, 9 - highest compression). AXFR cache and tables on a disk store compressed data;
 - ``ZoneRefTime`` (numerical value, in milliseconds) - defines zone refresh check interval;
 - ``TCPTimeout`` (numerical value, in milliseconds) - defines TCP session timeout;
-- ``HotCacheTime`` (numerical value, in seconds) - Hot cache time for IOCs, Rules, Packets. Live zones are stored in a hotcache;
+- ``HotCacheTime`` (numerical value, in seconds) - Hot cache time for IOCs, Rules, Packets. Live zones are stored in a hot cache;
 - ``HotCacheTimeIXFR`` (numerical value, in seconds) - Hot cache time for IXFR IOCs in a hot cache. By default IXFR indicators are cached for a minute (even if it set to 0) because current serial is always rounded to a previous minute.
 
 ## How the AXFR (full) and IXFR (incremental) caches are updated
