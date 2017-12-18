@@ -165,6 +165,7 @@ RPZ term defines a response policy zone.
 
 ## Constants - include/ioc2rpz.hrl
 include/ioc2rpz.hrl contains pre-compiled parameters.
+
 Standard parameters:
 - ``MGMToDNS`` (true/false) - enabled management over DNS/TCP;
 - ``DBStorage`` (ets) - defines DB storage for AXFR and IXFR caches. Current version supports ETS only;
