@@ -36,8 +36,8 @@ You can start the application by ``sudo erl -pa ebin -eval "application:start(io
 ioc2rpz is available on the docker hub. Just look for ioc2rpz.
 Prerequisites:
 - ioc2rpz doesn't contain a configuration file, you need to mount /opt/ioc2rpz/cfg to a directory on a host system with the configuration file (ioc2rpz.conf);
-- ioc2rpz use 53/udp and 53/tcp ports. Both ports should be exposed to the host system;
-- ioc2rpz saves ETS database into files for faster start up you may mount /opt/ioc2rpz/db to a directory on a host system to preserve DB over restarts;
+- ioc2rpz use 53/udp and 53/tcp ports. The ports should be exposed to a host system;
+- ioc2rpz saves ETS database into files for faster boot. You may mount /opt/ioc2rpz/db to a directory on a host system to preserve DB over restarts;
 You can start ioc2rpz with the following command:
 ```
 docker run --mount type=bind,source=/home/ioc2rpz/cfg,target=/opt/ioc2rpz/cfg --mount type=bind,source=/home/ioc2rpz/db,target=/opt/ioc2rpz/db -p53:53 -p53:53/udp ioc2rpz
@@ -45,7 +45,7 @@ docker run --mount type=bind,source=/home/ioc2rpz/cfg,target=/opt/ioc2rpz/cfg --
 where /home/ioc2rpz/cfg, /home/ioc2rpz/db directories on a host system.
 
 ## ioc2rpz management
-ioc2rpz supports management over DNS/TCP. The current version of ioc2rpz does not support ACL or a separate management IP. In any case it is highly recommended to create a separate TSIG key which will be used for management only.
+ioc2rpz supports management over DNS/TCP. The current version of ioc2rpz does not support ACL or a separate management IP. In any case it is highly recommended to create a separate TSIG key which will be used for management only. You can turn off management over DNS.
 Supported actions:
 - ioc2rpz current status. Request ``ioc2rpz-status``, class ``CHAOS``, record ``TXT``. e.g.:  
 ```
@@ -201,10 +201,10 @@ Optimization parameters:
 All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-compiled parameters ``HotCacheTime``, ``HotCacheTimeIXFR`` define storage time.
 
 ## TODO features
-- [ ] (*) http/https/ftp errors handling - source status in the record. If a source is not available - work w/o it
-- [ ] (*) Source based on files check by mod.date and size -> read by chunks
+- [ ] (2) http/https/ftp errors handling - source status in the record. If a source is not available - work w/o it
+- [ ] (2) Source based on files check by mod.date and size -> read by chunks
 - [ ] RPZ behavior: ignore unreachable sources, use old data for unreachable sources, do not update the zone
-- [ ] (*) ACL for MGMT
+- [ ] (1) ACL for MGMT
 - [ ] "intellectual" configuration update
 - [ ] Statistics per zone (# records, last update, # AXFR, # IXFR, last axfr update time, avg axfr update time, last ixfr update time, avg ixfr update time)
 - [ ] Performance testing vs bind:
@@ -221,12 +221,13 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
   - [ ] Refresh a zone
   - [ ] Refresh all zones
   - [ ] Terminate processes/Exit
-- [ ] MGMT via DNS move to a separate port/IP
-- [ ] (*) FDateTime,ToDateTime,FDateTimeZ,ToDateTimeZ + support them for AXFR  
+- [ ] (2) MGMT via DNS move to a separate port/IP
+- [ ] (2) FDateTime,ToDateTime,FDateTimeZ,ToDateTimeZ + support them for AXFR  
 [:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z"  
 [:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z"
 - [x] (*) Docker container
-- [ ] (*) Documentation
+- [ ] (*) Docker container to docker hub
+- [x] (*) Documentation
 - [ ] Check if RPZs are properly configured.
 - [ ] Add source RPZ
 - [ ] Add source SQL
@@ -237,25 +238,25 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [ ] An action per source: {"",action,locdata} //default action ,{"source_name",action,locdata}
 
 ## Other/optimization TODO
-- [ ] (*) Do not cache expired IOCs if ExpDateTime<Serial_IXFR / update ExpDateTime if exists
-- [ ] (*) Check zones IXFR update from multiple sources
+- [ ] (1) Do not cache expired IOCs if ExpDateTime<Serial_IXFR / update ExpDateTime if exists
+- [ ] (1) Check zones IXFR update from multiple sources
 - [ ] (1) Clean up the code & add comments
-- [ ] (1) EDNS0 Support: DNS Cookie, edns-tcp-keepalive, NSID
-- [ ] (2) IOC to lowercase - check memory usage impact (in ioc2rpz_conn)
-- [ ] (3) UDP under supervisor
+- [ ] (2) EDNS0 Support: DNS Cookie, edns-tcp-keepalive, NSID
+- [ ] (1) IOC to lowercase - check memory usage impact (in ioc2rpz_conn)
+- [ ] (2) UDP & TableMGMT under supervisors
 - [ ] (3) Memory optimization for huge zones (erl -pa ebin +MEas bf ?????)
 - [ ] (3) Share IOC between the feeds in IXFR table
 - [ ] saveZones - doesn't correctly save zones if there a lot of updates. Save strategy based on update size and time.
 
 ## TODO Bugs
-- [ ] (*) Sample zone - fix redirect_domain, redirect_ip
-- [ ] Possibility to turn off saving ETS on disk
+- [x] (*) Sample zone - fix redirect_domain, redirect_ip
+- [ ] (*) Possibility to turn off saving ETS on disk
 
-## Free threat intel
+## Free threat intelligence
 - [DNS-BH – Malware Domain Blocklist by RiskAnalytics](http://www.malwaredomains.com/)
 - [Malware DGA](http://data.netlab.360.com)
 - [Tor Exit Nodes](https://torstatus.blutmagie.de/ip_list_exit.php/Tor_ip_list_EXIT.csv)
-- [awesome-threat-intelligence list on github](https://github.com/hslatman/awesome-threat-intelligence)
+- [awesome-threat-intelligence list on GitHub](https://github.com/hslatman/awesome-threat-intelligence)
 
 ## References
 - [Domain Name System (DNS) IANA Considerations](https://tools.ietf.org/html/rfc6895)
