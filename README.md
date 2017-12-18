@@ -1,5 +1,5 @@
 #  ioc2rpz makes your threat intelligence actionable
-According with [Cisco's 2016 annual security report](https://github.com/Homas/ioc2rpz/blob/master/Cisco_2016_ASR.pdf) 91.3% of malware use DNS in the following ways:
+According with [Cisco's 2016 annual security report](https://github.com/Homas/ioc2rpz/blob/master/Cisco_2016_ASR.pdf) **91.3%** of malware use DNS in the following ways:
 - to gain command and control;
 - to exfiltrate data;
 - to redirect traffic.
