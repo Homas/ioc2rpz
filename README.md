@@ -1,16 +1,22 @@
 #  ioc2rpz makes your threat intelligence actionable
-ioc2rpz is a place where threat intelligence meets DNS.
+According with [Cisco's 2016 annual security report](https://github.com/Homas/ioc2rpz/blob/master/Cisco_2016_ASR.pdf) 91.3% of malware use DNS in the following ways:
+- to gain command and control;
+- to exfiltrate data;
+- to redirect traffic.
+![Alt 91% of malware use DNS](https://github.com/Homas/ioc2rpz/blob/master/DNS_Malware.png)
+From one side with introduction of Response Policy Zones in the BIND nameserver 9.8 it is became a simple task to monitor and contain malware on DNS layer. You can push millions of indicators which can be blocked/changed by a DNS server. From other side there is no automated and efficient (keeping in mind millions of indicators) way to maintain response policy zones on primary DNS servers. ioc2rpz is a specially built DNS server which natively support different file formats, protocols and transforms threat intelligense into actionable RPZ feeds. The feeds can be used on any DNS server which support RPZ.
+**ioc2rpz is a place where threat intelligence meets DNS.**
 ## Overview
 ioc2rpz transforms IOC feeds into response policy zones (RPZ). You can mix feeds to generate a single RPZ or multiple RPZs. Trusted domains and IPs can be whitelisted. ioc2rpz supports expiration of indicators and accordingly rebuilds zones.  
 ![Alt ioc2rpz](https://github.com/Homas/ioc2rpz/blob/master/IOC2RPZ.jpg)
 The current release supports: local files and files/requests via http/https/ftp protocols. You can use any file format if you can write a REGEX to extract indicators and indicators are separated by newline or/and return carriage chars (/n, /r, /r/n).
 
 ## How to use ioc2rpz
-You can use ioc2rpz with any DNS server which supports Responce Policy Zones e.g. recent versions of bind. A sample bind's configuration file is provided in the cfg folder.
+You can use ioc2rpz with any DNS server which supports Responce Policy Zones e.g. recent versions of ISC BIND. A sample bind's configuration file is provided in the cfg folder.
 
-## ioc2rpz vs bind vs other DNS:
+## ioc2rpz vs ISC BIND vs other DNS:
 - ioc2rpz was built to handle RPZ distribution only;
-- ioc2rpz supports as many RPZ as you need. bind supports only 32 zones per DNS view;
+- ioc2rpz supports as many RPZ as you need. ISC BIND supports only 32 zones per DNS view;
 - ioc2rpz supports live/non cached zones;
 - indicators can be pulled from different sources and via different protocols (e.g. via REST API calls) and RPZs are automatically updated;
 - IOC expiration time is used to remove expired indicators in a timely manner;
@@ -34,7 +40,7 @@ docker run --mount type=bind,source=/home/ioc2rpz/cfg,target=/opt/ioc2rpz/cfg --
 where /home/ioc2rpz/cfg, /home/ioc2rpz/db direcrories on a host system.
 
 ## ioc2rpz management
-ioc2rpz supports management over DNS/TCP. The current version of ioc2rpz does not support ACL, or a separate management IP. In any case it is highly recommended to create a separate TSIG key which will be used for management only.
+ioc2rpz supports management over DNS/TCP. The current version of ioc2rpz does not support ACL or a separate management IP. In any case it is highly recommended to create a separate TSIG key which will be used for management only.
 Supported actions:
 - ioc2rpz current status. Request ``ioc2rpz-status``, class ``CHAOS``, record ``TXT``. e.g.:  
 ```
@@ -46,7 +52,7 @@ dig +tcp -y dnsmkey_1:Hbxw9kzCdDp5XgWSWT/5OfRc1+jDIaSvFjpbv/V3IT2ah6xUfLGFcoA7cC
 ```
 dig +tcp -y dnsmkey_1:Hbxw9kzCdDp5XgWSWT/5OfRc1+jDIaSvFjpbv/V3IT2ah6xUfLGFcoA7cCLaPh40ni9nvmzlAArj856v3xEnBw== @127.0.0.1 dga.ioc2rpz TXT -c CHAOS
 ```
-- Terminate ioc2rpz. RR Name ``ioc2rpz-terminate``, RR Class ``CHAOS``, RR Type ``TXT``
+- Stop ioc2rpz. RR Name ``ioc2rpz-terminate``, RR Class ``CHAOS``, RR Type ``TXT``
 - Request a sample zone. RR Name ``sample-zone.ioc2rpz``, RR Class ``IN``, RR Type ``AXFR``
 
 ## Configuration file
