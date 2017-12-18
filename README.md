@@ -4,8 +4,9 @@ According with [Cisco's 2016 annual security report](https://github.com/Homas/io
 - to exfiltrate data;
 - to redirect traffic.
 <p align="center"><img src="https://github.com/Homas/ioc2rpz/blob/master/DNS_Malware.png"></p>
-From one side with introduction of Response Policy Zones in the BIND nameserver 9.8 it is became a simple task to monitor and contain malware on DNS layer. You can push millions of indicators which can be blocked/changed by a DNS server. From other side there is no automated and efficient (keeping in mind millions of indicators) way to maintain response policy zones on primary DNS servers. ioc2rpz is a specially built DNS server which natively support different file formats, protocols and transforms threat intelligense into actionable RPZ feeds. The feeds can be used on any DNS server which support RPZ.
+From one side with introduction of Response Policy Zones in the BIND nameserver 9.8 it is became a simple task to monitor and contain malware on DNS layer. You can push millions of indicators which can be blocked/changed by a DNS server. From other side there is no automated and efficient (keeping in mind millions of indicators) way to maintain response policy zones on primary DNS servers. ioc2rpz is a specially built DNS server which natively support different file formats, protocols and transforms threat intelligense into actionable RPZ feeds. The feeds can be used on any DNS server which support RPZ.  
 **ioc2rpz is a place where threat intelligence meets DNS.**
+
 ## Overview
 ioc2rpz transforms IOC feeds into response policy zones (RPZ). You can mix feeds to generate a single RPZ or multiple RPZs. Trusted domains and IPs can be whitelisted. ioc2rpz supports expiration of indicators and accordingly rebuilds zones.  
 ![Alt ioc2rpz](https://github.com/Homas/ioc2rpz/blob/master/IOC2RPZ.jpg)
