@@ -12,33 +12,30 @@
 %See the License for the specific language governing permissions and
 %limitations under the License.
 
-%IOC2RPZ headers
-
--define(ioc2rpz_ver, "0.9.0-2017121601").
--define(Port,53).
--define(TTL,900).
--define(DNSPktMax,16384). %Max DNS packet size. DNS Label Zip is available up to 16384 bytes 65000/max
-
--define(Compression,6). % 0 - no compression, 9 - highest, 6 - default do it depending on the list/bin size.
--define(SaveETS,true). % Save DB into files if DB is ETS.
--define(ZoneRefTime,60000). %300000 Zone refresh check interval
-
--define(TCPTimeout,3000). %in milliseconds
+%ioc2rpz params 
 
 -define(MGMToDNS,true). %Defines if management ioc2rpz over DNS is enabled
+-define(DBStorage,ets). %Defines DBStorage to use. CFG and HotCache are always ETC (may be will be switched to MAP, need profiling)
+-define(SaveETS,true). % Save DB into files if DB is ETS.
+-define(Port,53). %DNS Port
+-define(TTL,900). %Default record TTL
 
+%%%Optimization
+-define(DNSPktMax,16384). %Max DNS packet size. DNS Label Zip is available up to 16384 bytes 65000/max
+-define(Compression,6). % 0 - no compression, 9 - highest, 6 - default do it depending on the list/bin size. Used to store zones in cache
+-define(ZoneRefTime,60000). %Zone refresh check interval in milliseconds
+-define(TCPTimeout,3000). %TCP timeout in milliseconds
 -define(HotCacheTime,900). %900 Time to cache IOCs/Records/Pkts in the hot cache. More usefull for online rpz.
 -define(HotCacheTimeIXFR,0). %Time to cache IXFR IOCs in a hot cache. By default it is cached for a minute because of curr_serial_60.
 
--define(MaxZipPSize,16#3FFF:16). %Max packet size to zip DNS labels
--define(DBStorage,ets). %Defines DBStorage to use. CFG and HotCache are always ETC (may be will be switched to MAP, need profiling)
-
 
 %%%%%%
+%%%%%% Do not modify any settings below the line
 %%%%%%
-%%%%%%
+-define(ioc2rpz_ver, "0.9.0-2017122101").
 
 -define(ZNameZip,16#c00c:16). %Zone name/original fqdn from a request is always at byte 10 in the response
+-define(MaxZipPSize,16#3FFF:16). %Max packet size to zip DNS labels
 
 %DNS Response codes
 -define(NOERROR,0).

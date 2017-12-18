@@ -163,8 +163,24 @@ RPZ term defines a response policy zone.
 {rpz,{"tor-exit-ip.ioc2rpz",7202,3600,2592000,7200,"false","true","nxdomain",["dnsproxykey_1","dnsproxykey_2"],"ip",172800,0,["tor-exit"],[],[]}}.
 ```
 
-## Constants - ioc2rpz.hrl
+## Constants - include/ioc2rpz.hrl
+include/ioc2rpz.hrl contains pre-compiled parameters.
+Standard parameters:
+- ``MGMToDNS`` (true/false) - enabled management over DNS/TCP;
+- ``DBStorage`` (ets) - defines DB storage for AXFR and IXFR caches. Current version supports ETS only;
+- ``SaveETS`` (true/false) - defines if ETS AXFR/IXFR tables should be saved on disk;
+- ``Port`` (numerical value, 1 - 65535) - defines a port on which service is running;
+- ``TTL`` (numerical value, in secodns) - default TTL for DNS records/RPZ rules.
 
+Optimization parameters:
+- ``DNSPktMax`` (numerical value, 100 - 65535) - maximum packet size. Recomended values:
+  - 16384 - minimal zone transfer size;
+  - 65535 - minimal count of DNS packets;
+- ``Compression`` (numerical value, 0 - 9) - Compression level (0 - no compression, 9 - highest compression). AXFR cache and tables on a disk store compressed data;
+- ``ZoneRefTime`` (numerical value, in milliseconds) - defines zone refresh check interval;
+- ``TCPTimeout`` (numerical value, in milliseconds) - defines TCP session timeout;
+- ``HotCacheTime`` (numerical value, in seconds) - Hot cache time for IOCs, Rules, Packets. Live zones are stored in a hotcache;
+- ``HotCacheTimeIXFR`` (numerical value, in seconds) - Hot cache time for IXFR IOCs in a hot cache. By default IXFR indicators are cached for a minute (even if it set to 0) because current serial is always rounded to a previous minute.
 
 ## How the AXFR (full) and IXFR (incremental) caches are updated
 - AXFR cache always contains prebuilt zones without SOA/NS/TSIG records. Prebuilt means all records are splitted by packets and labels were shortened/zipped.
@@ -181,7 +197,7 @@ RPZ term defines a response policy zone.
 - Live zones are not cached in the AXFR, IXFR caches but the sources (IOCs) can be cached in the hot cache.
 
 ## Hot cache
-IXFR updates are not cached in the hot cache
+All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-compiled parameters ``HotCacheTime``, ``HotCacheTimeIXFR`` define storage time.
 
 ## TODO features
 - [ ] (*) http/https/ftp errors handling - source status in the record. If a source is not available - work w/o it
