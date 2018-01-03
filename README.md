@@ -4,7 +4,7 @@ According with [Cisco's 2016 annual security report](https://github.com/Homas/io
 - to exfiltrate data;
 - to redirect traffic.
 <p align="center"><img src="https://github.com/Homas/ioc2rpz/blob/master/DNS_Malware.png"></p>
-With introduction of Response Policy Zones in the BIND nameserver 9.8 it is became a simple task to monitor and contain malware on DNS layer. A DNS server can handle millions of indicators but there is no automated and efficient way to maintain response policy zones on primary DNS servers.
+ISC Bind is a de-facto a standard of a nameserver. With introduction of Response Policy Zones in the ISC BIND 9.8 it is became a simple task to monitor and contain malware on DNS layer. A DNS server can handle millions of indicators but there is no automated and efficient way to maintain response policy zones on primary DNS servers. Usually indicators of compromise are distributed in plain text but in different formats and only a few providers of IOCs make them available via RPZ.
 
 ioc2rpz is a custom built DNS server which natively supports different file formats, protocols and transforms threat intelligence into actionable RPZ feeds. The feeds can be used on any DNS server which supports RPZ.  
 
@@ -30,7 +30,7 @@ You can use ioc2rpz with any DNS server which supports Response Policy Zones e.g
 ## How to start ioc2rpz service
 ioc2rpz by default reads configuration from ./cfg/ioc2rpz.conf, listens on all network interfaces and saves DB backup in ./db directory. You can change the default values in the erlang application configuration, which is located in ``ebin/ioc2rpz.app``.  
 If you downloaded sources, before running ioc2rpz you have to compile the code with the following command: ``erlc -I include/ -o ebin/ src/*.erl``.  
-You can start the application by ``sudo erl -pa ebin -eval "application:start(ioc2rpz)" -noshell`` command.  
+You can start the application by ``sudo erl -pa ebin -eval "application:start(ioc2rpz,permanent)" -noshell`` command.  
 
 ## Docker container
 ioc2rpz is available on the Docker Hub. Just look for ioc2rpz.
@@ -45,7 +45,7 @@ docker run --mount type=bind,source=/home/ioc2rpz/cfg,target=/opt/ioc2rpz/cfg --
 where /home/ioc2rpz/cfg, /home/ioc2rpz/db directories on a host system.
 
 ## ioc2rpz management
-ioc2rpz supports management over DNS/TCP. The current version of ioc2rpz does not support ACL or a separate management IP. In any case it is highly recommended to create a designated TSIG key which will be used for management only. You can turn off management over DNS.  
+ioc2rpz supports management over DNS/TCP. The current version of ioc2rpz does not support ACL or a separate management IP. In any case it is highly recommended to create a designated TSIG key (or keys) which will be used for management only. You can turn off management over DNS.  
 Supported actions:
 - ioc2rpz current status. Request ``ioc2rpz-status``, class ``CHAOS``, record ``TXT``. e.g.:  
 ```
@@ -76,7 +76,7 @@ ioc2rpz supports the following configuration parameters:
 
 Sample **srv** record:  
 ```
-{srv,{"ns1.example.com","support.email.example.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"]}}.
+{srv,{"ns1.example.com","support.email.example.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"],["acl_ip1","acl_ip2"]}}.
 ```
 ### **key** record
 TSIG keys are used for authentication and authorization. It is recommended to use different TSIG keys for ioc2rpz management and zones transfers.  
@@ -147,7 +147,7 @@ Sample **rpz** record:
 ```
 ## Sample configuration file
 ```
-{srv,{"ns1.rpz-proxy.com","support.rpz-proxy.com",["dnsmkey_3"]}}.
+{srv,{"ns1.rpz-proxy.com","support.rpz-proxy.com",["dnsmkey_3"],["127.0.0.1","10.42.0.10"]}}.
 
 {key,{"dnsproxykey_1","md5","Hbxw9kzCdDp5XgWSWT/5OfRc1+jDIaSvFjpbv/V3IT2ah6xUfLGFcoA7cCLaPh40ni9nvmzlAArj856v3xEnBw=="}}.
 {key,{"dnsproxykey_2","sha512","03uuaGl9kqfenjRgIeCv6e29lVvMwviB1+cDX1I0jcVOcTU4jWFwRkfo3ULRMD+NGDfwzYvXkJ94FNEaAW4vzw=="}}.
@@ -190,15 +190,15 @@ Optimization parameters:
 
 ## How the AXFR (full) and IXFR (incremental) caches are updated
 - AXFR cache always contains prebuilt zones without SOA/NS/TSIG records. Prebuilt means all records are splitted by packets and labels were shortened/zipped.
-- If server receive an AXFR request it retrieve packets from the AXFR cache, add SOA/NS records and TSIG if needed.
+- If a server receives an AXFR request it retrieves packets from the AXFR cache, adds SOA/NS records and TSIG if needed.
 - AXFR zones update should be considered as a clean up procedure, which should periodically take place. Just to be sure that there is no desynchronization between the sources and the cache.
-- For large zones, AXFR updates should be scheduled infrequently to minimize impact on server's performance and amount of transferred data to all clients.
+- For large zones, AXFR updates should be scheduled infrequently to minimize impact on a server's performance and amount of transferred data to all clients.
 - All changes if it is possible should be done via incremental zone updates. In that case the AXFR cache will be rebuilt only in case if a zone was updated.
 - [TODO] Due to an optimization, only last packet will be rebuilt for new IOCs and relevant and accordant packets for the expired IOCs.
 - IXFR cache contains only IOCs and expiration dates. [TODO] and packets ID's (to make it possible rebuild the zone fast).
 - RPZ record contains current zone Serial and Serial_IXFR. Serial_IXFR serve as a minimum incremental zone serial which is available for an incremental zone transfer.
 - IXFR cache is flushed after full zone update (AXFR). Serial_IXFR = Serial. Clients will receive full zone update in any case, this is why it is important to have AXFR zone transfer infrequently.
-- When IXFR is updated, AXFR cache must be rebuilt.
+- When IXFR cache is updated, AXFR cache must be rebuilt.
 - If a zone does not support IXFR updates -> it doesn't saved in the IXFR table.
 - Live zones are not cached in the AXFR, IXFR caches but the sources (IOCs) can be cached in the hot cache.
 
@@ -209,8 +209,8 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [ ] (2) http/https/ftp errors handling - source status in the record. If a source is not available - work w/o it
 - [ ] (2) Source based on files check by mod.date and size -> read by chunks
 - [ ] RPZ behavior: ignore unreachable sources, use old data for unreachable sources, do not update the zone
-- [ ] (1) ACL for MGMT
-- [ ] "intellectual" configuration update/reload
+- [x] (*) ACL for MGMT
+- [ ] (*) "intellectual" configuration update/reload (TODO in ioc2rpz_sup line 91)
 - [ ] Statistics per zone (# records, last update, # AXFR, # IXFR, last axfr update time, avg axfr update time, last ixfr update time, avg ixfr update time)
 - [ ] Performance testing vs bind:
   - [ ] 1 core/8GB RAM: start time, zone transfer time, zone size, CPU, Memory
@@ -230,18 +230,17 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [ ] (2) FDateTime,ToDateTime,FDateTimeZ,ToDateTimeZ + support them for AXFR  
 [:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z"  
 [:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z"
-- [x] (*) Docker container
-- [x] (*) Docker container to docker hub
-- [x] (*) Documentation
+- [ ] (*) Docker container updated from github
 - [ ] (*) Sample ISC BIND's configuration file
-- [ ] Check if RPZs are properly configured.
+- [ ] (*) Check if RPZs are properly configured (after reading a configuration file). (TODO in ioc2rpz_sup line 91)
 - [ ] Add source RPZ
 - [ ] Add source SQL
 - [ ] Mnesia for storage (and auto creation)
 - [ ] Distributed configuration based on mnesia
-- [ ] Wait for a remote server confirms receiving a notification
+- [ ] Wait while a remote server confirms receiving a notification
 - [ ] Additional local records: ptr, srv, mx etc
 - [ ] An action per source: {"",action,locdata} //default action ,{"source_name",action,locdata}
+- [x] (*) remove "export all"
 
 ## Other/optimization TODO
 - [ ] (1) Do not cache expired IOCs if ExpDateTime<Serial_IXFR / update ExpDateTime if exists
@@ -251,13 +250,14 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [ ] (1) IOC to lowercase - check memory usage impact (in ioc2rpz_conn)
 - [ ] (2) UDP & TableMGMT under supervisors
 - [ ] (3) Memory optimization for huge zones (erl -pa ebin +MEas bf ?????)
-- [ ] (3) Share IOC between the feeds in IXFR table
-- [ ] (1) saveZones - doesn't correctly save zones if there a lot of updates. Save strategy based on update size and time.
+- [ ] (3) Share IOC between the feeds in IXFR table (do not forget about different whitelists)
+- [ ] (*) saveZones - doesn't correctly save zones if there a lot of updates. Save strategy based on update size and time and currently running updates.
+- [ ] Logs level startup config
 
 ## TODO Bugs
-- [x] (*) Sample zone - fix redirect_domain, redirect_ip
-- [ ] (*) Possibility to turn off saving ETS on disk
-
+- [x] (*) Possibility to turn off saving ETS on a disk - check with inet
+- [x] (*) Key not found bad RR
+ 
 ## Free threat intelligence
 - [DNS-BH – Malware Domain Blocklist by RiskAnalytics](http://www.malwaredomains.com/)
 - [Malware DGA](http://data.netlab.360.com)
