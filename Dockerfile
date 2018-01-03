@@ -29,4 +29,4 @@ VOLUME ["/opt/ioc2rpz/cfg", "/opt/ioc2rpz/db"]
 
 EXPOSE 53/tcp 53/udp
 
-ENTRYPOINT ["erl", "-noshell", "-pa", "./ebin", "-eval", "application:start(ioc2rpz)"]
+ENTRYPOINT ["erl", "-noshell", "-pa", "./ebin", "-eval", "application:start(ioc2rpz,permanent)"]

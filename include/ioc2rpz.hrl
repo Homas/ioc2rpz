@@ -86,7 +86,7 @@
 -record(proto, {proto,rip,rport}).
 
 %Config params
--record(srv, {server,email,mkeys}).
+-record(srv, {server,email,mkeys,acl}).
 -record(key, {name,alg,key}).
 %SOA timers refresh, retry, expiration, neg_ttl
 %status: notready, updating, ready
