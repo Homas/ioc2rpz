@@ -1,4 +1,4 @@
-%Copyright 2017 Vadim Pavlov pvm(dot)del[at]gmail[.]com
+%Copyright 2017-2018 Vadim Pavlov pvm(dot)del[at]gmail[.]com
 %
 %Licensed under the Apache License, Version 2.0 (the "License");
 %you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 -define(MGMToDNS,true). %Defines if management ioc2rpz over DNS is enabled
 -define(DBStorage,ets). %Defines DBStorage to use. CFG and HotCache are always ETC (may be will be switched to MAP, need profiling)
--define(SaveETS,true). % Save DB into files if DB is ETS.
+-define(SaveETS,false). % Save DB into files if DB is ETS.
 -define(Port,53). %DNS Port
 -define(TTL,900). %Default record TTL
 
@@ -87,9 +87,9 @@
 
 %Config params
 -record(srv, {server,email,mkeys,acl}).
--record(key, {name,alg,key}).
+-record(key, {name,alg,key,name_bin}).
 %SOA timers refresh, retry, expiration, neg_ttl
 %status: notready, updating, ready
 %serial_ixfr - minimum serial for ixfr - first ixfr update after axfr
--record(rpz, {rpzid, zone, zone_str, soa_timers, cache, wildcards, notify, action, akeys, ioc_type, axfr_time, ixfr_time, sources, status, serial, serial_new, serial_ixfr, notifylist, whitelist, ioc_md5, update_time, ixfr_update_time}).
+-record(rpz, {rpzid, zone, zone_str, soa_timers, cache, wildcards, notify, action, akeys, ioc_type, axfr_time, ixfr_time, sources, status, serial, serial_new, serial_ixfr, notifylist, whitelist, ioc_md5, update_time, ixfr_update_time, pid}).
 -record(source, {name, axfr_url, ixfr_url, regex}).

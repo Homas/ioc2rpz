@@ -209,8 +209,6 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [ ] (2) http/https/ftp errors handling - source status in the record. If a source is not available - work w/o it
 - [ ] (2) Source based on files check by mod.date and size -> read by chunks
 - [ ] RPZ behavior: ignore unreachable sources, use old data for unreachable sources, do not update the zone
-- [x] (*) ACL for MGMT
-- [ ] (*) "intellectual" configuration update/reload (TODO in ioc2rpz_sup line 91)
 - [ ] Statistics per zone (# records, last update, # AXFR, # IXFR, last axfr update time, avg axfr update time, last ixfr update time, avg ixfr update time)
 - [ ] Performance testing vs bind:
   - [ ] 1 core/8GB RAM: start time, zone transfer time, zone size, CPU, Memory
@@ -231,8 +229,8 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 [:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z"  
 [:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z"
 - [ ] (*) Docker container updated from github
+- [ ] (*) Sample zones in AWS
 - [ ] (*) Sample ISC BIND's configuration file
-- [ ] (*) Check if RPZs are properly configured (after reading a configuration file). (TODO in ioc2rpz_sup line 91)
 - [ ] Add source RPZ
 - [ ] Add source SQL
 - [ ] Mnesia for storage (and auto creation)
@@ -240,7 +238,8 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [ ] Wait while a remote server confirms receiving a notification
 - [ ] Additional local records: ptr, srv, mx etc
 - [ ] An action per source: {"",action,locdata} //default action ,{"source_name",action,locdata}
-- [x] (*) remove "export all"
+- [ ] Switch from IXFR cache to Sources cache. IXFR cache allows you to support less zone updates but IOCs can be stored multiple times. Sources cache will contain duplicate IOCs from the same source but RPZs will be updated more frequently (looks like it is not bad).
+- [ ] Access to the hotcache and the cfg_table via FUNs
 
 ## Other/optimization TODO
 - [ ] (1) Do not cache expired IOCs if ExpDateTime<Serial_IXFR / update ExpDateTime if exists
@@ -253,10 +252,10 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [ ] (3) Share IOC between the feeds in IXFR table (do not forget about different whitelists)
 - [ ] (*) saveZones - doesn't correctly save zones if there a lot of updates. Save strategy based on update size and time and currently running updates.
 - [ ] Logs level startup config
+- [ ] Check delete in ioc2rpz: rpz_hotcache_table/pkthotcache
+- [ ] Terminate updating zones during config reload
 
 ## TODO Bugs
-- [x] (*) Possibility to turn off saving ETS on a disk - check with inet
-- [x] (*) Key not found bad RR
  
 ## Free threat intelligence
 - [DNS-BH – Malware Domain Blocklist by RiskAnalytics](http://www.malwaredomains.com/)

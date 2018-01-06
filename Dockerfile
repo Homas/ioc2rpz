@@ -1,4 +1,4 @@
-#Copyright 2017 Vadim Pavlov pvm(dot)del[at]gmail[.]com
+#Copyright 2017-2018 Vadim Pavlov pvm(dot)del[at]gmail[.]com
 #
 #Licensed under the Apache License, Version 2.0 (the "License");
 #you may not use this file except in compliance with the License.
