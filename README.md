@@ -230,7 +230,6 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [ ] (2) FDateTime,ToDateTime,FDateTimeZ,ToDateTimeZ + support them for AXFR  
 [:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z"  
 [:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z"
-- [ ] (*) Sample ISC BIND's configuration file
 - [ ] Add source RPZ
 - [ ] Add source SQL
 - [ ] Mnesia for storage (and auto creation)
@@ -254,8 +253,6 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [ ] Logs level startup config
 - [ ] Check delete in ioc2rpz: rpz_hotcache_table/pkthotcache
 - [ ] (1) Terminate updating zones during config reload
-- [x] Change TSIG keys
-- [x] Demo zones: dns-bh, cryptolocker, botlist, GEO - North Korea, ActiveTrust
 
 ## TODO Bugs
 - [ ] Rules are incorrectly generated for IPv4 Networks it RPZ type MIXED
