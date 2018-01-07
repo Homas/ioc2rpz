@@ -231,7 +231,7 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 [:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z"  
 [:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z"
 - [ ] (*) Docker container updated from github
-- [ ] (*) Sample zones in AWS
+- [x] (*) Sample zones in AWS
 - [ ] (*) Sample ISC BIND's configuration file
 - [ ] Add source RPZ
 - [ ] Add source SQL
@@ -256,8 +256,11 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [ ] Logs level startup config
 - [ ] Check delete in ioc2rpz: rpz_hotcache_table/pkthotcache
 - [ ] Terminate updating zones during config reload
+- [ ] Change TSIG keys
+- [ ] Demo zones: dns-bh, cryptolocker, botlist, GEO - North Korea, ActiveTrust
 
 ## TODO Bugs
+- [ ] Rules are incorrectly generated for IPv4 Networks it RPZ type MIXED
  
 ## Free threat intelligence
 - [DNS-BH – Malware Domain Blocklist by RiskAnalytics](http://www.malwaredomains.com/)
