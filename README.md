@@ -6,7 +6,7 @@ According with [Cisco's 2016 annual security report](https://github.com/Homas/io
 - to exfiltrate data;
 - to redirect traffic.
 <p align="center"><img src="https://github.com/Homas/ioc2rpz/blob/master/DNS_Malware.png"></p>
-ISC Bind is a de-facto a standard of a nameserver. With introduction of Response Policy Zones in the ISC BIND 9.8 it is became a simple task to monitor and contain malware on DNS layer. A DNS server can handle millions of indicators but there is no automated and efficient way to maintain response policy zones on primary DNS servers. Usually indicators of compromise are distributed in plain text but in different formats and only a few providers of IOCs make them available via RPZ.
+ISC Bind is a de facto a standard of a nameserver. With introduction of Response Policy Zones in the ISC BIND 9.8 it is became a simple task to monitor and contain malware on DNS layer. A DNS server can handle millions of indicators but there is no automated and efficient way to maintain response policy zones on primary DNS servers. Usually indicators of compromise are distributed in plain text but in different formats and only a few providers of IOCs make them available via RPZ.
 
 ioc2rpz is a custom built DNS server which natively supports different file formats, protocols and transforms threat intelligence into actionable RPZ feeds. The feeds can be used on any DNS server which supports RPZ.  
 
@@ -209,8 +209,9 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 
 ## TODO features
 - [ ] (1) http/https/ftp errors handling - source status in the record. If a source is not available - work w/o it
-- [ ] RPZ behavior: ignore unreachable sources, use old data for unreachable sources, do not update the zone
-- [ ] (2) Source based on files check by mod.date and size -> read by chunks
+  - [ ] RPZ behavior: ignore unreachable sources, use old data for unreachable sources, do not update the zone
+  - [ ] (2) Source based on files check by mod.date and size -> read by chunks
+  - [ ] Retry if source is not available
 - [ ] Statistics per zone (# records, last update, # AXFR, # IXFR, last axfr update time, avg axfr update time, last ixfr update time, avg ixfr update time)
 - [ ] Performance testing vs bind:
   - [ ] 1 core/8GB RAM: start time, zone transfer time, zone size, CPU, Memory
