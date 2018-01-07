@@ -208,9 +208,9 @@ Optimization parameters:
 All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-compiled parameters ``HotCacheTime``, ``HotCacheTimeIXFR`` define storage time.
 
 ## TODO features
-- [ ] (2) http/https/ftp errors handling - source status in the record. If a source is not available - work w/o it
-- [ ] (2) Source based on files check by mod.date and size -> read by chunks
+- [ ] (1) http/https/ftp errors handling - source status in the record. If a source is not available - work w/o it
 - [ ] RPZ behavior: ignore unreachable sources, use old data for unreachable sources, do not update the zone
+- [ ] (2) Source based on files check by mod.date and size -> read by chunks
 - [ ] Statistics per zone (# records, last update, # AXFR, # IXFR, last axfr update time, avg axfr update time, last ixfr update time, avg ixfr update time)
 - [ ] Performance testing vs bind:
   - [ ] 1 core/8GB RAM: start time, zone transfer time, zone size, CPU, Memory
@@ -230,17 +230,16 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [ ] (2) FDateTime,ToDateTime,FDateTimeZ,ToDateTimeZ + support them for AXFR  
 [:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z"  
 [:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z"
-- [ ] (*) Docker container updated from github
-- [x] (*) Sample zones in AWS
 - [ ] (*) Sample ISC BIND's configuration file
 - [ ] Add source RPZ
 - [ ] Add source SQL
 - [ ] Mnesia for storage (and auto creation)
-- [ ] Distributed configuration based on mnesia
+- [ ] Distributed configuration
 - [ ] Wait while a remote server confirms receiving a notification
 - [ ] Additional local records: ptr, srv, mx etc
 - [ ] An action per source: {"",action,locdata} //default action ,{"source_name",action,locdata}
 - [ ] Switch from IXFR cache to Sources cache. IXFR cache allows you to support less zone updates but IOCs can be stored multiple times. Sources cache will contain duplicate IOCs from the same source but RPZs will be updated more frequently (looks like it is not bad).
+  - [ ] (3) Share IOC between the feeds in IXFR table (do not forget about different whitelists)
 - [ ] Access to the hotcache and the cfg_table via FUNs
 
 ## Other/optimization TODO
@@ -251,13 +250,12 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [ ] (1) IOC to lowercase - check memory usage impact (in ioc2rpz_conn)
 - [ ] (2) UDP & TableMGMT under supervisors
 - [ ] (3) Memory optimization for huge zones (erl -pa ebin +MEas bf ?????)
-- [ ] (3) Share IOC between the feeds in IXFR table (do not forget about different whitelists)
 - [ ] (*) saveZones - doesn't correctly save zones if there a lot of updates. Save strategy based on update size and time and currently running updates.
 - [ ] Logs level startup config
 - [ ] Check delete in ioc2rpz: rpz_hotcache_table/pkthotcache
-- [ ] Terminate updating zones during config reload
-- [ ] Change TSIG keys
-- [ ] Demo zones: dns-bh, cryptolocker, botlist, GEO - North Korea, ActiveTrust
+- [ ] (1) Terminate updating zones during config reload
+- [x] Change TSIG keys
+- [x] Demo zones: dns-bh, cryptolocker, botlist, GEO - North Korea, ActiveTrust
 
 ## TODO Bugs
 - [ ] Rules are incorrectly generated for IPv4 Networks it RPZ type MIXED
