@@ -18,7 +18,7 @@ ioc2rpz transforms IOC feeds into response policy zones (RPZ). You can mix feeds
 The current release supports: local files and files/requests via http/https/ftp protocols. You can use any file format if you can write a REGEX to extract indicators and indicators are separated by newline or/and return carriage chars (/n, /r, /r/n).
 
 ## How to use ioc2rpz
-You can use ioc2rpz with any DNS server which supports Response Policy Zones e.g. recent versions of ISC BIND. A sample bind's configuration file is provided in the cfg folder.
+You can use ioc2rpz with any DNS server which supports Response Policy Zones e.g. recent versions of ISC BIND. A sample bind's configuration file (named.conf) is provided in the cfg folder.
 
 ## ioc2rpz vs ISC BIND vs other DNS:
 - ioc2rpz was built to handle RPZ distribution only;
