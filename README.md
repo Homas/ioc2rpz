@@ -47,7 +47,7 @@ docker run --mount type=bind,source=/home/ioc2rpz/cfg,target=/opt/ioc2rpz/cfg --
 where /home/ioc2rpz/cfg, /home/ioc2rpz/db directories on a host system.
 
 ## ioc2rpz management
-ioc2rpz supports management over DNS/TCP. The current version of ioc2rpz does not support ACL or a separate management IP. In any case it is highly recommended to create a designated TSIG key (or keys) which will be used for management only. You can turn off management over DNS.  
+ioc2rpz supports management over DNS/TCP. The current version of ioc2rpz does not support a separate management IP/interface. In any case it is highly recommended to create a designated TSIG key (or keys) which will be used for management only. You can turn off management over DNS.  
 Supported actions:
 - ioc2rpz current status. Request ``ioc2rpz-status``, class ``CHAOS``, record ``TXT``. e.g.:  
 ```
@@ -255,12 +255,9 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [ ] Check delete in ioc2rpz: rpz_hotcache_table/pkthotcache
 - [ ] (1) Terminate updating zones during config reload
 
-## TODO Bugs
-- [ ] Rules are incorrectly generated for IPv4 Networks it RPZ type MIXED
- 
 ## Free threat intelligence
 - [DNS-BH – Malware Domain Blocklist by RiskAnalytics](http://www.malwaredomains.com/)
-- [Malware DGA](http://data.netlab.360.com)
+- [Netlab](http://data.netlab.360.com)
 - [Tor Exit Nodes](https://torstatus.blutmagie.de/ip_list_exit.php/Tor_ip_list_EXIT.csv)
 - [awesome-threat-intelligence list on GitHub](https://github.com/hslatman/awesome-threat-intelligence)
 
