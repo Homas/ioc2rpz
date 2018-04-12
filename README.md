@@ -46,6 +46,9 @@ docker run --mount type=bind,source=/home/ioc2rpz/cfg,target=/opt/ioc2rpz/cfg --
 ```
 where /home/ioc2rpz/cfg, /home/ioc2rpz/db directories on a host system.
 
+## ioc2rpz web interface
+[ioc2rpz.gui](https://github.com/Homas/ioc2rpz.gui) is a web interface to manage ioc2rpz DNS servers. It is developed as a separate project.
+
 ## ioc2rpz management
 ioc2rpz supports management over DNS/TCP. The current version of ioc2rpz does not support a separate management IP/interface. In any case it is highly recommended to create a designated TSIG key (or keys) which will be used for management only. You can turn off management over DNS.  
 Supported actions:
