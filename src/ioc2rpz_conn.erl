@@ -31,7 +31,9 @@ get_ioc(<<"file:",Filename/binary>> = _URL,REGEX) ->
     {ok, Bin} ->
       BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
       clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX);
-    {_, _} -> []
+    {error, Reason} ->
+      ioc2rpz_fun:logMessage("Error reading file ~p reason ~p ~n",[Filename, Reason]), %TODO debug
+      []
   end;
 
 %get_ioc download IOCs from http/https/ftp
@@ -47,7 +49,9 @@ get_ioc(<<Proto:5/bytes,_/binary>> = URL,REGEX) when Proto == <<"http:">>;Proto 
   {ok,{{_,200,_},_,Response}} ->
     BinLow=ioc2rpz_fun:bin_to_lowcase(Response),
     clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX);
-  {_,_} -> []
+  {error,Reason} ->
+    ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p ~n",[URL, Reason]), %TODO debug
+    []
   end.
 
 %get_ioc(<<"rpz:",RRPZ/binary>>,REGEX) when is_binary(URL) ->
