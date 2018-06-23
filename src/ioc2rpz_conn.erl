@@ -23,17 +23,32 @@ get_ioc(<<"file:",Filename/binary>> = _URL,REGEX) ->
   %TODO
   %Check if file > 2Gb, read by chunks
   %TODO
-  {ok, Bin} = file:read_file(Filename),
-  BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
-  clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX);
+% TODO remove below after checks 20180622
+%  {ok, Bin} = file:read_file(Filename),
+%  BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
+%  clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX);
+  case file:read_file(Filename) of
+    {ok, Bin} ->
+      BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
+      clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX);
+    {_, _} -> []
+  end;
 
 %get_ioc download IOCs from http/https/ftp
 get_ioc(<<Proto:5/bytes,_/binary>> = URL,REGEX) when Proto == <<"http:">>;Proto == <<"https">>;Proto == <<"ftp:/">> ->
 %inets, ssl must be started and stopped in supervisor: inets:start(), ssl:start(), ssl:stop(), inets:stop()
-  {ok,{{_,200,_},_,Response}} = httpc:request(get,{binary_to_list(URL),[]},[],[{body_format,binary},{sync,true}]),
-  BinLow=ioc2rpz_fun:bin_to_lowcase(Response),
-  clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX).
 
+% TODO remove below after checks 20180622
+%  {ok,{{_,200,_},_,Response}} = httpc:request(get,{binary_to_list(URL),[]},[],[{body_format,binary},{sync,true}]),
+%  BinLow=ioc2rpz_fun:bin_to_lowcase(Response),
+%  clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX).
+
+  case httpc:request(get,{binary_to_list(URL),[]},[],[{body_format,binary},{sync,true}]) of
+  {ok,{{_,200,_},_,Response}} ->
+    BinLow=ioc2rpz_fun:bin_to_lowcase(Response),
+    clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX);
+  {_,_} -> []
+  end.
 
 %get_ioc(<<"rpz:",RRPZ/binary>>,REGEX) when is_binary(URL) ->
 %rpz:alg:keyname:key:rpzfeedname:(IP)

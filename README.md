@@ -226,7 +226,7 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
     - [ ] 100k rules
     - [ ] 1M rules
     - [ ] 10M rules
-- [ ] MGMT by a signal
+- [ ] MGMT via REST API
   - [ ] Reload CFG
   - [ ] Refresh a zone
   - [ ] Refresh all zones
@@ -258,6 +258,9 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [ ] Logs level startup config
 - [ ] Check delete in ioc2rpz: rpz_hotcache_table/pkthotcache
 - [ ] (1) Terminate updating zones during config reload
+
+## Bugs
+
 
 ## Free threat intelligence
 - [DNS-BH – Malware Domain Blocklist by RiskAnalytics](http://www.malwaredomains.com/)

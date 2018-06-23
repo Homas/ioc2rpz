@@ -287,7 +287,7 @@ validateCFGRPZ(RPZ,S,W) -> %Check: Sources, Whitelists
   SV = not lists:member(false, [ lists:member(X, [ Z#source.name || Z <- S ])  || X <- RPZ#rpz.sources  ]),
   WV = not lists:member(false, [ lists:member(X, [ Z#source.name || Z <- W ])  || X <- RPZ#rpz.whitelist ]),
   if not SV -> % or not WV 
-    ioc2rpz_fun:logMessage("RPZ ~p Sources ~p Whitelists ~p.~n",[RPZ#rpz.zone_str,SV,WV]),
+    ioc2rpz_fun:logMessage("RPZ ~p was not loaded. No sources. Sources ~p Whitelists ~p.~n",[RPZ#rpz.zone_str,SV,WV]),
     [];
     true -> RPZ
   end.
