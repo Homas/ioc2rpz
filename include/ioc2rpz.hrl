@@ -21,7 +21,7 @@
 -define(TTL,900). %Default record TTL
 
 %%%Optimization
--define(DNSPktMax,16384). %Max DNS packet size. DNS Label Zip is available up to 16384 bytes 65000/max
+-define(DNSPktMax,16383). %Max DNS packet size. DNS Label Zip is available up to 16384 bytes 65000/max
 -define(Compression,6). % 0 - no compression, 9 - highest, 6 - default do it depending on the list/bin size. Used to store zones in cache
 -define(ZoneRefTime,60000). %Zone refresh check interval in milliseconds
 -define(TCPTimeout,3000). %TCP timeout in milliseconds
