@@ -138,10 +138,20 @@ bin_to_hexstr(<<Bin:128/big-unsigned-integer>>) ->
  lists:flatten(io_lib:format("~32.16.0b", [Bin])).
 
 
-conv_to_Mb(M) ->
-  list_to_binary(case M of
-    M when M > 1024*1024*1024 -> [integer_to_list(M div 1024*1024*1024), "/Gb"];
-    M when M > 1024*1024 -> [integer_to_list(M div (1024*1024)),"/Mb"];
-    M when M > 1024 -> [integer_to_list(M div 1024),"/Kb"];
-    M -> [integer_to_list(M),"/bytes"]
-  end).
+%conv_to_Mb(M) ->
+%  list_to_binary(case M of
+%    M when M > 1024*1024*1024 -> [integer_to_list(M div 1024*1024*1024), "/Gb"];
+%    M when M > 1024*1024 -> [integer_to_list(M div (1024*1024)),"/Mb"];
+%    M when M > 1024 -> [integer_to_list(M div 1024),"/Kb"];
+%    M -> [integer_to_list(M),"/bytes"]
+%  end).
+  
+
+conv_to_Mb(Size) when Size >= 1024 -> conv_to_Mb(Size, ["B","KB","MB","GB","TB","PB"]);
+
+conv_to_Mb(Size) ->
+ list_to_binary([integer_to_list(Size),"/bytes"]).
+
+conv_to_Mb(S, [_|[_|_] = L]) when S >= 1024 -> conv_to_Mb(S/1024, L);
+conv_to_Mb(S, [M|_]) ->
+    list_to_binary(io_lib:format("~.2f/~s", [float(S), M])).
