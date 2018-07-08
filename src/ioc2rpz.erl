@@ -360,13 +360,7 @@ parse_rr(NSCOUNT, ARCOUNT, <<Zip:8,_/binary>> = RAW, RR, SOA, RAWN) ->
       parse_rr(NSCOUNT1, ARCOUNT1, RAW2, RR ++ [#dns_RR{name=RNAME, type=RType, class=RClass, ttl=RTTL, rdlength=DLen, rdata=RDATA}], SOA, <<RAWN/binary,RNAME/binary, RType:2/big-unsigned-unit:8,RClass:2/big-unsigned-unit:8,RTTL:4/big-unsigned-unit:8,DLen:2/big-unsigned-unit:8,RDATA/binary>>)
   end.
 
-conv_to_Mb(M) ->
-  list_to_binary(case M of
-    M when M > 1024*1024*1024 -> [integer_to_list(M div 1024*1024*1024), "/Gb"];
-    M when M > 1024*1024 -> [integer_to_list(M div (1024*1024)),"/Mb"];
-    M when M > 1024 -> [integer_to_list(M div 1024),"/Kb"];
-    M -> [integer_to_list(M),"/bytes"]
-  end).
+
 
 %Send SERVFAIL/REFUSED/NXDOMAIN
 send_REQST(Socket, DNSId, Opt, RH, Question, TSIG, Proto) ->
@@ -458,13 +452,13 @@ send_sample_zone(Socket, DNSId, OptB, OptE, Questions, MailAddr, NSServ, TSIG) -
 send_status(Socket,[Question,DNSId,OptB,OptE,TSIG]) ->
   WS = erlang:system_info(wordsize),
   SCfg = list_to_binary(integer_to_list(ioc2rpz_db:db_table_info(cfg_table,size))),
-  MSCfg = conv_to_Mb(ioc2rpz_db:db_table_info(cfg_table,memory) * WS),
+  MSCfg = ioc2rpz_fun:conv_to_Mb(ioc2rpz_db:db_table_info(cfg_table,memory) * WS),
   SHC = list_to_binary(integer_to_list(ioc2rpz_db:db_table_info(rpz_hotcache_table,size))),
-  MSHC = conv_to_Mb(ioc2rpz_db:db_table_info(rpz_hotcache_table,memory) * WS),
+  MSHC = ioc2rpz_fun:conv_to_Mb(ioc2rpz_db:db_table_info(rpz_hotcache_table,memory) * WS),
   SAXFR = list_to_binary(integer_to_list(ioc2rpz_db:db_table_info(rpz_axfr_table,size))),
-  MAXFR = conv_to_Mb(ioc2rpz_db:db_table_info(rpz_axfr_table,memory) * WS),
+  MAXFR = ioc2rpz_fun:conv_to_Mb(ioc2rpz_db:db_table_info(rpz_axfr_table,memory) * WS),
   SIXFR = list_to_binary(integer_to_list(ioc2rpz_db:db_table_info(rpz_ixfr_table,size))),
-  MIXFR = conv_to_Mb(ioc2rpz_db:db_table_info(rpz_ixfr_table,memory) * WS),
+  MIXFR = ioc2rpz_fun:conv_to_Mb(ioc2rpz_db:db_table_info(rpz_ixfr_table,memory) * WS),
 %TODO
 %Statistics per zone
 %TODO
