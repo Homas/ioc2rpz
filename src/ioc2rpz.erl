@@ -804,19 +804,19 @@ mrpz_from_ioc([SRC|REST], RPZ,UType, IOC) -> %List of the sources, RPZ zone, UTy
       ioc2rpz_fun:logMessage("Source  ~p was expired in cache~n",[SRC]), %TODO debug
       ets:delete(rpz_hotcache_table,{SRC,UType}),
       %SURL= if UType == axfr -> Source#source.axfr_url; true -> ioc2rpz_fun:constr_ixfr_url(Source#source.ixfr_url,RPZ#rpz.ixfr_update_time,CTime) end,
-      IOC1=ioc2rpz_conn:get_ioc(list_to_binary(Source#source.axfr_url),Source#source.regex),
+      IOC1=ioc2rpz_conn:get_ioc(list_to_binary(Source#source.axfr_url),Source#source.regex,Source),
       ets:insert(rpz_hotcache_table, {{SRC,UType},CTime, term_to_binary(IOC1,[{compressed,?Compression}])});
     {[],axfr} ->
       ioc2rpz_fun:logMessage("Source ~p was not cached~n",[SRC]), %TODO debug
       %SURL= if UType == axfr -> Source#source.axfr_url; true -> ioc2rpz_fun:constr_ixfr_url(Source#source.ixfr_url,RPZ#rpz.ixfr_update_time,CTime) end,
-      IOC1=ioc2rpz_conn:get_ioc(list_to_binary(Source#source.axfr_url),Source#source.regex),
+      IOC1=ioc2rpz_conn:get_ioc(list_to_binary(Source#source.axfr_url),Source#source.regex,Source),
       ets:insert(rpz_hotcache_table, {{SRC,UType},CTime, term_to_binary(IOC1,[{compressed,?Compression}])});
     {[[Timestamp,IOCZip]],ixfr} when CTime=<(Timestamp+?HotCacheTimeIXFR) ->
       IOC1=binary_to_term(IOCZip),
       ioc2rpz_fun:logMessage("Got source ~p IXFR from cache ~n",[SRC]); %TODO debug
     {_,ixfr} ->
       %ioc2rpz_fun:logMessage("IXFR request for ~p is not cached by the design~n",[SRC]), %TODO debug
-      IOC1=ioc2rpz_conn:get_ioc(list_to_binary(ioc2rpz_fun:constr_ixfr_url(Source#source.ixfr_url,RPZ#rpz.ixfr_update_time,CTime)),Source#source.regex)
+      IOC1=ioc2rpz_conn:get_ioc(list_to_binary(ioc2rpz_fun:constr_ixfr_url(Source#source.ixfr_url,RPZ#rpz.ixfr_update_time,CTime)),Source#source.regex,Source)
   end,
   mrpz_from_ioc(REST,RPZ,UType,IOC1 ++ IOC);
 

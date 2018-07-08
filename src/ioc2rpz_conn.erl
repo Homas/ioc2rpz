@@ -16,10 +16,10 @@
 
 -module(ioc2rpz_conn).
 -include_lib("ioc2rpz.hrl").
--export([get_ioc/2]).
+-export([get_ioc/3]).
 
 %get_ioc reads IOCs from a local file
-get_ioc(<<"file:",Filename/binary>> = _URL,REGEX) ->
+get_ioc(<<"file:",Filename/binary>> = _URL,REGEX,Source) ->
   %TODO
   %Check if file > 2Gb, read by chunks
   %TODO
@@ -29,8 +29,11 @@ get_ioc(<<"file:",Filename/binary>> = _URL,REGEX) ->
 %  clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX);
   case file:read_file(Filename) of
     {ok, Bin} ->
+      ioc2rpz_fun:logMessage("Source: ~p, size: ~p bytes, MD5: ~p ~n",[Source#source.name, byte_size(Bin), ioc2rpz_fun:bin_to_hexstr(crypto:hash(md5,Bin))]), %TODO debug
       BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
-      clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX);
+      L=clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX),
+      ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators~n",[Source#source.name, length(L)]), %TODO debug
+      L;
       % ioc2rpz_fun:logMessage("Cleaning feed ~p with ~p ~n",[URL, REGEX]), %TODO debug
     {error, Reason} ->
       ioc2rpz_fun:logMessage("Error reading file ~p reason ~p ~n",[Filename, Reason]), %TODO debug
@@ -38,7 +41,7 @@ get_ioc(<<"file:",Filename/binary>> = _URL,REGEX) ->
   end;
 
 %get_ioc download IOCs from http/https/ftp
-get_ioc(<<Proto:5/bytes,_/binary>> = URL,REGEX) when Proto == <<"http:">>;Proto == <<"https">>;Proto == <<"ftp:/">> ->
+get_ioc(<<Proto:5/bytes,_/binary>> = URL,REGEX,Source) when Proto == <<"http:">>;Proto == <<"https">>;Proto == <<"ftp:/">> ->
 %inets, ssl must be started and stopped in supervisor: inets:start(), ssl:start(), ssl:stop(), inets:stop()
 
 % TODO remove below after checks 20180622
@@ -48,8 +51,11 @@ get_ioc(<<Proto:5/bytes,_/binary>> = URL,REGEX) when Proto == <<"http:">>;Proto 
 
   case httpc:request(get,{binary_to_list(URL),[]},[],[{body_format,binary},{sync,true}]) of
   {ok,{{_,200,_},_,Response}} ->
+    ioc2rpz_fun:logMessage("Source: ~p, size: ~p bytes, MD5: ~p ~n",[Source#source.name, byte_size(Response), ioc2rpz_fun:bin_to_hexstr(crypto:hash(md5,Response))]), %TODO debug
     BinLow=ioc2rpz_fun:bin_to_lowcase(Response),
-    clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX);
+    L=clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX),
+    ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators~n",[Source#source.name, length(L)]), %TODO debug
+    L;
     %ioc2rpz_fun:logMessage("Cleaning feed ~p with ~p ~n",[URL, REGEX]), %TODO debug
   {error,Reason} ->
     ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p ~n",[URL, Reason]), %TODO debug
@@ -93,7 +99,7 @@ clean_feed([Head|Tail],CleanIOC,REX) ->
 clean_feed([],CleanIOC,_REX) ->
   CleanIOC.
 
-conv_t2i(<<Y:4/bytes,"-",M:2/bytes,"-",D:2/bytes,Sep:1/bytes,HH:2/bytes,":",MM:2/bytes,":",SS:2/bytes,_Rest/binary>>) when Sep==<<"T">>;Sep==<<" ">>->
+conv_t2i(<<Y:4/bytes,"-",M:2/bytes,"-",D:2/bytes,Sep:1/bytes,HH:2/bytes,":",MM:2/bytes,":",SS:2/bytes,_Rest/binary>>) when Sep==<<"T">>;Sep==<<"t">>;Sep==<<" ">>->
   calendar:datetime_to_gregorian_seconds({{binary_to_integer(Y), binary_to_integer(M), binary_to_integer(D)}, {binary_to_integer(HH), binary_to_integer(MM), binary_to_integer(SS)}})-62167219200;
 conv_t2i(_EXP) ->
   0.

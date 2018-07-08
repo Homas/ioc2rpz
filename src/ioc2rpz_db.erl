@@ -32,6 +32,7 @@ init_db(ets,DBDir,PID) ->
   end,
   ets:new(cfg_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, ordered_set, public, named_table]),
   ets:new(rpz_hotcache_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, ordered_set, public, named_table]), %because labels are shortened
+  ets:new(stat_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, ordered_set, public, named_table]),
   {ok,[]};
 
 init_db(mnesia,DBDir,PID) ->
@@ -40,6 +41,7 @@ init_db(mnesia,DBDir,PID) ->
 %create tables
   ets:new(cfg_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, ordered_set, public, named_table]),
   ets:new(rpz_hotcache_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, ordered_set, public, named_table]),
+  ets:new(stat_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, ordered_set, public, named_table]),
   {ok,[]}.
 
 

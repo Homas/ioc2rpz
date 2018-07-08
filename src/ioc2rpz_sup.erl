@@ -91,6 +91,7 @@ reload_config()->
   [ ioc2rpz_db:save_zone_info(X) || [X] <- ets:match(cfg_table,{[rpz,'_'],'_','$4'}),  X#rpz.cache == <<"true">>],
   ets:delete_all_objects(cfg_table),
   ets:delete_all_objects(rpz_hotcache_table),
+  ets:delete_all_objects(stat_table),
   ets:insert_new(cfg_table, {cfg_file,Filename}), ets:insert_new(cfg_table, {db_dir,DBDir}),
   {ok,RPZ,_,_} = read_config2(Filename),
   ioc2rpz_db:clean_DB(RPZ),

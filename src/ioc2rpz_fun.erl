@@ -17,7 +17,7 @@
 -module(ioc2rpz_fun).
 -include_lib("ioc2rpz.hrl").
 -export([logMessage/2,strs_to_binary/1,curr_serial/0,curr_serial_60/0,constr_ixfr_url/3,ip_to_bin/1,read_local_actions/1,split_bin_bytes/2,split_tail/2,
-         bin_to_lowcase/1,ip_in_list/2,intersection/2]).
+         bin_to_lowcase/1,ip_in_list/2,intersection/2,bin_to_hexstr/1]).
 
 logMessage(Message, Vars) ->
   logMessage(group_leader(), Message, Vars).
@@ -133,3 +133,6 @@ ip_in_list(IP,LST) -> %TODO check CIDR as well
  lists:member(IP,LST).
  
 intersection(L1,L2) -> lists:filter(fun(X) -> lists:member(X,L1) end, L2).
+
+bin_to_hexstr(<<Bin:128/big-unsigned-integer>>) ->
+ lists:flatten(io_lib:format("~32.16.0b", [Bin])).

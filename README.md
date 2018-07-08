@@ -212,7 +212,7 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 
 ## TODO features
 - [ ] Configuration file name pass as a variable to the container
-- [ ] (1) http/https/ftp errors handling - source status in the record. If a source is not available - work w/o it
+- [x] (1) http/https/ftp errors handling - source status in the record. If a source is not available - work w/o it
   - [ ] RPZ behavior: ignore unreachable sources, use old data for unreachable sources, do not update the zone
   - [ ] (2) Source based on files check by mod.date and size -> read by chunks
   - [ ] Retry if source is not available
