@@ -1,18 +1,27 @@
 #  ioc2rpz makes your threat intelligence actionable
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)  
 
-According with [Cisco's 2016 annual security report](https://github.com/Homas/ioc2rpz/blob/master/Cisco_2016_ASR.pdf) **91.3%** of malware use DNS in the following ways:
-- to gain command and control;
-- to exfiltrate data;
-- to redirect traffic.
-<p align="center"><img src="https://github.com/Homas/ioc2rpz/blob/master/DNS_Malware.png"></p>
-ISC Bind is a de facto a standard of a nameserver. With introduction of Response Policy Zones in the ISC BIND 9.8 it is became a simple task to monitor and contain malware on DNS layer. A DNS server can handle millions of indicators but there is no automated and efficient way to maintain response policy zones on primary DNS servers. Usually indicators of compromise are distributed in plain text but in different formats and only a few providers of IOCs make them available via RPZ.
+## Overview
 
-ioc2rpz is a custom built DNS server which natively supports different file formats, protocols and transforms threat intelligence into actionable RPZ feeds. The feeds can be used on any DNS server which supports RPZ.  
+DNS is the control plane of the Internet. Usually DNS is used for good but:
+- It can be used to track users locations and their behaviour;
+- Malware uses DNS to command and control, exfiltrate data or redirect traffic;
+- According with 2016 Cisco annual security report, 91.3% of malware use DNS;
+- Advertisements companies usually use separate and obscure domains to show ads;
+- Free DNS services (e.g. 1.1.1.1, 8.8.8.8, 9.9.9.9 etc) can help you to address some concerns but you can not define your own protection settings or ad filters.
+
+ISC Bind is a de facto a standard of a nameserver. With introduction of Response Policy Zones in the ISC BIND 9.8 it is became a simple task to monitor and contain malware on DNS layer. RPZ is supported on PowerDNS recursor 4.0.0 and later releases. Knot DNS is also partially supports RPZ.
+
+In comparing with traditional network protection solutions a DNS server can handle millions of indicators without performance impact but there were no automated and efficient way to maintain response policy zones on primary DNS servers.
+
+Usually indicators of compromise are distributed in plain text but in different formats and only a few providers of IOCs make them available via RPZ.
+
+ioc2rpz is a custom DNS server which automatically converts indicators (e.g. malicious FQDNs, IPs) from various sources into RPZ feeds and automatically maintains/updates them. The feeds can be distributed to any open source and/or commercial DNS servers which support RPZ, e.g. ISC Bind, PowerDNS. You can run your own DNS server with RPZ filtering on a router, desktop, server and even Arduino. System memory is the only limitation.
+
+With ioc2rpz you can define your own feeds, actions and prevent undesired communications.
 
 <b>ioc2rpz is a place where threat intelligence meets DNS.</b>
 
-## Overview
 ioc2rpz transforms IOC feeds into response policy zones (RPZ). You can mix feeds to generate a single RPZ or multiple RPZs. Trusted domains and IPs can be whitelisted. ioc2rpz supports expiration of indicators and accordingly rebuilds zones.  
 ![Alt ioc2rpz](https://github.com/Homas/ioc2rpz/blob/master/IOC2RPZ.jpg)
 The current release supports: local files and files/requests via http/https/ftp protocols. You can use any file format if you can write a REGEX to extract indicators and indicators are separated by newline or/and return carriage chars (/n, /r, /r/n).
