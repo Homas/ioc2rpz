@@ -42,11 +42,6 @@ You can use ioc2rpz with any DNS server which supports Response Policy Zones e.g
 - IOC expiration time is used to remove expired indicators in a timely manner;
 - Performance and zone transfer time/size/packets optimizations.
 
-## How to start ioc2rpz service
-ioc2rpz by default reads configuration from ./cfg/ioc2rpz.conf, listens on all network interfaces and saves DB backup in ./db directory. You can change the default values in the erlang application configuration, which is located in ``ebin/ioc2rpz.app``.  
-If you downloaded sources, before running ioc2rpz you have to compile the code with the following command: ``erlc -I include/ -o ebin/ src/*.erl``.  
-You can start the application by ``sudo erl -pa ebin -eval "application:start(ioc2rpz,permanent)" -noshell`` command.  
-
 ## Docker container
 ioc2rpz is available on the Docker Hub. Just look for ioc2rpz.
 Prerequisites:
@@ -67,6 +62,11 @@ The video below shows how to setup ioc2rpz and ioc2rpz.gui on AWS using ECS.
 
 ## ioc2rpz web interface
 [ioc2rpz.gui](https://github.com/Homas/ioc2rpz.gui) is a Management Web interface which is developed as a separate project. It is not required to run ioc2rpz.
+
+## How to start ioc2rpz service (w/o docker)
+ioc2rpz by default reads configuration from ./cfg/ioc2rpz.conf, listens on all network interfaces and saves DB backup in ./db directory. You can change the default values in the erlang application configuration, which is located in ``ebin/ioc2rpz.app``.  
+If you downloaded sources, before running ioc2rpz you have to compile the code with the following command: ``erlc -I include/ -o ebin/ src/*.erl``.  
+You can start the application by ``sudo erl -pa ebin -eval "application:start(ioc2rpz,permanent)" -noshell`` command.  
 
 ## ioc2rpz management
 ioc2rpz supports management over DNS/TCP. The current version of ioc2rpz does not support a separate management IP/interface. In any case it is highly recommended to create a designated TSIG key (or keys) which will be used for management only. You can turn off management over DNS.  
