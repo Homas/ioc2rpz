@@ -10,6 +10,8 @@ DNS is the control plane of the Internet. Usually DNS is used for good but:
 - Advertisements companies usually use separate and obscure domains to show ads;
 - Free DNS services (e.g. 1.1.1.1, 8.8.8.8, 9.9.9.9 etc) can help you to address some concerns but you can not define your own protection settings or ad filters.
 
+<p align="center"><img src="https://github.com/Homas/ioc2rpz/blob/master/DNS_Malware.png"></p>
+
 ISC Bind is a de facto a standard of a nameserver. With introduction of Response Policy Zones in the ISC BIND 9.8 it is became a simple task to monitor and contain malware on DNS layer. RPZ is supported on PowerDNS recursor 4.0.0 and later releases. Knot DNS is also partially supports RPZ.
 
 In comparing with traditional network protection solutions a DNS server can handle millions of indicators without performance impact but there were no automated and efficient way to maintain response policy zones on primary DNS servers.
