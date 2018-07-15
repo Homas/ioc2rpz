@@ -53,12 +53,13 @@ Prerequisites:
 - ioc2rpz saves ETS database into files for faster boot. You may mount /opt/ioc2rpz/db to a directory on a host system to preserve DB over restarts;
 You can start ioc2rpz with the following command:
 ```
-docker run --mount type=bind,source=/home/ioc2rpz/cfg,target=/opt/ioc2rpz/cfg --mount type=bind,source=/home/ioc2rpz/db,target=/opt/ioc2rpz/db -p53:53 -p53:53/udp ioc2rpz
+sudo docker run -d --name ioc2rpz --log-driver=syslog --restart always --mount type=bind,source=/home/ioc2rpz/cfg,target=/opt/ioc2rpz/cfg --mount type=bind,source=/home/ioc2rpz/db,target=/opt/ioc2rpz/db -p53:53 -p53:53/udp pvmdel/ioc2rpz
+
 ```
 where /home/ioc2rpz/cfg, /home/ioc2rpz/db directories on a host system.
 
 ## ioc2rpz web interface
-[ioc2rpz.gui](https://github.com/Homas/ioc2rpz.gui) is a web interface to manage ioc2rpz DNS servers. It is developed as a separate project.
+[ioc2rpz.gui](https://github.com/Homas/ioc2rpz.gui) is a Management Web interface which is developed as a separate project. It is not required to run ioc2rpz.
 
 ## ioc2rpz management
 ioc2rpz supports management over DNS/TCP. The current version of ioc2rpz does not support a separate management IP/interface. In any case it is highly recommended to create a designated TSIG key (or keys) which will be used for management only. You can turn off management over DNS.  
