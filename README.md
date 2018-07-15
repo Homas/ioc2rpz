@@ -60,6 +60,11 @@ sudo docker run -d --name ioc2rpz --log-driver=syslog --restart always --mount t
 ```
 where /home/ioc2rpz/cfg, /home/ioc2rpz/db directories on a host system.
 
+## ioc2rpz on AWS
+You can run ioc2rpz and ioc2rpz.gui on AWS. For relatively small deployments (several hundreds thousands indicators) even free tier is enough.
+The video below shows how to setup ioc2rpz and ioc2rpz.gui on AWS using ECS.
+<p align="center"><a href="http://www.youtube.com/watch?feature=player_embedded&v=C-y4p5TXt8s" target="_blank"><img src="https://github.com/Homas/ioc2rpz/blob/master/ioc2rpz_aws_setup.png"></a></p>
+
 ## ioc2rpz web interface
 [ioc2rpz.gui](https://github.com/Homas/ioc2rpz.gui) is a Management Web interface which is developed as a separate project. It is not required to run ioc2rpz.
 
