@@ -30,7 +30,7 @@ The current release supports: local files and files/requests via http/https/ftp 
 
 ## How to use ioc2rpz
 You can use ioc2rpz with any DNS server which supports Response Policy Zones e.g. recent versions of ISC BIND. A sample bind's configuration file (named.conf) is provided in the cfg folder.
-<p align="center">[<img src="https://github.com/Homas/ioc2rpz/blob/master/ioc2rpz_demo.png">](https://www.youtube.com/watch?v=bvhyMFa_mBM)</p>
+<p align="center">[![ioc2rpz demo](https://github.com/Homas/ioc2rpz/blob/master/ioc2rpz_demo.png")](https://www.youtube.com/watch?v=bvhyMFa_mBM)</p>
 
 
 ## ioc2rpz vs ISC BIND vs other DNS:
