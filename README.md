@@ -264,6 +264,8 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [ ] Switch from IXFR cache to Sources cache. IXFR cache allows you to support less zone updates but IOCs can be stored multiple times. Sources cache will contain duplicate IOCs from the same source but RPZs will be updated more frequently (looks like it is not bad).
   - [ ] (3) Share IOC between the feeds in IXFR table (do not forget about different whitelists)
 - [ ] Access to the hotcache and the cfg_table via FUNs
+- [ ] DNS over TLS https://tools.ietf.org/html/rfc8310
+- [ ] Parrallel source downloads
 
 ## Other/optimization TODO
 - [ ] (1) Do not cache expired IOCs if ExpDateTime<Serial_IXFR / update ExpDateTime if exists
