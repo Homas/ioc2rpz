@@ -18,12 +18,8 @@
 -include_lib("ioc2rpz.hrl").
 -export([get_ioc/3]).
 
-%get_ioc reads IOCs from a local file
-get_ioc(<<"file:",Filename/binary>> = _URL,REGEX,Source) ->
-  %TODO
-  %Check if file > 2Gb, read by chunks
-  %TODO
-  case file:read_file(Filename) of
+get_ioc(URL,REGEX,Source) ->
+  case get_ioc(URL,REGEX,Source,stype) of
     {ok, Bin} ->
       ioc2rpz_fun:logMessage("Source: ~p, size: ~s (~p), MD5: ~p ~n",[Source#source.name, ioc2rpz_fun:conv_to_Mb(byte_size(Bin)),byte_size(Bin), ioc2rpz_fun:bin_to_hexstr(crypto:hash(md5,Bin))]), %TODO debug
       BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
@@ -31,37 +27,78 @@ get_ioc(<<"file:",Filename/binary>> = _URL,REGEX,Source) ->
       L=clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX),
       ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators~n",[Source#source.name, length(L)]), %TODO debug
       L;
-    {error, Reason} ->
-      ioc2rpz_fun:logMessage("Error reading file ~p reason ~p ~n",[Filename, Reason]), %TODO debug
+    _ ->
       []
-  end;
-
-get_ioc(<<"shell:",CMD/binary>> = _URL,REGEX,Source) ->
-  Bin=list_to_binary(os:cmd(binary_to_list(CMD))), %, #{ max_size => ?ShellMaxRespSize }
-  ioc2rpz_fun:logMessage("Source: ~p, size: ~s (~p), MD5: ~p ~n",[Source#source.name, ioc2rpz_fun:conv_to_Mb(byte_size(Bin)),byte_size(Bin), ioc2rpz_fun:bin_to_hexstr(crypto:hash(md5,Bin))]), %TODO debug
-  BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
-  %L=[ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX) ],
-  L=clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX),
-  ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators~n",[Source#source.name, length(L)]), %TODO debug
-  L;
-
-%get_ioc download IOCs from http/https/ftp
-get_ioc(<<Proto:5/bytes,_/binary>> = URL,REGEX,Source) when Proto == <<"http:">>;Proto == <<"https">>;Proto == <<"ftp:/">> ->
-%inets, ssl must be started and stopped in supervisor: inets:start(), ssl:start(), ssl:stop(), inets:stop()
-
-  case httpc:request(get,{binary_to_list(URL),[]},[],[{body_format,binary},{sync,true}]) of
-  {ok,{{_,200,_},_,Response}} ->
-    ioc2rpz_fun:logMessage("Source: ~p, size: ~s (~p), MD5: ~p ~n",[Source#source.name, ioc2rpz_fun:conv_to_Mb(byte_size(Response)), byte_size(Response), ioc2rpz_fun:bin_to_hexstr(crypto:hash(md5,Response))]), %TODO debug
-    BinLow=ioc2rpz_fun:bin_to_lowcase(Response),
-    %L=[ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- clean_feed(ioc2rpz_fun:split_tail(Response,<<"\n">>),REGEX) ],
-    L=clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX),
-    ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators~n",[Source#source.name, length(L)]), %TODO debug
-    L;
-  {error,Reason} ->
-    ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p ~n",[URL, Reason]), %TODO debug
-    []
   end.
 
+%reads IOCs from a local file
+get_ioc(<<"file:",Filename/binary>> = _URL,_REGEX,_Source,stype) ->
+  case file:read_file(Filename) of
+    {ok, Bin} ->
+      {ok, Bin};
+    {error, Reason} ->
+      ioc2rpz_fun:logMessage("Error reading file ~p reason ~p ~n",[Filename, Reason]), 
+      {error, Reason}
+  end;
+
+%IOCs are provided by a local script
+get_ioc(<<"shell:",CMD/binary>> = _URL,_REGEX,_Source,stype) ->
+  {ok, list_to_binary(os:cmd(binary_to_list(CMD)))};
+
+%download IOCs from http/https/ftp
+get_ioc(<<Proto:5/bytes,_/binary>> = URL,_REGEX,_Source,stype) when Proto == <<"http:">>;Proto == <<"https">>;Proto == <<"ftp:/">> ->
+  case httpc:request(get,{binary_to_list(URL),[]},[],[{body_format,binary},{sync,true}]) of
+  {ok,{{_,200,_},_,Response}} ->
+    {ok,Response};
+  {error,Reason} ->
+    ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p ~n",[URL, Reason]), %TODO debug
+    {error,Reason}
+  end. 
+
+%get_ioc reads IOCs from a local file
+%%%get_ioc(<<"file:",Filename/binary>> = _URL,REGEX,Source,stype) ->
+%%%  %TODO
+%%%  %Check if file > 2Gb, read by chunks
+%%%  %TODO
+%%%  case file:read_file(Filename) of
+%%%    {ok, Bin} ->
+%%%      ioc2rpz_fun:logMessage("Source: ~p, size: ~s (~p), MD5: ~p ~n",[Source#source.name, ioc2rpz_fun:conv_to_Mb(byte_size(Bin)),byte_size(Bin), ioc2rpz_fun:bin_to_hexstr(crypto:hash(md5,Bin))]), %TODO debug
+%%%      BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
+%%%      %L=[ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX) ],
+%%%      L=clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX),
+%%%      ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators~n",[Source#source.name, length(L)]), %TODO debug
+%%%      L;
+%%%    {error, Reason} ->
+%%%      ioc2rpz_fun:logMessage("Error reading file ~p reason ~p ~n",[Filename, Reason]), %TODO debug
+%%%      []
+%%%  end;
+%%%
+%%%get_ioc(<<"shell:",CMD/binary>> = _URL,REGEX,Source,stype) ->
+%%%  Bin=list_to_binary(os:cmd(binary_to_list(CMD))), %, #{ max_size => ?ShellMaxRespSize }
+%%%  ioc2rpz_fun:logMessage("Source: ~p, size: ~s (~p), MD5: ~p ~n",[Source#source.name, ioc2rpz_fun:conv_to_Mb(byte_size(Bin)),byte_size(Bin), ioc2rpz_fun:bin_to_hexstr(crypto:hash(md5,Bin))]), %TODO debug
+%%%  BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
+%%%  %L=[ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX) ],
+%%%  L=clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX),
+%%%  ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators~n",[Source#source.name, length(L)]), %TODO debug
+%%%  L;
+%%%
+%%%%get_ioc download IOCs from http/https/ftp
+%%%get_ioc(<<Proto:5/bytes,_/binary>> = URL,REGEX,Source,stype) when Proto == <<"http:">>;Proto == <<"https">>;Proto == <<"ftp:/">> ->
+%%%%inets, ssl must be started and stopped in supervisor: inets:start(), ssl:start(), ssl:stop(), inets:stop()
+%%%
+%%%  case httpc:request(get,{binary_to_list(URL),[]},[],[{body_format,binary},{sync,true}]) of
+%%%  {ok,{{_,200,_},_,Response}} ->
+%%%    ioc2rpz_fun:logMessage("Source: ~p, size: ~s (~p), MD5: ~p ~n",[Source#source.name, ioc2rpz_fun:conv_to_Mb(byte_size(Response)), byte_size(Response), ioc2rpz_fun:bin_to_hexstr(crypto:hash(md5,Response))]), %TODO debug
+%%%    BinLow=ioc2rpz_fun:bin_to_lowcase(Response),
+%%%    %L=[ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- clean_feed(ioc2rpz_fun:split_tail(Response,<<"\n">>),REGEX) ],
+%%%    L=clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX),
+%%%    ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators~n",[Source#source.name, length(L)]), %TODO debug
+%%%    L;
+%%%  {error,Reason} ->
+%%%    ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p ~n",[URL, Reason]), %TODO debug
+%%%    []
+%%%  end.
+%%%
 %get_ioc(<<"rpz:",RRPZ/binary>>,REGEX) when is_binary(URL) ->
 %rpz:alg:keyname:key:rpzfeedname:(IP)
 %  ok.
