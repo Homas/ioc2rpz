@@ -30,8 +30,8 @@ get_ioc(<<"file:",Filename/binary>> = _URL,REGEX,Source) ->
   case file:read_file(Filename) of
     {ok, Bin} ->
       ioc2rpz_fun:logMessage("Source: ~p, size: ~s (~p), MD5: ~p ~n",[Source#source.name, ioc2rpz_fun:conv_to_Mb(byte_size(Bin)),byte_size(Bin), ioc2rpz_fun:bin_to_hexstr(crypto:hash(md5,Bin))]), %TODO debug
-      BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
-      L=clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX),
+      % BinLow=ioc2rpz_fun:bin_to_lowcase(Bin), %2018-07-25 Remove if performance and mem usage is Ok
+      L=clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX),
       ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators~n",[Source#source.name, length(L)]), %TODO debug
       L;
       % ioc2rpz_fun:logMessage("Cleaning feed ~p with ~p ~n",[URL, REGEX]), %TODO debug
@@ -52,8 +52,8 @@ get_ioc(<<Proto:5/bytes,_/binary>> = URL,REGEX,Source) when Proto == <<"http:">>
   case httpc:request(get,{binary_to_list(URL),[]},[],[{body_format,binary},{sync,true}]) of
   {ok,{{_,200,_},_,Response}} ->
     ioc2rpz_fun:logMessage("Source: ~p, size: ~s (~p), MD5: ~p ~n",[Source#source.name, ioc2rpz_fun:conv_to_Mb(byte_size(Response)), byte_size(Response), ioc2rpz_fun:bin_to_hexstr(crypto:hash(md5,Response))]), %TODO debug
-    BinLow=ioc2rpz_fun:bin_to_lowcase(Response),
-    L=clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX),
+    %BinLow=ioc2rpz_fun:bin_to_lowcase(Response), %2018-07-25 Remove if performance and mem usage is Ok
+    L=clean_feed(ioc2rpz_fun:split_tail(Response,<<"\n">>),REGEX),
     ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators~n",[Source#source.name, length(L)]), %TODO debug
     L;
     %ioc2rpz_fun:logMessage("Cleaning feed ~p with ~p ~n",[URL, REGEX]), %TODO debug
@@ -90,8 +90,8 @@ clean_feed(IOC,REX) -> %REX - user's regular expression
 
 clean_feed([Head|Tail],CleanIOC,REX) ->
   IOC2 = case re:run(Head,REX,[global,notempty,{capture,[1,2],binary}]) of
-    {match,[[IOC,<<>>]]} -> {IOC,0}; %TODO check string:casefold performance impact on huge feeds
-    {match,[[IOC,EXP]]} -> {IOC,conv_t2i(EXP)}; %TODO check string:casefold performance impact on huge feeds
+    {match,[[IOC,<<>>]]} -> {ioc2rpz_fun:bin_to_lowcase(IOC),0}; %2018-07-25 check ioc2rpz_fun:bin_to_lowcase performance/memory impact. TODO check string:casefold performance impact on huge feeds
+    {match,[[IOC,EXP]]} -> {ioc2rpz_fun:bin_to_lowcase(IOC),conv_t2i(EXP)}; %2018-07-25 check ioc2rpz_fun:bin_to_lowcase performance/memory impact. TODO check string:casefold performance impact on huge feeds
     _Else -> <<>>
   end,
   clean_feed(Tail, [IOC2|CleanIOC],REX);
