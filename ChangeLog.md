@@ -3,8 +3,7 @@
 
 
 ## 2018-07-25
-- [CB] Indicators are converted into low case per indicator instead of converting a full source.
-Zone "at-host.ioc2rpz" updated in 270 seconds
+- [CB] Individual indicators are converted into low case instead of converting a full source file. It was updated because of possible issues with REGEX
 
 ## 2018-04-11
 Added a reference to ioc2rpz.gui

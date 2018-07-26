@@ -23,10 +23,6 @@ get_ioc(<<"file:",Filename/binary>> = _URL,REGEX,Source) ->
   %TODO
   %Check if file > 2Gb, read by chunks
   %TODO
-% TODO remove below after checks 20180622
-%  {ok, Bin} = file:read_file(Filename),
-%  BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
-%  clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX);
   case file:read_file(Filename) of
     {ok, Bin} ->
       ioc2rpz_fun:logMessage("Source: ~p, size: ~s (~p), MD5: ~p ~n",[Source#source.name, ioc2rpz_fun:conv_to_Mb(byte_size(Bin)),byte_size(Bin), ioc2rpz_fun:bin_to_hexstr(crypto:hash(md5,Bin))]), %TODO debug
@@ -40,14 +36,16 @@ get_ioc(<<"file:",Filename/binary>> = _URL,REGEX,Source) ->
       []
   end;
 
+get_ioc(<<"shell:",CMD/binary>> = _URL,REGEX,Source) ->
+  Bin=list_to_binary(os:cmd(binary_to_list(CMD), #{ max_size => ?ShellMaxRespSize })),
+  ioc2rpz_fun:logMessage("Source: ~p, size: ~s (~p), MD5: ~p ~n",[Source#source.name, ioc2rpz_fun:conv_to_Mb(byte_size(Bin)),byte_size(Bin), ioc2rpz_fun:bin_to_hexstr(crypto:hash(md5,Bin))]), %TODO debug
+  L=clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX),
+  ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators~n",[Source#source.name, length(L)]), %TODO debug
+  [ [ioc2rpz_fun:bin_to_lowcase(X),Y] || [X,Y] <- L ];
+
 %get_ioc download IOCs from http/https/ftp
 get_ioc(<<Proto:5/bytes,_/binary>> = URL,REGEX,Source) when Proto == <<"http:">>;Proto == <<"https">>;Proto == <<"ftp:/">> ->
 %inets, ssl must be started and stopped in supervisor: inets:start(), ssl:start(), ssl:stop(), inets:stop()
-
-% TODO remove below after checks 20180622
-%  {ok,{{_,200,_},_,Response}} = httpc:request(get,{binary_to_list(URL),[]},[],[{body_format,binary},{sync,true}]),
-%  BinLow=ioc2rpz_fun:bin_to_lowcase(Response),
-%  clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX).
 
   case httpc:request(get,{binary_to_list(URL),[]},[],[{body_format,binary},{sync,true}]) of
   {ok,{{_,200,_},_,Response}} ->
@@ -90,8 +88,8 @@ clean_feed(IOC,REX) -> %REX - user's regular expression
 
 clean_feed([Head|Tail],CleanIOC,REX) ->
   IOC2 = case re:run(Head,REX,[global,notempty,{capture,[1,2],binary}]) of
-    {match,[[IOC,<<>>]]} -> {IOC,0}; %TODO check string:casefold performance impact on huge feeds
-    {match,[[IOC,EXP]]} -> {IOC,conv_t2i(EXP)}; %TODO check string:casefold performance impact on huge feeds
+    {match,[[IOC,<<>>]]} -> {IOC,0};
+    {match,[[IOC,EXP]]} -> {IOC,conv_t2i(EXP)};
     _Else -> <<>>
   end,
   clean_feed(Tail, [IOC2|CleanIOC],REX);

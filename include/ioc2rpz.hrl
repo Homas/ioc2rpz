@@ -27,6 +27,7 @@
 -define(TCPTimeout,3000). %TCP timeout in milliseconds
 -define(HotCacheTime,900). %900 Time to cache IOCs/Records/Pkts in the hot cache. More usefull for online rpz.
 -define(HotCacheTimeIXFR,0). %Time to cache IXFR IOCs in a hot cache. By default it is cached for a minute because of curr_serial_60.
+-define(ShellMaxRespSize,2*1024*1024*1024). %Maximum response size for shell source
 
 
 %%%%%%
