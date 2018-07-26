@@ -19,7 +19,7 @@
 -export([get_ioc/3]).
 
 get_ioc(URL,REGEX,Source) ->
-  case get_ioc(URL,REGEX,Source,stype) of
+  case get_ioc(URL) of
     {ok, Bin} ->
       ioc2rpz_fun:logMessage("Source: ~p, size: ~s (~p), MD5: ~p ~n",[Source#source.name, ioc2rpz_fun:conv_to_Mb(byte_size(Bin)),byte_size(Bin), ioc2rpz_fun:bin_to_hexstr(crypto:hash(md5,Bin))]), %TODO debug
       BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
@@ -32,7 +32,7 @@ get_ioc(URL,REGEX,Source) ->
   end.
 
 %reads IOCs from a local file
-get_ioc(<<"file:",Filename/binary>> = _URL,_REGEX,_Source,stype) ->
+get_ioc(<<"file:",Filename/binary>> = _URL) ->
   case file:read_file(Filename) of
     {ok, Bin} ->
       {ok, Bin};
@@ -42,11 +42,11 @@ get_ioc(<<"file:",Filename/binary>> = _URL,_REGEX,_Source,stype) ->
   end;
 
 %IOCs are provided by a local script
-get_ioc(<<"shell:",CMD/binary>> = _URL,_REGEX,_Source,stype) ->
+get_ioc(<<"shell:",CMD/binary>> = _URL) ->
   {ok, list_to_binary(os:cmd(binary_to_list(CMD)))};
 
 %download IOCs from http/https/ftp
-get_ioc(<<Proto:5/bytes,_/binary>> = URL,_REGEX,_Source,stype) when Proto == <<"http:">>;Proto == <<"https">>;Proto == <<"ftp:/">> ->
+get_ioc(<<Proto:5/bytes,_/binary>> = URL) when Proto == <<"http:">>;Proto == <<"https">>;Proto == <<"ftp:/">> ->
   case httpc:request(get,{binary_to_list(URL),[]},[],[{body_format,binary},{sync,true}]) of
   {ok,{{_,200,_},_,Response}} ->
     {ok,Response};
