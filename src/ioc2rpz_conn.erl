@@ -24,7 +24,7 @@ get_ioc(URL,REGEX,Source) ->
       ioc2rpz_fun:logMessage("Source: ~p, size: ~s (~p), MD5: ~p ~n",[Source#source.name, ioc2rpz_fun:conv_to_Mb(byte_size(Bin)),byte_size(Bin), ioc2rpz_fun:bin_to_hexstr(crypto:hash(md5,Bin))]), %TODO debug
       BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
       L=clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX),
-      %L=[ {ioc2rpz_fun:bin_to_lowcase(X),Y} || [X,Y] <- clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX) ],
+      %L=[ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX) ],
       ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators~n",[Source#source.name, length(L)]), %TODO debug
       L;
     _ ->
@@ -111,7 +111,7 @@ get_ioc(<<Proto:5/bytes,_/binary>> = URL,_REGEX,_Source,stype) when Proto == <<"
 %No clean REGEX
 %Read IOCs. One IOC per a line. Do not perform any modifications. Expiration date is not supported. During a next full zone update (AXFR update). All IOCs are refreshed;
 clean_feed(IOC,none) ->
-  [ [X,0] || X <- IOC, X /= <<>>];
+  [ {X,0} || X <- IOC, X /= <<>>];
 
 %Default REFEX
 %Extract IOCs,remove unsupported chars using standard REGEX. Expiration date is not supported;
@@ -127,8 +127,8 @@ clean_feed(IOC,REX) -> %REX - user's regular expression
 
 clean_feed([Head|Tail],CleanIOC,REX) ->
   IOC2 = case re:run(Head,REX,[global,notempty,{capture,[1,2],binary}]) of
-    {match,[[IOC,<<>>]]} -> [IOC,0];
-    {match,[[IOC,EXP]]} -> [IOC,conv_t2i(EXP)];
+    {match,[[IOC,<<>>]]} -> {IOC,0};
+    {match,[[IOC,EXP]]} -> {IOC,conv_t2i(EXP)};
     _Else -> <<>>
   end,
   clean_feed(Tail, [IOC2|CleanIOC],REX);
