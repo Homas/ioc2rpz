@@ -4,7 +4,10 @@
 
 ## Sources
 - [ ] IOC type to a source level
-- [ ] "shell:" source type (executing a shell cmd)
+- [x] "shell:" source type (executing a shell cmd)
+- [ ] additional tools and scripts for "shell:"
+  - [ ] dig
+  - [ ] python with PostgreSQL, curl 
 - [ ] Add source RPZ via "shell:"
 - [ ] Add source PostreSQL, MySQL via "shell:"
 - [ ] RPZ action per source
