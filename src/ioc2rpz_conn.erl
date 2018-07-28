@@ -16,7 +16,7 @@
 
 -module(ioc2rpz_conn).
 -include_lib("ioc2rpz.hrl").
--export([get_ioc/3]).
+-export([get_ioc/3,clean_feed_bin/2]).
 
 get_ioc(URL,REGEX,Source) ->
   case get_ioc(URL) of
@@ -153,13 +153,13 @@ clean_feed_bin(IOC,REX) -> %REX - user's regular expression
 
 clean_feed_bin([Head|Tail],CleanIOC,REX) ->
   IOC2 = case re:run(Head,REX,[global,notempty,{capture,[1,2],binary}]) of
-    {match,[[IOC,<<>>]]} -> <<IOC/binary,",",0,";">>;
-    {match,[[IOC,EXP]]} -> <<IOC/binary,",",(conv_t2i(EXP))/binary,";">>;
+    {match,[[IOC,<<>>]]} -> <<(ioc2rpz_fun:bin_to_lowcase(IOC))/binary,",",0,";">>;
+    {match,[[IOC,EXP]]} -> <<(ioc2rpz_fun:bin_to_lowcase(IOC))/binary,",",(conv_t2i(EXP))/binary,";">>;
     _Else -> <<>>
   end,
-  clean_feed_bin(Tail, <<CleanIOC/binary,IOC2>>, REX);
+  clean_feed_bin(Tail, <<CleanIOC/binary,IOC2/binary>>, REX);
 clean_feed_bin([],CleanIOC,_REX) ->
-  [ {A,B} || [A,B] <- [ X || X <- ioc2rpz_fun:split_tail(CleanIOC,<<";">>), X /= <<>> ]].
+  [ {A,B} || [A,B] <- [ ioc2rpz_fun:split_tail(X,<<",">>) || X <- ioc2rpz_fun:split_tail(CleanIOC,<<";">>), X /= <<>> ]].
 %%%Check memory consumtion
 
 
