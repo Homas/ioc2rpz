@@ -4,10 +4,12 @@
 
 ## Sources
 - [ ] IOC type to a source level
+- [ ] Max # or rules
 - [x] "shell:" source type (executing a shell cmd)
-- [ ] additional tools and scripts for "shell:"
-  - [ ] dig
-  - [ ] python with PostgreSQL, curl 
+- [ ] additional tools and scripts for "shell:" (exists cat, awk, grep, nslookup )
+  - [x] dig
+  - [x] curl
+  - [x] python3
 - [ ] Add source RPZ via "shell:"
 - [ ] Add source PostreSQL, MySQL via "shell:"
 - [ ] RPZ action per source

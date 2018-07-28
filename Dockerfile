@@ -18,7 +18,7 @@ FROM erlang:alpine
 MAINTAINER Vadim Pavlov<ioc2rpz@gmail.com>
 WORKDIR /opt/ioc2rpz
 
-RUN mkdir /opt/ioc2rpz/ebin /opt/ioc2rpz/cfg /opt/ioc2rpz/db /opt/ioc2rpz/include /opt/ioc2rpz/src /opt/ioc2rpz/log
+RUN mkdir /opt/ioc2rpz/ebin /opt/ioc2rpz/cfg /opt/ioc2rpz/db /opt/ioc2rpz/include /opt/ioc2rpz/src /opt/ioc2rpz/log && apk add bind-tools curl python3
 ADD ebin/ioc2rpz.app /opt/ioc2rpz/ebin/
 ADD src/* /opt/ioc2rpz/src/
 ADD include/* /opt/ioc2rpz/include/

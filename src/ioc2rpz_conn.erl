@@ -22,9 +22,10 @@ get_ioc(URL,REGEX,Source) ->
   case get_ioc(URL) of
     {ok, Bin} ->
       ioc2rpz_fun:logMessage("Source: ~p, size: ~s (~p), MD5: ~p ~n",[Source#source.name, ioc2rpz_fun:conv_to_Mb(byte_size(Bin)),byte_size(Bin), ioc2rpz_fun:bin_to_hexstr(crypto:hash(md5,Bin))]), %TODO debug
-      BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
-      L=clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX),
-      %L=[ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX) ],
+      %BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
+      %L=clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX),
+      %below consumes twice more memory
+      L=[ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX) ],
       ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators~n",[Source#source.name, length(L)]), %TODO debug
       L;
     _ ->
@@ -131,7 +132,7 @@ clean_feed([Head|Tail],CleanIOC,REX) ->
     {match,[[IOC,EXP]]} -> {IOC,conv_t2i(EXP)};
     _Else -> <<>>
   end,
-  clean_feed(Tail, [IOC2|CleanIOC],REX);
+  clean_feed(Tail, [IOC2 | CleanIOC], REX);
 
 clean_feed([],CleanIOC,_REX) ->
   CleanIOC.
