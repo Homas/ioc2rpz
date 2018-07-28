@@ -22,8 +22,9 @@ get_ioc(URL,REGEX,Source) ->
   case get_ioc(URL) of
     {ok, Bin} ->
       ioc2rpz_fun:logMessage("Source: ~p, size: ~s (~p), MD5: ~p ~n",[Source#source.name, ioc2rpz_fun:conv_to_Mb(byte_size(Bin)),byte_size(Bin), ioc2rpz_fun:bin_to_hexstr(crypto:hash(md5,Bin))]), %TODO debug
-      BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
-      L=clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX),
+      %BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
+      %L=clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX),
+      L=clean_feed_bin(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX),      
       %below consumes twice more memory
       %L=[ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX) ],
       ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators~n",[Source#source.name, length(L)]), %TODO debug
@@ -136,6 +137,31 @@ clean_feed([Head|Tail],CleanIOC,REX) ->
 
 clean_feed([],CleanIOC,_REX) ->
   CleanIOC.
+
+
+%%%Check memory consumtion
+clean_feed_bin(IOC,none) ->
+  [ {X,0} || X <- IOC, X /= <<>>];
+
+clean_feed_bin(IOC,[]) ->
+  {ok,MP} = re:compile("^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"),
+  [ X || X <- clean_feed(IOC,<<>>,MP), X /= <<>>];
+
+clean_feed_bin(IOC,REX) -> %REX - user's regular expression
+  {ok,MP} = re:compile(REX),
+  [ X || X <- clean_feed(IOC,<<>>,MP), X /= <<>>].
+
+clean_feed_bin([Head|Tail],CleanIOC,REX) ->
+  IOC2 = case re:run(Head,REX,[global,notempty,{capture,[1,2],binary}]) of
+    {match,[[IOC,<<>>]]} -> <<IOC/binary,",",0,";">>;
+    {match,[[IOC,EXP]]} -> <<IOC/binary,",",(conv_t2i(EXP))/binary,";">>;
+    _Else -> <<>>
+  end,
+  clean_feed_bin(Tail, <<CleanIOC/binary,IOC2>>, REX);
+clean_feed_bin([],CleanIOC,_REX) ->
+  [ {A,B} || [A,B] <- [ X || X <- ioc2rpz_fun:split_tail(CleanIOC,<<";">>), X /= <<>> ]].
+%%%Check memory consumtion
+
 
 conv_t2i(<<Y:4/bytes,"-",M:2/bytes,"-",D:2/bytes,Sep:1/bytes,HH:2/bytes,":",MM:2/bytes,":",SS:2/bytes,_Rest/binary>>) when Sep==<<"T">>;Sep==<<"t">>;Sep==<<" ">>->
   calendar:datetime_to_gregorian_seconds({{binary_to_integer(Y), binary_to_integer(M), binary_to_integer(D)}, {binary_to_integer(HH), binary_to_integer(MM), binary_to_integer(SS)}})-62167219200;
