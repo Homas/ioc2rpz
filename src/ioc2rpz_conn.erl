@@ -22,10 +22,10 @@ get_ioc(URL,REGEX,Source) ->
   case get_ioc(URL) of
     {ok, Bin} ->
       ioc2rpz_fun:logMessage("Source: ~p, size: ~s (~p), MD5: ~p ~n",[Source#source.name, ioc2rpz_fun:conv_to_Mb(byte_size(Bin)),byte_size(Bin), ioc2rpz_fun:bin_to_hexstr(crypto:hash(md5,Bin))]), %TODO debug
-      %BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
-      %L=clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX),
-      L=clean_feed_bin(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX),      
-      %below consumes twice more memory
+      BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
+      L=clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX),
+      %methods used below consume more memory. It is not possible to run ioc2rpz with 1M indicator on AWS free tier
+      %L=clean_feed_bin(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX),      
       %L=[ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX) ],
       ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators~n",[Source#source.name, length(L)]), %TODO debug
       L;
