@@ -145,11 +145,11 @@ clean_feed_bin(IOC,none) ->
 
 clean_feed_bin(IOC,[]) ->
   {ok,MP} = re:compile("^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"),
-  [ X || X <- clean_feed(IOC,<<>>,MP), X /= <<>>];
+  [ X || X <- clean_feed_bin(IOC,<<>>,MP), X /= <<>>];
 
 clean_feed_bin(IOC,REX) -> %REX - user's regular expression
   {ok,MP} = re:compile(REX),
-  [ X || X <- clean_feed(IOC,<<>>,MP), X /= <<>>].
+  [ X || X <- clean_feed_bin(IOC,<<>>,MP), X /= <<>>].
 
 clean_feed_bin([Head|Tail],CleanIOC,REX) ->
   IOC2 = case re:run(Head,REX,[global,notempty,{capture,[1,2],binary}]) of
