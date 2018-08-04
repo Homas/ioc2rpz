@@ -133,7 +133,7 @@ Sample **whitelist** record:
 A source is a feed of malicious indicators. FQDNs, IPv4 and IPv6-addresses are supported. A source is a text file or a feed of text data. Indicators should be separated by newline/carriage return characters (/n,/r or both /r/n). ioc2rpz supports unlimited count of indicators.  
 **source** record consist of:
 - source name;
-- source path for full source transfer (AXFR). URLs(http/https/ftp), local files and scripts are supported. Prefix "file:" is used for local files. Prefix "script:" is used to execute a local script/comand on a host/container which should return indicators and optional expiration date to STDOUT;
+- source path for full source transfer (AXFR). URLs(http/https/ftp), local files and scripts are supported. Prefix **file:** is used for local files. Prefix **shell:** is used to execute a local script/comand on a host/container which should return indicators and optional expiration date to STDOUT;
 - source path for incremental source transfer (IXFR). AXFR,IXFR paths support keywords to shorten URLs and provide zone update timestamps:
   - **[:AXFR:]** - full AXFR path. Can be used only in IXFR paths;
   - **[:FTimestamp:]** - timestamp when the source was last time updated  (e.g. 1507946281)
@@ -144,6 +144,8 @@ Sample **source** record:
 ```
 {source,{"blackhole_exp","http://data.netlab.360.com/feeds/dga/blackhole.txt","[:AXFR:]","^([A-Za-z0-9][A-Za-z0-9\-\._]+)\t.*:00\t([0-9: -]+)$"}}.
 ```
+Source **shell:** is used to extend ioc2rpz connectivity options which are natively limited. The container includes dig, awk and python. E.g. you can mix different RPZ feeds or fetch data from a database.
+
 ### **rpz** record
 RPZ term defines a response policy zone.  
 **rpz** record consist of:
