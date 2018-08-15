@@ -79,7 +79,13 @@ code_change(_OldVersion, Tab, _Extra) ->
 
 %% Send a message back to the client
 send_dns(Socket,Pkt,[Proto,Args]) when Proto#proto.proto == tcp ->
-  send_dns_tcp(Socket, Pkt, Args);
+  %send_dns_tcp(Socket, Pkt, Args);
+  case send_dns_tcp(Socket,Pkt, Args) of
+   {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. send_dns_tcp. error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, Reason]),
+                      {error, Reason};
+   ok -> ok
+  end;
+
 
 send_dns(Socket,Pkt,[Proto,Args]) when Proto#proto.proto == udp ->
   send_dns_udp(Socket, Proto#proto.rip, Proto#proto.rport, Pkt, Args).
@@ -445,7 +451,12 @@ send_sample_zone(Socket, DNSId, OptB, OptE, Questions, MailAddr, NSServ, TSIG) -
   ets:delete(T_ZIP_L),
   %PktLen = byte_size(Pkt1),
   %Pkt = [<<PktLen:16>>,Pkt1],
-  send_dns_tcp(Socket,Pkt1, addlen).
+  %send_dns_tcp(Socket,Pkt1, addlen).
+  case send_dns_tcp(Socket,Pkt1, addlen) of
+   {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. send_dns_tcp. error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, Reason]);
+   ok -> ok
+  end.
+
 %END Send sample zone
 
 %Send server status
@@ -485,7 +496,12 @@ send_txt_response(Socket,[Questions,DNSId,OptB,OptE,TSIG],Data) ->
     Pkt1 = list_to_binary([DNSId, <<1:1, OptB:7, 0:1, OptE:3, ?NOERROR:4, 1:16,NRec:16,0:16,1:16>>, Questions, TXTRec, TSIGRR]);
     true -> Pkt1 = <<DNSId/binary, 1:1, OptB:7, 1:1, OptE:3, ?NOERROR:4, 1:16,NRec:16,0:16,0:16, Questions/binary, TXTRec/binary>>
   end,
-  send_dns_tcp(Socket,Pkt1, addlen).
+  %send_dns_tcp(Socket,Pkt1, addlen).
+  case send_dns_tcp(Socket,Pkt1, addlen) of
+   {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. send_dns_tcp. error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, Reason]);
+   ok -> ok
+  end.
+
 %END TXT response
 
 gen_txt_rec(TXT) ->
@@ -531,7 +547,7 @@ send_cached_zone(Socket, NSREC, SOAREC, TSIG, PktH, Questions, [{PktN,ANCOUNT,NS
   end,
   case send_dns_tcp(Socket,Pkt1, addlen) of
     ok -> send_cached_zone(Socket, NSREC, SOAREC, TSIG1, PktH, Questions, REST);
-  	{error, Reason} -> ioc2rpz_fun:logMessage("send_dns_tcp error ~p ~n",[Reason])    
+  	{error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. send_dns_tcp. error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, Reason])    
   end.
 
 %Return cached zone
@@ -554,9 +570,11 @@ send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,RH,Rest,Zone,?T_IXFR,NSSe
     Pkt1 = list_to_binary([PktH, <<1:16,0:16,1:16>>, Questions, SOAREC, TSIGRR]);
     true -> Pkt1 = list_to_binary([PktH,<<1:16,0:16,0:16>>, Questions, SOAREC])
   end,
-  %PktLen = byte_size(Pkt1),
-  %Pkt2 = [<<PktLen:16>>,Pkt1], %send, cache, sendNcache, sendNhotcache
-  send_dns_tcp(Socket,Pkt1, addlen);
+  case send_dns_tcp(Socket,Pkt1, addlen) of
+  	{error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. send_dns_tcp. error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, Reason]);
+    ok -> ok 
+  end;
+
 
 send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,RH,Rest,Zone,?T_IXFR,NSServ,MailAddr,TSIG,SOA}, Proto) when Zone#rpz.serial==Zone#rpz.serial_ixfr,Zone#rpz.status == ready;Zone#rpz.serial==Zone#rpz.serial_ixfr,Zone#rpz.status == updating;SOA#dns_SOA_RR.serial<Zone#rpz.serial_ixfr,Zone#rpz.status == ready;SOA#dns_SOA_RR.serial<Zone#rpz.serial_ixfr,Zone#rpz.status == updating ->
 %Serial_IXFR = Serial => do full zone transfer. SOA#dns_SOA_RR.serial less than Serial and we do not have the changes log
@@ -638,7 +656,11 @@ send_packets(Socket,[], [], 0, _ACount, _Zip, PktH, Questions, SOAREC,NSRec,Zone
     end,
     %PktLen = byte_size(Pkt1),
     %Pkt2 = [<<PktLen:16>>,Pkt1], %send, cache, sendNcache, sendNhotcache
-    send_dns_tcp(Socket,Pkt1, addlen);
+    %send_dns_tcp(Socket,Pkt1, addlen);
+    case send_dns_tcp(Socket,Pkt1, addlen) of
+     {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. send_dns_tcp. error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, Reason]);
+     ok -> ok
+    end;
     true -> ok
   end,
   %if IXFR -> пустой зоны должно не быть, но на всякий случай можно предусмотреть передачу только SOA
@@ -696,7 +718,12 @@ send_packets(Socket,Tail, Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec
   PktLen = byte_size(Pkt1),
   Pkt2 = [<<PktLen:16>>,Pkt1],
   if (DBOp == send) or (DBOp == sendNcache) or (DBOp == sendNhotcache) or (DBOp == ixfr) ->
-    send_dns_tcp(Socket,Pkt2, []);
+    %send_dns_tcp(Socket,Pkt2, []);
+    case send_dns_tcp(Socket,Pkt2, []) of
+     {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. send_dns_tcp. error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, Reason]);
+     ok -> ok
+    end;
+
     true -> ok
   end,
   if (DBOp == cache) or (DBOp == sendNcache) ->
