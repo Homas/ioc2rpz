@@ -143,8 +143,9 @@ A source is a feed of malicious indicators. FQDNs, IPv4 and IPv6-addresses are s
 Sample **source** record:
 ```
 {source,{"blackhole_exp","http://data.netlab.360.com/feeds/dga/blackhole.txt","[:AXFR:]","^([A-Za-z0-9][A-Za-z0-9\-\._]+)\t.*:00\t([0-9: -]+)$"}}.
+{source,{"base.rpz1","shell:/usr/bin/dig -y KEYNAME:TSIGKEY @54.69.93.185 base.rpz.infoblox.local axfr | /bin/grep -e CNAME | /bin/grep -v '*.' | /usr/bin/awk -F '.base.rpz' '{print $1}'","",none}}.
 ```
-Source **shell:** is used to extend ioc2rpz connectivity options which are natively limited. The container includes dig, awk and python. E.g. you can mix different RPZ feeds or fetch data from a database.
+Source **shell:** is used to extend ioc2rpz connectivity options which are natively a bit limited. The ioc2rpz container includes dig, grep, awk and python. E.g. you can mix different RPZ feeds or fetch data from a database.
 
 ### **rpz** record
 RPZ term defines a response policy zone.  

@@ -85,11 +85,11 @@ send_dns(Socket,Pkt,[Proto,Args]) when Proto#proto.proto == udp ->
   send_dns_udp(Socket, Proto#proto.rip, Proto#proto.rport, Pkt, Args).
 
 send_dns_tcp(Socket, Pkt, addlen) ->
-  ok = gen_tcp:send(Socket, [<<(byte_size(Pkt)):16>>,Pkt]),
-  ok = inet:setopts(Socket, [{active, once}]);
+  gen_tcp:send(Socket, [<<(byte_size(Pkt)):16>>,Pkt]);
+  %ok = inet:setopts(Socket, [{active, once}]); %TODO check why it was here
 send_dns_tcp(Socket, Pkt, []) ->
-  ok = gen_tcp:send(Socket, Pkt),
-  ok = inet:setopts(Socket, [{active, once}]).
+  gen_tcp:send(Socket, Pkt).
+  %ok = inet:setopts(Socket, [{active, once}]).  %TODO check why it was here
 
 send_dns_udp(Socket, Dst, Port, Pkt, _Args) ->
   ok = gen_udp:send(Socket, Dst, Port, Pkt).
@@ -98,7 +98,7 @@ parse_dns_request(Socket, <<DNSId:2/binary, _:1, OptB:7, _:1, OptE:3, _:4, QDCOU
   [QName,<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, _Other_REC/binary>>] = binary:split(Rest,<<0>>),
   LT=calendar:local_time(),
   %{ok,{R_ip,R_port}}=inet:peername(Socket),
-  QStr=dombin_to_str(QName), ioc2rpz_fun:logMessage("~p ~p ~p bad request ~s ~p ~p~n",[LT, Proto#proto.rip,Proto#proto.rport, QStr, QType, QClass]),
+  QStr=dombin_to_str(QName), ioc2rpz_fun:logMessage("~p ~p ~p bad request ~s ~s ~s~n",[LT, Proto#proto.rip,Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
   send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?SERVFAIL:4>>, <<QDCOUNT:2,ANCOUNT:2,NSCOUNT:2,ARCOUNT:2>>, Rest, [], Proto);
 
 parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/big-unsigned-unit:8,NSCOUNT:2/big-unsigned-unit:8,ARCOUNT:2/big-unsigned-unit:8, Rest/binary>> = _Data, Proto) when QDCOUNT == 1, ANCOUNT == 0 -> %_DataLen:2/big-unsigned-unit:8,
@@ -109,7 +109,7 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
   Question = <<QName/binary,0:8,QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8>>,
   %ioc2rpz_fun:logMessage("Proto ~p~n",[Proto]),
   %if Proto#proto.proto == tcp -> {ok,{R_ip,R_port}}=inet:peername(Socket); true -> R_ip=Proto#proto.rip,R_port=Proto#proto.rport end,
-  QStr=dombin_to_str(QName),ioc2rpz_fun:logMessage("~p/~s:~p query ~s ~p ~p~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, QType, QClass]),
+  QStr=dombin_to_str(QName),ioc2rpz_fun:logMessage("~p/~s:~p query ~s ~s ~s~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
 
   {RRRes,DNSRR,TSIG,SOA,RAWN} = parse_rr(NSCOUNT, ARCOUNT, Other_REC),
 
@@ -181,7 +181,7 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
 
 %Not permitted MGMT request
     {_,?T_TXT,?C_CHAOS,ok} when MGMTIP == false ->
-          ioc2rpz_fun:logMessage("MGMT not allowed from ~p/~s:~p. Request ~s ~p ~p~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, QType, QClass]),
+          ioc2rpz_fun:logMessage("MGMT not allowed from ~p/~s:~p. Request ~s ~s ~s~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
           send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?NOTAUTH:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto);
 
 
@@ -209,15 +209,15 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
               {_,TSIGV} -> send_TSIG_error(TSIGV, Socket, DNSId, OptB, OptE, Question, TSIG1, ["zone ~p transfer failed ~p ~n",[Zone#rpz.zone_str,TSIGV]], Proto)
             end;
         _ ->
-          ioc2rpz_fun:logMessage("No RPZ. ~p/~s:~p query ~s ~p ~p~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, QType, QClass]),
+          ioc2rpz_fun:logMessage("No RPZ. ~p/~s:~p query ~s ~s ~s~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
           send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?NOTAUTH:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto)
       end;
     {_,_,_,badTSIGposition} ->
     %rfc2845 If a TSIG record is present in any other position, the packet is dropped and a response with RCODE 1 (FORMERR) MUST be returned.
-      ioc2rpz_fun:logMessage("Wrong TSIG position ~p/~s:~p query ~s ~p ~p~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, QType, QClass]),
+      ioc2rpz_fun:logMessage("Wrong TSIG position ~p/~s:~p query ~s ~s ~s~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
       send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?FORMERR:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto);
     _ ->
-      ioc2rpz_fun:logMessage("Bad request ~p/~s:~p query ~s ~p ~p~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, QType, QClass]),
+      ioc2rpz_fun:logMessage("Bad request ~p/~s:~p query ~s ~s ~s~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
       send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?NOTAUTH:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto)
   end,
   ETime=erlang:system_time(millisecond),
@@ -529,8 +529,10 @@ send_cached_zone(Socket, NSREC, SOAREC, TSIG, PktH, Questions, [{PktN,ANCOUNT,NS
     Pkt1 = list_to_binary([PktH, <<(ANCOUNT+Cnt1):16,NSCOUNT:16,(ARCOUNT+1):16>>, Questions, PktL, TSIGRR]);
     true -> Pkt1 = list_to_binary([PktH,<<(ANCOUNT+Cnt1):16,NSCOUNT:16,ARCOUNT:16>>, Questions, PktL]), TSIG1=TSIG
   end,
-  send_dns_tcp(Socket,Pkt1, addlen),
-  send_cached_zone(Socket, NSREC, SOAREC, TSIG1, PktH, Questions, REST).
+  case send_dns_tcp(Socket,Pkt1, addlen) of
+    ok -> send_cached_zone(Socket, NSREC, SOAREC, TSIG1, PktH, Questions, REST);
+  	{error, Reason} -> ioc2rpz_fun:logMessage("send_dns_tcp error ~p ~n",[Reason])    
+  end.
 
 %Return cached zone
 send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,_RH,_Rest,Zone,?T_AXFR,NSServ,MailAddr,TSIG,_SOA}, Proto) when Zone#rpz.status == ready;Zone#rpz.status == updating,Zone#rpz.serial /= 0 -> %AXFR

@@ -17,7 +17,7 @@
 -module(ioc2rpz_fun).
 -include_lib("ioc2rpz.hrl").
 -export([logMessage/2,strs_to_binary/1,curr_serial/0,curr_serial_60/0,constr_ixfr_url/3,ip_to_bin/1,read_local_actions/1,split_bin_bytes/2,split_tail/2,
-         bin_to_lowcase/1,ip_in_list/2,intersection/2,bin_to_hexstr/1,conv_to_Mb/1]).
+         bin_to_lowcase/1,ip_in_list/2,intersection/2,bin_to_hexstr/1,conv_to_Mb/1,q_class/1,q_type/1]).
 
 logMessage(Message, Vars) ->
   logMessage(group_leader(), Message, Vars).
@@ -155,3 +155,22 @@ conv_to_Mb(Size) ->
 conv_to_Mb(S, [_|[_|_] = L]) when S >= 1024 -> conv_to_Mb(S/1024, L);
 conv_to_Mb(S, [M|_]) ->
     list_to_binary(io_lib:format("~.2f/~s", [float(S), M])).
+    
+    
+q_class(?C_IN)    -> "IN";
+q_class(?C_CHAOS) -> "CHAOS";
+q_class(?C_ANY)   -> "ANY";
+q_class(QClass)   -> integer_to_list(QClass).
+
+q_type(?T_A)      -> "A";
+q_type(?T_NS)     -> "NS";
+q_type(?T_CNAME)  -> "CNAME";
+q_type(?T_SOA)    -> "SOA";
+q_type(?T_TXT)    -> "TXT";
+q_type(?T_AAAA)   -> "AAAA";
+q_type(?T_OPT)    -> "OPT";
+q_type(?T_IXFR)   -> "IXFR";
+q_type(?T_AXFR)   -> "AXFR";
+q_type(?T_ANY)    -> "ANY";
+q_type(?RT_TSIG)  -> "TSIG";
+q_type(QType)     -> integer_to_list(QType).
