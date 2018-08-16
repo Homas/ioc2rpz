@@ -677,8 +677,21 @@ send_packets(Socket,[], [], 0, _ACount, _Zip, PktH, Questions, SOAREC,NSRec,Zone
 
 
 send_packets(Socket,IOC, [], _ACount, _PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,0,IXFRNewR) -> % первый пакет
-  SOANSSize = byte_size(<<SOAREC/binary,NSRec/binary>>),
-  send_packets(Socket,IOC, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR);
+  %TODO split IOC by # cores and spawn for DBOp == cache
+  %sequential
+  %SOANSSize = byte_size(<<SOAREC/binary,NSRec/binary>>),
+  %send_packets(Socket,IOC, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR);
+
+  %parallel
+  if DBOp == cache ->
+      [IOC1,IOC2]=ioc2rpz_fun:split(IOC,?IOCperProc),
+      % ioc2rpz:send_packets(<<>>,IOC, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,[],0,cache,0,false)
+      spawn_opt(ioc2rpz,send_packets,[<<>>,IOC1, [] , 0, 0, true, <<>>, Questions, SOAREC, NSRec, Zone, MP, PktHLen, ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), [], 0, cache, 0, false],[{fullsweep_after,0}]),
+      ioc2rpz:send_packets(<<>>,IOC2, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,[],0,cache,0,false);
+    true ->
+      SOANSSize = byte_size(<<SOAREC/binary,NSRec/binary>>),
+      send_packets(Socket,IOC, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR)
+  end;
 
 % последний пакет, нужно отсылать
 send_packets(Socket,[], Pkt, ACount, _PSize, _Zip, PktH, Questions, SOAREC,NSREC,Zone,_,_,_,TSIG,PktN,DBOp,SOANSSize,IXFRNewR) ->

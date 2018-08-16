@@ -29,6 +29,8 @@ get_ioc(URL,REGEX,Source) ->
       %methods used below consume more memory. It is not possible to run ioc2rpz with 1M indicator on AWS free tier
       %L=clean_feed_bin(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX),
       %Comment next 1 line in case of limited memory. REGEX must be prepared for lowcase sources
+      
+      %TODO spawn cleanup
       L=[ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX) ],
       
       ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators~n",[Source#source.name, length(L)]), %TODO debug

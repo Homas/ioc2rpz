@@ -17,7 +17,7 @@
 -module(ioc2rpz_fun).
 -include_lib("ioc2rpz.hrl").
 -export([logMessage/2,strs_to_binary/1,curr_serial/0,curr_serial_60/0,constr_ixfr_url/3,ip_to_bin/1,read_local_actions/1,split_bin_bytes/2,split_tail/2,
-         bin_to_lowcase/1,ip_in_list/2,intersection/2,bin_to_hexstr/1,conv_to_Mb/1,q_class/1,q_type/1]).
+         bin_to_lowcase/1,ip_in_list/2,intersection/2,bin_to_hexstr/1,conv_to_Mb/1,q_class/1,q_type/1,split/2]).
 
 logMessage(Message, Vars) ->
   logMessage(group_leader(), Message, Vars).
@@ -174,3 +174,21 @@ q_type(?T_AXFR)   -> "AXFR";
 q_type(?T_ANY)    -> "ANY";
 q_type(?RT_TSIG)  -> "TSIG";
 q_type(QType)     -> integer_to_list(QType).
+
+
+% 1.17
+% Split a list into two parts; the length of the first part is given.
+% usage: p99:split(List,Length)
+% example:
+% p99:split([a,b,c],2). =>  [[a,b],[c]]
+% p99:split([a,b,c],1). =>  [[a],[b,c]]
+
+split([],_)->
+    [];
+split([H|T],Index) when Index>0,T==[] ->
+    [[H],T];
+split([H|T],1)->
+    [[H],T];
+split([H|T],Index)->
+    [RH,RT]=split(T,Index-1),
+    [[H|RH],RT].

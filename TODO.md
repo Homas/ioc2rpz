@@ -3,14 +3,17 @@
 ## Configuration
 
 ## Sources
-- [ ] IOC type to a source level
+- [ ] Source: ioc type, max # of IOCs, RPZ action, NS type, lowcase optimization option, spawn processes
+- [ ] Hot cache optimization depending on RPZ refresh time and source usage in multiple feeds
+- [ ] Cache optimization for huge zones
+- [ ] Statistics table
 - [ ] Max # or rules
 - [x] "shell:" source type (executing a shell cmd)
 - [ ] additional tools and scripts for "shell:" (exists cat, awk, grep, nslookup )
   - [x] dig
   - [x] curl
   - [x] python3
-- [ ] Add source RPZ via "shell:"
+- [ ] Add script for RPZ via "shell:"
 - [ ] Add source PostreSQL, MySQL via "shell:"
 - [ ] RPZ action per source
 - [ ] Max IOCs, current IOCs
