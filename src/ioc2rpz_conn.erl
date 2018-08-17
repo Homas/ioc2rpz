@@ -16,7 +16,7 @@
 
 -module(ioc2rpz_conn).
 -include_lib("ioc2rpz.hrl").
--export([get_ioc/3,clean_feed_bin/2]).
+-export([get_ioc/3,clean_feed_bin/2,clean_feed/2]).
 
 get_ioc(URL,REGEX,Source) ->
   case get_ioc(URL) of
@@ -31,13 +31,35 @@ get_ioc(URL,REGEX,Source) ->
       %Comment next 1 line in case of limited memory. REGEX must be prepared for lowcase sources
       
       %TODO spawn cleanup
-      L=[ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX) ],
+      CTime=ioc2rpz_fun:curr_serial_60(),
+      %L=[ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX) ],
+      L=p_clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX), 
       
-      ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators~n",[Source#source.name, length(L)]), %TODO debug
+      ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators, clean time ~p ~n",[Source#source.name, length(L), (ioc2rpz_fun:curr_serial_60()-CTime)]), %TODO debug
       L;
     _ ->
       []
   end.
+
+w_clean_feed(PID) ->
+  receive 
+    { ok, PID, IOC } -> [ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- IOC ]
+  end.
+  
+p_clean_feed(IOC,REGEX)  ->
+  ParentPID = self(),
+  [IOC1,IOC2]=ioc2rpz_fun:split(IOC,?IOCperProc),  
+  PID=spawn_opt(fun() ->
+      ParentPID ! {ok, self(), ioc2rpz_conn:clean_feed(IOC1,REGEX)  }
+      end
+      ,[{fullsweep_after,0}]),
+  L = if IOC2 /= [] ->
+    p_clean_feed(IOC2,REGEX);
+    true -> []
+  end,
+  w_clean_feed(PID) ++ L .
+  
+  
 
 %reads IOCs from a local file
 get_ioc(<<"file:",Filename/binary>> = _URL) ->

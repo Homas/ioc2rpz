@@ -1,6 +1,9 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
 
+## 2018-08-16
+- concurent zone creation in a cache
+
 ## 2018-08-14
 - [CB] tcp_send errors handeling
 - Query class and type in text in the logs
