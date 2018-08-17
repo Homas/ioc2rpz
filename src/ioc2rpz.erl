@@ -685,26 +685,32 @@ send_packets(Socket,[], [], 0, _ACount, _Zip, PktH, Questions, SOAREC,NSRec,Zone
 
 
 send_packets(Socket,IOC, [], _ACount, _PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,0,IXFRNewR) when T_ZIP_L /= 0 -> % первый пакет
-  SOANSSize = byte_size(<<SOAREC/binary,NSRec/binary>>),
+  SOANSSize = if PktN == 0 ->
+    byte_size(<<SOAREC/binary,NSRec/binary>>);
+    true -> 0
+  end,
   %TODO split IOC by # cores and spawn for DBOp == cache
   %sequential
-  send_packets(Socket,IOC, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR);
+  %send_packets(Socket,IOC, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR);
 
   %concurrent
-%  if DBOp == cache ->
-%      [IOC1,IOC2]=ioc2rpz_fun:split(IOC,?IOCperProc),
-%      ParentPID = self(),
-%%      spawn_opt(ioc2rpz,send_packets,[Socket,IOC1, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC, NSRec, Zone, MP, PktHLen, 0, TSIG, PktN, DBOp, SOANSSize, IXFRNewR],[{fullsweep_after,0}]),
-%      PID=spawn_opt(fun() ->
-%        ParentPID ! {ok, self(), ioc2rpz:send_packets(Socket,IOC1, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC, NSRec, Zone, MP, PktHLen, ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), TSIG, PktN, DBOp, SOANSSize, IXFRNewR) }
-%        end
-%        ,[{fullsweep_after,0}]),
-%      %ioc2rpz_fun:logMessage("Zone ~p started ~p ~n",[Zone#rpz.zone_str, PID]),
-%      ioc2rpz:send_packets(<<>>,IOC2, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,[],PktN+100,cache,0,false),
-%      w_send_packets(PID, Zone#rpz.zone_str);
-%    true ->
-%      send_packets(Socket,IOC, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR)
-%  end;
+  if DBOp == cache ->
+      [IOC1,IOC2]=ioc2rpz_fun:split(IOC,?IOCperProc),
+      ParentPID = self(),
+%      spawn_opt(ioc2rpz,send_packets,[Socket,IOC1, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC, NSRec, Zone, MP, PktHLen, 0, TSIG, PktN, DBOp, SOANSSize, IXFRNewR],[{fullsweep_after,0}]),
+      PID=spawn_opt(fun() ->
+        ParentPID ! {ok, self(), ioc2rpz:send_packets(Socket,IOC1, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC, NSRec, Zone, MP, PktHLen, ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), TSIG, PktN, DBOp, SOANSSize, IXFRNewR) }
+        end
+        ,[{fullsweep_after,0}]),
+      %ioc2rpz_fun:logMessage("Zone ~p started ~p ~n",[Zone#rpz.zone_str, PID]),
+      if IOC2 /= [] ->
+        ioc2rpz:send_packets(<<>>,IOC2, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,[],PktN+100,cache,0,false);
+        true -> ok
+      end,
+      w_send_packets(PID, Zone#rpz.zone_str);
+    true ->
+      send_packets(Socket,IOC, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR)
+  end;
 
 %send_packets(Socket,IOC, [], _ACount, _PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,0,TSIG,PktN,DBOp,SOANSSize,IXFRNewR) ->
 %  %ioc2rpz_fun:logMessage("Zone ~p zip ~n",[Zone#rpz.zone_str]),

@@ -13,7 +13,7 @@
 %limitations under the License.
 
 %ioc2rpz params 
--define(IOCperProc,500). %IOCs per spawn process
+-define(IOCperProc,350). %IOCs per spawn process
 
 -define(MGMToDNS,true). %Defines if management ioc2rpz over DNS is enabled
 -define(DBStorage,ets). %Defines DBStorage to use. CFG and HotCache are always ETC (may be will be switched to MAP, need profiling)

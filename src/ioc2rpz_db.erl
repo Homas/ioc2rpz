@@ -64,7 +64,7 @@ write_db_pkt(Zone, Pkt) ->
   write_db_pkt(?DBStorage, Zone, Pkt).
 write_db_pkt(ets, Zone, {PktN,_ANCOUNT,_NSCOUNT,_ARCOUNT,_Records} = Pkt) ->
   %ioc2rpz_fun:logMessage("Zone ~p, packets ~p ~p ~p ~p ~n",[Zone#rpz.zone_str,crypto:hash(md5,Records),Zone#rpz.serial,PktN,rand:uniform(1000000)]),
-  ets:insert(rpz_axfr_table, {{rpz,Zone#rpz.zone,Zone#rpz.serial,PktN,1}, term_to_binary(Pkt,[{compressed,?Compression}])});
+  ets:insert(rpz_axfr_table, {{rpz,Zone#rpz.zone,Zone#rpz.serial,PktN,self()}, term_to_binary(Pkt,[{compressed,?Compression}])});
 write_db_pkt(mnesia, Zone, Pkt) ->
   ok.
 
