@@ -534,11 +534,14 @@ send_notify(Dst,Pkt,tcp,NRuns) ->
   	{error, Reason} -> ioc2rpz_fun:logMessage("TCP Notify error ~p ~n",[Reason]), {Reason,[]}
   end.
 
-send_cached_zone(Socket,_NSREC, _SOAREC, _TSIG, _PktH, _Questions, []) ->
+send_cached_zone(Socket,NSREC, SOAREC, TSIG, PktH, Questions, Pkts) -> %created becasue of concurent zone creation
+  send_cached_zone(Socket,NSREC, SOAREC, TSIG, PktH, Questions, Pkts,0).
+  
+send_cached_zone(Socket,_NSREC, _SOAREC, _TSIG, _PktH, _Questions, [], _PktNum) ->
 ok;
 
-send_cached_zone(Socket, NSREC, SOAREC, TSIG, PktH, Questions, [{PktN,ANCOUNT,NSCOUNT,ARCOUNT,Pkt}|REST]) ->
-  if PktN==0 -> PktF=[SOAREC,NSREC,Pkt], Cnt=2; true -> PktF=Pkt, Cnt=0 end,
+send_cached_zone(Socket, NSREC, SOAREC, TSIG, PktH, Questions, [{PktN,ANCOUNT,NSCOUNT,ARCOUNT,Pkt}|REST], PktNum) ->
+  if PktNum==0 -> PktF=[SOAREC,NSREC,Pkt], Cnt=2; true -> PktF=Pkt, Cnt=0 end,
   if REST==[] -> PktL=[PktF,SOAREC],Cnt1=Cnt+1; true -> PktL=PktF, Cnt1=Cnt end,
   if TSIG /= [] ->
     {ok,TSIGRR,TSIG1}=add_TSIG(list_to_binary([PktH, <<(ANCOUNT+Cnt1):16,NSCOUNT:16,ARCOUNT:16>>, Questions, PktL]),TSIG),
@@ -546,7 +549,7 @@ send_cached_zone(Socket, NSREC, SOAREC, TSIG, PktH, Questions, [{PktN,ANCOUNT,NS
     true -> Pkt1 = list_to_binary([PktH,<<(ANCOUNT+Cnt1):16,NSCOUNT:16,ARCOUNT:16>>, Questions, PktL]), TSIG1=TSIG
   end,
   case send_dns_tcp(Socket,Pkt1, addlen) of
-    ok -> send_cached_zone(Socket, NSREC, SOAREC, TSIG1, PktH, Questions, REST);
+    ok -> send_cached_zone(Socket, NSREC, SOAREC, TSIG1, PktH, Questions, REST,PktNum+1);
   	{error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. send_dns_tcp. error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, Reason])    
   end.
 
@@ -641,6 +644,12 @@ send_zone_live(Socket,Op,Zone,PktH,Questions, SOAREC,NSRec,TSIG) ->
       {ok,MD5}
   end.
 
+w_send_packets(PID, Zone) ->      
+  receive 
+    { ok, PID, ok } -> ok
+      %ioc2rpz_fun:logMessage("Zone ~p Got message from ~p ~n",[Zone, PID])
+  end.
+
 
 % пустая зона
 send_packets(Socket,[], [], 0, _ACount, _Zip, PktH, Questions, SOAREC,NSRec,Zone,_MP,_PktHLen,_T_ZIP_L,TSIG,PktN,DBOp,_SOANSSize,_IXFRNewR) -> %NSRec = Client SOA for IXFR
@@ -675,23 +684,32 @@ send_packets(Socket,[], [], 0, _ACount, _Zip, PktH, Questions, SOAREC,NSRec,Zone
   end;
 
 
-
-send_packets(Socket,IOC, [], _ACount, _PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,0,IXFRNewR) -> % первый пакет
+send_packets(Socket,IOC, [], _ACount, _PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,0,IXFRNewR) when T_ZIP_L /= 0 -> % первый пакет
+  SOANSSize = byte_size(<<SOAREC/binary,NSRec/binary>>),
   %TODO split IOC by # cores and spawn for DBOp == cache
   %sequential
-  %SOANSSize = byte_size(<<SOAREC/binary,NSRec/binary>>),
-  %send_packets(Socket,IOC, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR);
+  send_packets(Socket,IOC, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR);
 
-  %parallel
-  if DBOp == cache ->
-      [IOC1,IOC2]=ioc2rpz_fun:split(IOC,?IOCperProc),
-      % ioc2rpz:send_packets(<<>>,IOC, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,[],0,cache,0,false)
-      spawn_opt(ioc2rpz,send_packets,[<<>>,IOC1, [] , 0, 0, true, <<>>, Questions, SOAREC, NSRec, Zone, MP, PktHLen, ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), [], 0, cache, 0, false],[{fullsweep_after,0}]),
-      ioc2rpz:send_packets(<<>>,IOC2, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,[],0,cache,0,false);
-    true ->
-      SOANSSize = byte_size(<<SOAREC/binary,NSRec/binary>>),
-      send_packets(Socket,IOC, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR)
-  end;
+  %concurrent
+%  if DBOp == cache ->
+%      [IOC1,IOC2]=ioc2rpz_fun:split(IOC,?IOCperProc),
+%      ParentPID = self(),
+%%      spawn_opt(ioc2rpz,send_packets,[Socket,IOC1, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC, NSRec, Zone, MP, PktHLen, 0, TSIG, PktN, DBOp, SOANSSize, IXFRNewR],[{fullsweep_after,0}]),
+%      PID=spawn_opt(fun() ->
+%        ParentPID ! {ok, self(), ioc2rpz:send_packets(Socket,IOC1, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC, NSRec, Zone, MP, PktHLen, ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), TSIG, PktN, DBOp, SOANSSize, IXFRNewR) }
+%        end
+%        ,[{fullsweep_after,0}]),
+%      %ioc2rpz_fun:logMessage("Zone ~p started ~p ~n",[Zone#rpz.zone_str, PID]),
+%      ioc2rpz:send_packets(<<>>,IOC2, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,[],PktN+100,cache,0,false),
+%      w_send_packets(PID, Zone#rpz.zone_str);
+%    true ->
+%      send_packets(Socket,IOC, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR)
+%  end;
+
+%send_packets(Socket,IOC, [], _ACount, _PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,0,TSIG,PktN,DBOp,SOANSSize,IXFRNewR) ->
+%  %ioc2rpz_fun:logMessage("Zone ~p zip ~n",[Zone#rpz.zone_str]),
+%  T_ZIP_L = ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]),
+%  send_packets(Socket,IOC, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR);
 
 % последний пакет, нужно отсылать
 send_packets(Socket,[], Pkt, ACount, _PSize, _Zip, PktH, Questions, SOAREC,NSREC,Zone,_,_,_,TSIG,PktN,DBOp,SOANSSize,IXFRNewR) ->
@@ -700,7 +718,7 @@ send_packets(Socket,[], Pkt, ACount, _PSize, _Zip, PktH, Questions, SOAREC,NSREC
     {0, true} -> PktF=[SOAREC,NSREC,Pkt], Cnt=3;
     _Else -> PktF=Pkt, Cnt=1
   end,
-  ioc2rpz_fun:logMessage("Zone ~p, Last packet ACOUNT ~p, packets ~p ~n",[Zone#rpz.zone_str,ACount,(PktN+1)]), %TODO Debug
+  %ioc2rpz_fun:logMessage("Zone ~p, Last packet ACOUNT ~p, packets ~p ~n",[Zone#rpz.zone_str,ACount,(PktN+1)]), %TODO Debug
   if (DBOp == send) or (DBOp == sendNcache) or (DBOp == sendNhotcache) or (DBOp == ixfr) ->
     if TSIG /= [] ->
       {ok,TSIGRR,_}=add_TSIG(list_to_binary([PktH, <<(ACount+Cnt):16,0:16,0:16>>, Questions, PktF, SOAREC]),TSIG),
@@ -794,7 +812,6 @@ send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Question
   if ((IOCExp>Zone#rpz.serial) or (IOCExp==0)) and (DBOp == ixfr) and (IXFRNewR /= true) -> Rules1 = [SOAREC | Rules], Cnt1=Cnt+1, IXFRNewR1 = true; true -> Rules1=Rules, Cnt1=Cnt, IXFRNewR1 = IXFRNewR end,
   Pkt1 = list_to_binary([Pkt, Rules1, Rules2]),
   PSize1 = byte_size(Pkt1)+SOANSSize,
-  %io:fwrite(group_leader(),"Zone ~p IOC ~p ACOUNT ~p CNT ~p ~n",[Zone#rpz.zone_str,IOC,ACount,Cnt]),
   send_packets(Socket,Tail, Pkt1 , ACount+Cnt1, PSize1, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR1).
 
 gen_wildcard(WCards, [Rules|RESTR], [WRules|RESTWR], PSize) ->

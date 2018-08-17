@@ -376,7 +376,7 @@ update_zone_full(Zone) ->
       ioc2rpz_db:delete_db_pkt(Zone),
       %erlang:garbage_collect(), %TODO check if need
       ioc2rpz:send_notify(Zone),
-      ioc2rpz_fun:logMessage("Zone ~p updated in ~p seconds, new serial ~p ~n",[Zone#rpz.zone_str, (ioc2rpz_fun:curr_serial() - CTime), CTime])
+      ioc2rpz_fun:logMessage("Zone ~p updated in ~p seconds, new serial ~p ~n",[Zone#rpz.zone_str, (ioc2rpz_fun:curr_serial_60() - CTime), CTime])
   end,
   ioc2rpz_db:saveZones(),
   ok.

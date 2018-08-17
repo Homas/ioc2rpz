@@ -55,7 +55,7 @@ db_table_info(mnesia,Table,Param) ->
 read_db_pkt(Zone) -> %axfr
   read_db_pkt(?DBStorage,Zone).
 read_db_pkt(ets,Zone) ->
-  Pkt = ets:match(rpz_axfr_table,{{rpz,Zone#rpz.zone,Zone#rpz.serial,'_'},'$2'}),
+  Pkt = ets:match(rpz_axfr_table,{{rpz,Zone#rpz.zone,Zone#rpz.serial,'_','_'},'$2'}),
   [binary_to_term(X) || [X] <- Pkt];
 read_db_pkt(mnesia,Zone) ->
   ok.
@@ -63,7 +63,8 @@ read_db_pkt(mnesia,Zone) ->
 write_db_pkt(Zone, Pkt) ->
   write_db_pkt(?DBStorage, Zone, Pkt).
 write_db_pkt(ets, Zone, {PktN,_ANCOUNT,_NSCOUNT,_ARCOUNT,_Records} = Pkt) ->
-  ets:insert(rpz_axfr_table, {{rpz,Zone#rpz.zone,Zone#rpz.serial,PktN}, term_to_binary(Pkt,[{compressed,?Compression}])});
+  %ioc2rpz_fun:logMessage("Zone ~p, packets ~p ~p ~p ~p ~n",[Zone#rpz.zone_str,crypto:hash(md5,Records),Zone#rpz.serial,PktN,rand:uniform(1000000)]),
+  ets:insert(rpz_axfr_table, {{rpz,Zone#rpz.zone,Zone#rpz.serial,PktN,1}, term_to_binary(Pkt,[{compressed,?Compression}])});
 write_db_pkt(mnesia, Zone, Pkt) ->
   ok.
 
@@ -71,13 +72,14 @@ delete_db_pkt(Zone) -> %axfr
   delete_db_pkt(?DBStorage,Zone).
 
 delete_db_pkt(ets,Zone) when Zone#rpz.serial == 42 ->
-  ioc2rpz_fun:logMessage("Removing AXFR zone ~p ~n",[Zone#rpz.zone_str]),
-  ets:match_delete(rpz_axfr_table,{{rpz,Zone#rpz.zone,'_','_'},'_'}),
+  %ioc2rpz_fun:logMessage("Removing AXFR zone ~p ~n",[Zone#rpz.zone_str]),
+  ets:match_delete(rpz_axfr_table,{{rpz,Zone#rpz.zone,'_','_','_'},'_'}),
   ets:match_delete(rpz_axfr_table,{{axfr_rpz_cfg,Zone#rpz.zone},'_','_','_','_','_','_','_','_'});
 
 delete_db_pkt(ets,Zone) ->
   %axfr_rpz_cfg
-  ets:select_delete(rpz_axfr_table,[{{{rpz,Zone#rpz.zone,Zone#rpz.serial,'$1'},'_'},[{'=<','$1',Zone#rpz.serial}],[true]}]);
+  %ioc2rpz_fun:logMessage("Removing AXFR zone ~p serial ~p ~n",[Zone#rpz.zone_str, Zone#rpz.serial]),
+  ets:select_delete(rpz_axfr_table,[{{{rpz,Zone#rpz.zone,Zone#rpz.serial,'$1','_'},'_'},[{'=<','$1',Zone#rpz.serial}],[true]}]);
 
 delete_db_pkt(mnesia,Zone) ->
   ok.
