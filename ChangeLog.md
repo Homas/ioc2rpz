@@ -1,6 +1,10 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
 
+## 2018-09-22
+- IPv6 support
+- Configuration file name and IPs are moved to an app config file
+
 ## 2018-08-16
 - concurent zone creation in a cache
 

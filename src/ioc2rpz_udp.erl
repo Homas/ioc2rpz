@@ -25,12 +25,12 @@
 start_ioc2rpz_udp(IP,Params) ->
   gen_server:start_link(?MODULE, [IP,Params], []).
 
-init([IP,Params]) when IP /=""->
-  {ok, UDPSocket} = gen_udp:open(53, [{ip, IP},binary, {active, true},{read_packets, 100},{recbuf, 65535}]),
+init([IP,[IPver|_]=Params]) when IP /=""->
+  {ok, UDPSocket} = gen_udp:open(53, [{ip, IP},IPver,binary, {active, true},{read_packets, 100},{recbuf, 65535}]),
   {ok, #state{socket=UDPSocket, params=Params}};
 
-init([_IP,Params]) ->
-  {ok, UDPSocket} = gen_udp:open(53, [binary, {active, true},{read_packets, 100},{recbuf, 65535}]),
+init([_IP,[IPver|_]=Params]) ->
+  {ok, UDPSocket} = gen_udp:open(53, [IPver,binary, {active, true},{read_packets, 100},{recbuf, 65535}]),
   {ok, #state{socket=UDPSocket, params=Params}}.
 
 

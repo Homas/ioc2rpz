@@ -252,11 +252,6 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 - [Extension Mechanisms for DNS (EDNS(0))](https://tools.ietf.org/html/rfc6891) + [ENDS Option Codes](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11)
 - [Domain Name System (DNS) Cookies](https://tools.ietf.org/html/rfc7873)
 
-## Support on Beerpay
-Hey dude! Help me out for a couple of :beers:!
-
-[![Beerpay](https://beerpay.io/Homas/ioc2rpz/badge.svg?style=beer-square)](https://beerpay.io/Homas/ioc2rpz)  [![Beerpay](https://beerpay.io/Homas/ioc2rpz/make-wish.svg?style=flat-square)](https://beerpay.io/Homas/ioc2rpz?focus=wish)
-
 # License
 Copyright 2017 - 2018 Vadim Pavlov ioc2rpz[at]gmail[.]com
 

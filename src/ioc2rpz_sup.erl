@@ -23,8 +23,8 @@
 
 %-compile([export_all]).
 
-start_ioc2rpz_sup([IP,Filename,DBDir]) ->
-  supervisor:start_link({local, ?MODULE}, ?MODULE, [IP,Filename,DBDir]).
+start_ioc2rpz_sup([IP,IPv6,Filename,DBDir]) ->
+  supervisor:start_link({local, ?MODULE}, ?MODULE, [IP,IPv6,Filename,DBDir]).
 
 stop_ioc2rpz_sup() ->
   ioc2rpz_fun:logMessage("ioc2rpz recieved stop message ~n", []),
@@ -33,9 +33,9 @@ stop_ioc2rpz_sup() ->
   ioc2rpz_fun:logMessage("ioc2rpz is terminating ~n", []),
   gen_server:stop(?MODULE).
 
-init([IPStr, Filename, DBDir]) ->
+init([IPStr,IPStr6, Filename, DBDir]) ->
   Pid=self(),
-  ioc2rpz_fun:logMessage("ioc2rpz version: ~p, IP: ~s, PID: ~p, Config: ~p ~n", [?ioc2rpz_ver,IPStr,Pid,Filename]),
+  ioc2rpz_fun:logMessage("ioc2rpz version: ~p, IP: ~s ~s, PID: ~p, Config: ~p ~n", [?ioc2rpz_ver,IPStr,IPStr6,Pid,Filename]),
 
   {ok, PidDB} = ioc2rpz_db_sup:start_db(),
   {ok, _} = ioc2rpz_db:init_db(?DBStorage,DBDir,PidDB),
@@ -52,6 +52,7 @@ init([IPStr, Filename, DBDir]) ->
   timer:apply_interval(?ZoneRefTime,ioc2rpz_sup,update_all_zones,[false]),
 
   {ok, TCPSocket} = open_sockets(IPStr) ,
+  {ok, TCPSocket6} = open_sockets6(IPStr6) ,
 
   spawn_opt(fun empty_listeners/0,[link,{fullsweep_after,0}]),
   ioc2rpz_fun:logMessage("ioc2rpz started ~n", []),
@@ -61,15 +62,27 @@ init([IPStr, Filename, DBDir]) ->
                                  ]}}.
 
 
+
 open_sockets(IPStr) when IPStr /= "", IPStr /= [] ->
   {ok,IP}=inet:parse_address(IPStr),
   {ok, TCPSocket} = gen_tcp:listen(?Port, [{ip, IP},{active,once}, binary]),
-  ioc2rpz_udp:start_ioc2rpz_udp(IP, []), % TODO - put it in supervisor
+  ioc2rpz_udp:start_ioc2rpz_udp(IPStr, [inet]), % TODO - put it in supervisor
   {ok, TCPSocket};
 
 open_sockets(IPStr) ->
   {ok, TCPSocket} = gen_tcp:listen(?Port, [{active,once}, binary]),
-  ioc2rpz_udp:start_ioc2rpz_udp(IPStr, []), % TODO - put it in supervisor
+  ioc2rpz_udp:start_ioc2rpz_udp(IPStr, [inet]), % TODO - put it in supervisor
+  {ok, TCPSocket}.
+  
+open_sockets6(IPStr) when IPStr /= "", IPStr /= [] ->
+  {ok,IP}=inet:parse_address(IPStr),
+  {ok, TCPSocket} = gen_tcp:listen(?Port, [{ip, IP},{active,once}, binary, inet6]),
+  ioc2rpz_udp:start_ioc2rpz_udp(IPStr, [inet6]), % TODO - put it in supervisor
+  {ok, TCPSocket};
+
+open_sockets6(IPStr) ->
+  {ok, TCPSocket} = gen_tcp:listen(?Port, [{active,once}, binary, inet6]),
+  ioc2rpz_udp:start_ioc2rpz_udp(IPStr, [inet6]), % TODO - put it in supervisor
   {ok, TCPSocket}.
   
 

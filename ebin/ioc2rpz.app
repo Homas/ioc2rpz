@@ -16,7 +16,7 @@
 {application, ioc2rpz,
  [
   {description, ""},
-  {vsn, "0.9.0"},
+  {vsn, "0.9.9"},
   {modules, [
              ioc2rpz_app,
              ioc2rpz_sup,
@@ -32,6 +32,6 @@
                   kernel,
                   stdlib
                  ]},
-  {mod, { ioc2rpz_app, ["","./cfg/ioc2rpz.conf","./db"]}},
-  {env, []}
+  {mod, { ioc2rpz_app, []}} %, %["","./cfg/ioc2rpz.conf","./db"]
+  %{env, []}
  ]}.

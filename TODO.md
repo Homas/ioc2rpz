@@ -3,7 +3,7 @@
 ## Configuration
 
 ## Sources
-- [ ] Source: ioc type, max # of IOCs, RPZ action, NS type, lowcase optimization option, spawn processes
+- [ ] Source: ioc type, max # of IOCs, max file size, RPZ action, NS type, lowcase optimization option, spawn processes
 - [ ] Hot cache optimization depending on RPZ refresh time and source usage in multiple feeds
 - [ ] Cache optimization for huge zones
 - [ ] Statistics table
@@ -30,6 +30,7 @@
 - [ ] (2) MGMT via DNS move to a separate port/IP
 
 ## RPZ maintanance
+- [ ] Catalog zones
 - [ ] (2) FDateTime,ToDateTime,FDateTimeZ,ToDateTimeZ + support them for AXFR  
 [:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z"  
 [:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z"

@@ -82,7 +82,7 @@
 -record(dns_SOA_RR, {name, type, class, ttl, rdlength, mname, rname, serial, refresh, retry, expire, minimum}).
 
 %State record
--record(state, {socket,params}).
+-record(state, {socket, socket6, params}).
 
 %Protocol udp/tcp
 -record(proto, {proto,rip,rport}).

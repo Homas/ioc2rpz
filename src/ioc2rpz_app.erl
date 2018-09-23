@@ -17,8 +17,12 @@
 -behaviour(application).
 -export([start/2, stop/1]).
 
-start(_StartType, Start_Args) ->
-    ioc2rpz_sup:start_ioc2rpz_sup(Start_Args).
+start(_StartType, _Start_Args) ->
+    IPv4=application:get_env(ioc2rpz, ipv4, ""),
+    IPv6=application:get_env(ioc2rpz, ipv6, ""),
+    Conf_File=application:get_env(ioc2rpz, conf_file, "./cfg/ioc2rpz.conf"),
+    DB=application:get_env(ioc2rpz, db_dir, "./db"),
+    ioc2rpz_sup:start_ioc2rpz_sup([IPv4,IPv6,Conf_File,DB]).
 
 stop(_State) ->
     ok.
