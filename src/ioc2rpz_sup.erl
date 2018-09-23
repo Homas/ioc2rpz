@@ -51,8 +51,8 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
   update_all_zones(false),
   timer:apply_interval(?ZoneRefTime,ioc2rpz_sup,update_all_zones,[false]),
 
-  {ok, TCPSocket} = open_sockets(IPStr) ,
-  {ok, TCPSocket6} = open_sockets6(IPStr6) ,
+%  {ok, TCPSocket} = open_sockets(IPStr) ,
+  {ok, TCPSocket} = open_sockets6(IPStr6) ,
 
   spawn_opt(fun empty_listeners/0,[link,{fullsweep_after,0}]),
   ioc2rpz_fun:logMessage("ioc2rpz started ~n", []),
@@ -81,7 +81,7 @@ open_sockets6(IPStr) when IPStr /= "", IPStr /= [] ->
   {ok, TCPSocket};
 
 open_sockets6(IPStr) ->
-  {ok, TCPSocket} = gen_tcp:listen(?Port, [{active,once}, binary, inet6]),
+  {ok, TCPSocket} = gen_tcp:listen(?Port, [{active,once}, binary, inet6]), %{ipv6_v6only,true}
   ioc2rpz_udp:start_ioc2rpz_udp(IPStr, [inet6]), % TODO - put it in supervisor
   {ok, TCPSocket}.
   
