@@ -233,13 +233,13 @@ Optimization parameters:
 All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-compiled parameters ``HotCacheTime``, ``HotCacheTimeIXFR`` define storage time.
 
 ## How to test
-###Disclaimer
+### Disclaimer
 The author assumes no responsibility or liability for any errors or omissions in the content of these RPZ feeds. The feeds are provided on an “as is” basis with no guarantees of completeness, accuracy, usefulness or timelines to demonstrate ioc2rpz technology only. The RPZ feeds service distirbution may be interrupted or stopped w/o any advance notice. The author is not lialable for any direct or inderect damages caused by using this service.
 
 ### RPZ Feeds settings.
 You may test ioc2rpz technology for free with the following RPZ feeds:  
-RPZ: ``dns-bh.ioc2rpz``, server: ``94.130.30.123``, TSIG key name: ``ioc2rpz-public``, TSIG key: ``CM1HB7f6JC5lwRa5SruT2A==``, Key algorithm: ``hmac-sha256``    
-RPZ: ``notracking.ioc2rpz``, server: ``94.130.30.123``, TSIG key name: ``ioc2rpz-public``, TSIG key: ``CM1HB7f6JC5lwRa5SruT2A==``, Key algorithm: ``hmac-sha256``    
+- RPZ: ``dns-bh.ioc2rpz``, server: ``94.130.30.123``, TSIG key name: ``ioc2rpz-public``, TSIG key: ``CM1HB7f6JC5lwRa5SruT2A==``, Key algorithm: ``hmac-sha256``    
+- RPZ: ``notracking.ioc2rpz``, server: ``94.130.30.123``, TSIG key name: ``ioc2rpz-public``, TSIG key: ``CM1HB7f6JC5lwRa5SruT2A==``, Key algorithm: ``hmac-sha256``    
 The feeds are based on [DNS-BH](http://www.malwaredomains.com/) and [notracking](https://github.com/notracking/hosts-blocklists) lists.
 
 ### Sample bind configuration
@@ -287,8 +287,8 @@ responsepolicyzone,notracking.ioc2rpz,FORWARD,Nxdomain,,default,responsepolicy,s
 ```
 
 ### Sample DIG (to get SOA)
-dig @94.130.30.123 -y hmac-sha256:ioc2rpz-public:CM1HB7f6JC5lwRa5SruT2A== dns-bh.ioc2rpz SOA
-dig @94.130.30.123 -y hmac-sha256:ioc2rpz-public:CM1HB7f6JC5lwRa5SruT2A== notracking.ioc2rpz SOA
+``dig @94.130.30.123 -y hmac-sha256:ioc2rpz-public:CM1HB7f6JC5lwRa5SruT2A== dns-bh.ioc2rpz SOA``  
+``dig @94.130.30.123 -y hmac-sha256:ioc2rpz-public:CM1HB7f6JC5lwRa5SruT2A== notracking.ioc2rpz SOA``  
 
 ## Free threat intelligence
 - [DNS-BH – Malware Domain Blocklist by RiskAnalytics](http://www.malwaredomains.com/)
