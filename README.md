@@ -232,7 +232,7 @@ Optimization parameters:
 ## Hot cache
 All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-compiled parameters ``HotCacheTime``, ``HotCacheTimeIXFR`` define storage time.
 
-## How to test
+## How to try ioc2rpz technology
 ### Disclaimer
 The author assumes no responsibility or liability for any errors or omissions in the content of these RPZ feeds. The feeds are provided on an “as is” basis with no guarantees of completeness, accuracy, usefulness or timelines to demonstrate ioc2rpz technology only. The RPZ feeds service distirbution may be interrupted or stopped w/o any advance notice. The author is not lialable for any direct or inderect damages caused by using this service.
 
@@ -293,7 +293,7 @@ dig @94.130.30.123 -y hmac-sha256:ioc2rpz-public:CM1HB7f6JC5lwRa5SruT2A== dns-bh
 dig @94.130.30.123 -y hmac-sha256:ioc2rpz-public:CM1HB7f6JC5lwRa5SruT2A== notracking.ioc2rpz SOA
 ```  
 
-## Free threat intelligence
+## Some free threat intelligence feeds
 - [DNS-BH – Malware Domain Blocklist by RiskAnalytics](http://www.malwaredomains.com/)
 - [Netlab](http://data.netlab.360.com)
 - [Tor Exit Nodes](https://torstatus.blutmagie.de/ip_list_exit.php/Tor_ip_list_EXIT.csv)
