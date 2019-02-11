@@ -238,8 +238,16 @@ The author assumes no responsibility or liability for any errors or omissions in
 
 ### RPZ Feeds
 You may test ioc2rpz technology for free with the following RPZ feeds:  
-- RPZ: ``dns-bh.ioc2rpz``, Server: ``94.130.30.123``, TSIG key name: ``ioc2rpz-public``, TSIG key: ``CM1HB7f6JC5lwRa5SruT2A==``, Key algorithm: ``hmac-sha256``    
-- RPZ: ``notracking.ioc2rpz``, Server: ``94.130.30.123``, TSIG key name: ``ioc2rpz-public``, TSIG key: ``CM1HB7f6JC5lwRa5SruT2A==``, Key algorithm: ``hmac-sha256``
+- RPZ: ``dns-bh.ioc2rpz``
+  - Server: ``94.130.30.123``
+  - TSIG key name: ``ioc2rpz-public``
+  - Key algorithm: ``hmac-sha256``    
+  - TSIG key: ``CM1HB7f6JC5lwRa5SruT2A==``
+- RPZ: ``notracking.ioc2rpz``
+  - Server: ``94.130.30.123``
+  - TSIG key name: ``ioc2rpz-public``
+  - Key algorithm: ``hmac-sha256``
+  - TSIG key: ``CM1HB7f6JC5lwRa5SruT2A==``
 
 The feeds are based on [DNS-BH](http://www.malwaredomains.com/) and [notracking](https://github.com/notracking/hosts-blocklists) lists.
 
