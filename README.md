@@ -232,12 +232,71 @@ Optimization parameters:
 ## Hot cache
 All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-compiled parameters ``HotCacheTime``, ``HotCacheTimeIXFR`` define storage time.
 
+## How to test
+###Disclaimer
+The author assumes no responsibility or liability for any errors or omissions in the content of these RPZ feeds. The feeds are provided on an “as is” basis with no guarantees of completeness, accuracy, usefulness or timelines to demonstrate ioc2rpz technology only. The RPZ feeds service distirbution may be interrupted or stopped w/o any advance notice. The author is not lialable for any direct or inderect damages caused by using this service.
+
+### RPZ Feeds settings.
+You may test ioc2rpz technology for free with the following RPZ feeds:  
+RPZ: ``dns-bh.ioc2rpz``, server: ``94.130.30.123``, TSIG key name: ``ioc2rpz-public``, TSIG key: ``CM1HB7f6JC5lwRa5SruT2A==``, Key algorithm: ``hmac-sha256``    
+RPZ: ``notracking.ioc2rpz``, server: ``94.130.30.123``, TSIG key name: ``ioc2rpz-public``, TSIG key: ``CM1HB7f6JC5lwRa5SruT2A==``, Key algorithm: ``hmac-sha256``    
+The feeds are based on [DNS-BH](http://www.malwaredomains.com/) and [notracking](https://github.com/notracking/hosts-blocklists) lists.
+
+### Sample bind configuration
+```
+options {
+  #This is just options for RPZs. Add other options as required
+  recursion yes;
+  response-policy {
+    ####FQDN only zones 
+    ####Mixed zones 
+    zone "dns-bh.ioc2rpz" policy nxdomain;
+    zone "notracking.ioc2rpz" policy nxdomain;
+    ####IP only zones 
+  } qname-wait-recurse no break-dnssec yes;
+};
+          
+key "ioc2rpz-public"{
+  algorithm hmac-sha256; secret "CM1HB7f6JC5lwRa5SruT2A==";
+};
+
+            
+zone "dns-bh.ioc2rpz" {
+  type slave;
+  file "/var/cache/bind/dns-bh.ioc2rpz";
+  masters {94.130.30.123  key "ioc2rpz-public";};
+}; 
+
+          
+zone "notracking.ioc2rpz" {
+  type slave;
+  file "/var/cache/bind/notracking.ioc2rpz";
+  masters {94.130.30.123  key "ioc2rpz-public";};
+}; 
+```
+### Sample PowerDNS configuration
+```
+rpzMaster("94.130.30.123", "dns-bh.ioc2rpz", {defpol=Policy.NXDOMAIN, tsigname="ioc2rpz-public", tsigalgo="hmac-sha256", tsigsecret="CM1HB7f6JC5lwRa5SruT2A=="})
+rpzMaster("94.130.30.123", "notracking.ioc2rpz", {defpol=Policy.NXDOMAIN, tsigname="ioc2rpz-public", tsigalgo="hmac-sha256", tsigsecret="CM1HB7f6JC5lwRa5SruT2A=="})
+```
+### Sample Infoblox configuration (import file)
+```
+header-responsepolicyzone,fqdn*,zone_format*,rpz_policy,substitute_name,view,zone_type,external_primaries,grid_secondaries,priority
+responsepolicyzone,dns-bh.ioc2rpz,FORWARD,Nxdomain,,default,responsepolicy,srv_1/94.130.30.123/FALSE/FALSE/TRUE/ioc2rpz-public/CM1HB7f6JC5lwRa5SruT2A==/HMAC-SHA256,infoblox.localdomain/False/False/False,0
+responsepolicyzone,notracking.ioc2rpz,FORWARD,Nxdomain,,default,responsepolicy,srv_1/94.130.30.123/FALSE/FALSE/TRUE/ioc2rpz-public/CM1HB7f6JC5lwRa5SruT2A==/HMAC-SHA256,infoblox.localdomain/False/False/False,1
+```
+
+### Sample DIG (to get SOA)
+dig @94.130.30.123 -y hmac-sha256:ioc2rpz-public:CM1HB7f6JC5lwRa5SruT2A== dns-bh.ioc2rpz SOA
+dig @94.130.30.123 -y hmac-sha256:ioc2rpz-public:CM1HB7f6JC5lwRa5SruT2A== notracking.ioc2rpz SOA
 
 ## Free threat intelligence
 - [DNS-BH – Malware Domain Blocklist by RiskAnalytics](http://www.malwaredomains.com/)
 - [Netlab](http://data.netlab.360.com)
 - [Tor Exit Nodes](https://torstatus.blutmagie.de/ip_list_exit.php/Tor_ip_list_EXIT.csv)
 - [awesome-threat-intelligence list on GitHub](https://github.com/hslatman/awesome-threat-intelligence)
+
+You can find other IOC feeds on the wiki-page: https://github.com/Homas/ioc2rpz/wiki/IOC-Sources. 
 
 ## References
 - [Domain Name System (DNS) IANA Considerations](https://tools.ietf.org/html/rfc6895)

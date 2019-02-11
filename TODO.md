@@ -1,47 +1,55 @@
 #TODO
 
-## Configuration
+## Core
+- [ ] DoH https://tools.ietf.org/html/rfc8484
+- [ ] DoT https://tools.ietf.org/html/rfc7858
 
 ## Sources
 - [ ] Source: ioc type, max # of IOCs, max file size, RPZ action, NS type, lowcase optimization option, spawn processes
 - [ ] Hot cache optimization depending on RPZ refresh time and source usage in multiple feeds
 - [ ] Cache optimization for huge zones
 - [ ] Statistics table
-- [ ] Max # or rules
-- [x] "shell:" source type (executing a shell cmd)
-- [ ] additional tools and scripts for "shell:" (exists cat, awk, grep, nslookup )
-  - [x] dig
-  - [x] curl
-  - [x] python3
+- [ ] Max # of IOCs
 - [ ] Add script for RPZ via "shell:"
 - [ ] Add source PostreSQL, MySQL via "shell:"
 - [ ] RPZ action per source
 - [ ] Max IOCs, current IOCs
 
-## REST
-
-## Management
-- [ ] MGMT via REST API
-  - [ ] Reload CFG
-  - [ ] Refresh a zone
-  - [ ] Refresh all zones
-  - [ ] Terminate processes/Exit
-  - [ ] Statistics per source, RPZ, performance
-- [ ] (2) MGMT via DNS move to a separate port/IP
-
-## RPZ maintanance
+## RPZ
+- [ ] Source Intercetion zones
+- [ ] Max # of IOCs
 - [ ] Catalog zones
 - [ ] (2) FDateTime,ToDateTime,FDateTimeZ,ToDateTimeZ + support them for AXFR  
 [:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z"  
 [:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z"
 
+
+## Servers
+- [ ] Max # of IOCs
+- [ ] Secondary DNS via MNESIA
+
+## REST
+
+## Configuration
+- [\] Configuration file name pass as a variable to the container
+
+## Management
+- [ ] IPv4 addresses in IPv6 format
+- [ ] MGMT via REST API
+  - [ ] Reload CFG (no unchanged zones refresh)
+  - [ ] Refresh a zone
+  - [ ] Refresh all zones
+  - [ ] Terminate processes/Exit
+  - [ ] Statistics per source, RPZ, performance
+- [ ] (2) MGMT via DNS move to a separate port/IP
+- [ ] Statistics per zone (# records, last update, # AXFR, # IXFR, last axfr update time, avg axfr update time, last ixfr update time, avg ixfr update time)
+
+
 ## Unsorted
-- [ ] Configuration file name pass as a variable to the container
 - [x] (1) http/https/ftp errors handling - source status in the record. If a source is not available - work w/o it
   - [ ] RPZ behavior: ignore unreachable sources, use old data for unreachable sources, do not update the zone
   - [ ] (2) Source based on files check by mod.date and size -> read by chunks
   - [ ] Retry if source is not available
-- [ ] Statistics per zone (# records, last update, # AXFR, # IXFR, last axfr update time, avg axfr update time, last ixfr update time, avg ixfr update time)
 - [ ] Performance testing vs bind:
   - [ ] 1 core/8GB RAM: start time, zone transfer time, zone size, CPU, Memory
     - [ ] 100k rules
