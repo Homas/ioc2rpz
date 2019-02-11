@@ -236,7 +236,7 @@ All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-co
 ### Disclaimer
 The author assumes no responsibility or liability for any errors or omissions in the content of these RPZ feeds. The feeds are provided on an “as is” basis with no guarantees of completeness, accuracy, usefulness or timelines to demonstrate ioc2rpz technology only. The RPZ feeds service distirbution may be interrupted or stopped w/o any advance notice. The author is not lialable for any direct or inderect damages caused by using this service.
 
-### RPZ Feeds settings.
+### RPZ Feeds
 You may test ioc2rpz technology for free with the following RPZ feeds:  
 - RPZ: ``dns-bh.ioc2rpz``, Server: ``94.130.30.123``, TSIG key name: ``ioc2rpz-public``, TSIG key: ``CM1HB7f6JC5lwRa5SruT2A==``, Key algorithm: ``hmac-sha256``    
 - RPZ: ``notracking.ioc2rpz``, Server: ``94.130.30.123``, TSIG key name: ``ioc2rpz-public``, TSIG key: ``CM1HB7f6JC5lwRa5SruT2A==``, Key algorithm: ``hmac-sha256``
