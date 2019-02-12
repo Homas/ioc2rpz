@@ -23,18 +23,26 @@ logMessage(Message, Vars) ->
   logMessage(group_leader(), Message, Vars).
 
 logMessage(Dest, Message, Vars) ->
+ -ifdef(logtimestamp)
  {{Y,M,D},{HH,MM,SS}}=calendar:local_time(),
- io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w "++Message,[Y,M,D,HH,MM,SS|Vars]).
+ io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w ",[Y,M,D,HH,MM,SS])
+ -endif
+% io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w "++Message,[Y,M,D,HH,MM,SS|Vars]).
+ io:fwrite(Dest,Message,[Vars]).
 
-%CEF:Version|Device Vendor|Device Product|Device Version|Device Event Class ID|Name|Severity|[Extension]
 
 logMessageCEF(Message, Vars) -> % "Device Event Class ID|Name|Severity|[Extension]" must be passed
   logMessageCEF(group_leader(), Message, Vars).
 
 logMessageCEF(Dest, Message, Vars) ->
+ -ifdef(logtimestamp)
  {{Y,M,D},{HH,MM,SS}}=calendar:local_time(),
- io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w CEF:0|ioc2rpz|ioc2rpz|~s"++Message,[Y,M,D,HH,MM,SS,?ioc2rpz_ver|Vars]).
+ io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w ",[Y,M,D,HH,MM,SS])
+ -endif
+% io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w CEF:0|ioc2rpz|ioc2rpz|~s"++Message,[Y,M,D,HH,MM,SS,?ioc2rpz_ver|Vars]).
+ io:fwrite(Dest,"CEF:0|ioc2rpz|ioc2rpz|~s"++Message,[?ioc2rpz_ver|Vars]).
 
+%CEF:Version|Device Vendor|Device Product|Device Version|Device Event Class ID|Name|Severity|[Extension]
 % Severity is a string or integer and reflects the importance of the event. The valid string values are Unknown, Low, Medium, High, and Very-High. The valid integer values are 0-3=Low, 4-6=Medium, 7- 8=High, and 9-10=Very-High.
 % |101|Bad DNS packet|3|src=~s spt=~p proto=~p~n
 % |102|Bad DNS request|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p
