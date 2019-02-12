@@ -23,10 +23,8 @@ logMessage(Message, Vars) ->
   logMessage(group_leader(), Message, Vars).
 
 logMessage(Dest, Message, Vars) ->
- -ifdef(logtimestamp)
- {{Y,M,D},{HH,MM,SS}}=calendar:local_time(),
- io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w ",[Y,M,D,HH,MM,SS])
- -endif
+% {{Y,M,D},{HH,MM,SS}}=calendar:local_time(),
+% io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w ",[Y,M,D,HH,MM,SS]),
 % io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w "++Message,[Y,M,D,HH,MM,SS|Vars]).
  io:fwrite(Dest,Message,[Vars]).
 
@@ -35,10 +33,8 @@ logMessageCEF(Message, Vars) -> % "Device Event Class ID|Name|Severity|[Extensio
   logMessageCEF(group_leader(), Message, Vars).
 
 logMessageCEF(Dest, Message, Vars) ->
- -ifdef(logtimestamp)
- {{Y,M,D},{HH,MM,SS}}=calendar:local_time(),
- io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w ",[Y,M,D,HH,MM,SS])
- -endif
+% {{Y,M,D},{HH,MM,SS}}=calendar:local_time(),
+% io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w ",[Y,M,D,HH,MM,SS])
 % io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w CEF:0|ioc2rpz|ioc2rpz|~s"++Message,[Y,M,D,HH,MM,SS,?ioc2rpz_ver|Vars]).
  io:fwrite(Dest,"CEF:0|ioc2rpz|ioc2rpz|~s"++Message,[?ioc2rpz_ver|Vars]).
 
