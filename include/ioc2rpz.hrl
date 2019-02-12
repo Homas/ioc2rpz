@@ -21,16 +21,8 @@
 -define(Port,53). %DNS Port
 -define(TTL,900). %Default record TTL
 
-%Log timestamps
-%-define(logTS, true). 
--ifdef(logTS).
--define(addTS(Dest),(fun() ->
-		{{Y,M,D},{HH,MM,SS}}=calendar:local_time(),io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w ",[Y,M,D,HH,MM,SS])
-	end)()).
--else.
--define(addTS(Dest),true).
--endif.
 
+%-define(logTS, true). % Log timestamps (comment or uncomment)
 
 
 %%%Optimization
@@ -46,10 +38,19 @@
 %%%%%%
 %%%%%% Do not modify any settings below the line
 %%%%%%
--define(ioc2rpz_ver, "0.9.0-2018070701").
+-define(ioc2rpz_ver, "0.9.1-2019021101").
 
 -define(ZNameZip,16#c00c:16). %Zone name/original fqdn from a request is always at byte 10 in the response
 -define(MaxZipPSize,16#3FFF:16). %Max packet size to zip DNS labels
+
+% Log timestamps
+-ifdef(logTS).
+-define(addTS(Dest),(fun() ->
+		{{Y,M,D},{HH,MM,SS}}=calendar:local_time(),io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w ",[Y,M,D,HH,MM,SS])
+	end)()).
+-else.
+-define(addTS(Dest),true).
+-endif.
 
 %DNS Response codes
 -define(NOERROR,0).

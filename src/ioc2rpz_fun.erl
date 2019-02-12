@@ -44,8 +44,8 @@ logMessageCEF(Dest, Message, Vars) ->
 % Severity is a string or integer and reflects the importance of the event. The valid string values are Unknown, Low, Medium, High, and Very-High. The valid integer values are 0-3=Low, 4-6=Medium, 7- 8=High, and 9-10=Very-High.
 % |101|Bad DNS packet|3|src=~s spt=~p proto=~p~n
 % |102|Bad DNS request|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p
-% |201|Zone Transfer Success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p
-
+% |201|RPZ transfer success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p
+% |202|DNS Query|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p
 
 strs_to_binary(Strs) ->
   strs_to_binary(Strs,[]).

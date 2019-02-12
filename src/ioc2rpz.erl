@@ -107,10 +107,10 @@ parse_dns_request(Socket, Data, Proto) when byte_size(Data) =< 12 ->
 parse_dns_request(Socket, <<DNSId:2/binary, _:1, OptB:7, _:1, OptE:3, _:4, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/big-unsigned-unit:8,NSCOUNT:2/binary,ARCOUNT:2/binary, Rest/binary>> = _Data, Proto) when QDCOUNT /= 1 -> %_:2/binary, ;ANCOUNT /= 0
 %%% Bad DNS request. QDCount != 1
   [QName,<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, _Other_REC/binary>>] = binary:split(Rest,<<0>>),
-  %LT=calendar:local_time(),
   QStr=dombin_to_str(QName),
-  %ioc2rpz_fun:logMessage("~p ~p ~p bad request ~s ~s ~s~n",[LT, Proto#proto.rip,Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
   ioc2rpz_fun:logMessageCEF("|102|Bad DNS request|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p~n",[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
+  %to remove
+  %LT=calendar:local_time(), ioc2rpz_fun:logMessage("~p ~p ~p bad request ~s ~s ~s~n",[LT, Proto#proto.rip,Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
   send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?SERVFAIL:4>>, <<QDCOUNT:2,ANCOUNT:2,NSCOUNT:2,ARCOUNT:2>>, Rest, [], Proto);
 
 parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/big-unsigned-unit:8,NSCOUNT:2/big-unsigned-unit:8,ARCOUNT:2/big-unsigned-unit:8, Rest/binary>> = _Data, Proto) when QDCOUNT == 1, ANCOUNT == 0 -> %_DataLen:2/big-unsigned-unit:8,
@@ -120,11 +120,12 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
   [QName,<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, Other_REC/binary>>] = binary:split(Rest,<<0>>),
   Question = <<QName/binary,0:8,QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8>>,
   QStr=dombin_to_str(QName),
-  ioc2rpz_fun:logMessage("~p/~s:~p query ~s ~s ~s~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
+  %ioc2rpz_fun:logMessage("~p/~s:~p query ~s ~s ~s~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
 
   {RRRes,DNSRR,TSIG,SOA,RAWN} = parse_rr(NSCOUNT, ARCOUNT, Other_REC),
+  ioc2rpz_fun:logMessageCEF("|202|DNS Query|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p~n",[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name)]),
 
-   [[NSServ,MailAddr,MKeys,ACL]] = ets:match(cfg_table,{srv,'$2','$3','$4','$5'}),
+  [[NSServ,MailAddr,MKeys,ACL]] = ets:match(cfg_table,{srv,'$2','$3','$4','$5'}),
   MGMTIP=ioc2rpz_fun:ip_in_list(ip_to_str(Proto#proto.rip),ACL),
 %%%%in response AA flag should be 1 if there no error
   case {QName, QType, QClass,RRRes} of
@@ -216,10 +217,10 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
               {QType,noauth} when QType == ?T_SOA;QType == ?T_IXFR,Proto#proto.proto == udp -> send_SOA(Socket, Zone, DNSId, OptB, OptE, Question, MailAddr, NSServ, [], Proto);
               {QType,valid} when QType == ?T_SOA;QType == ?T_IXFR,Proto#proto.proto == udp -> send_SOA(Socket, Zone, DNSId, OptB, OptE, Question, MailAddr, NSServ, TSIG1, Proto);
               {_,noauth} -> send_zone(Zone#rpz.cache,Socket,{Question,DNSId,OptB,OptE,<<QDCOUNT:2,ANCOUNT:2,NSCOUNT:2,ARCOUNT:2>>,Rest,Zone, QType,NSServ,MailAddr,[],SOA}, Proto),
-                  ioc2rpz_fun:logMessageCEF("|201|Zone Transfer Success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey= transfer_time=~p~n",[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),(erlang:system_time(millisecond)-STime)]);
+                  ioc2rpz_fun:logMessageCEF("|201|RPZ transfer Success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey= transfer_time=~p~n",[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),(erlang:system_time(millisecond)-STime)]);
               {_,valid} ->
                   send_zone(Zone#rpz.cache,Socket,{Question,DNSId,OptB,OptE,<<QDCOUNT:2,ANCOUNT:2,NSCOUNT:2,ARCOUNT:2>>,Rest,Zone,QType,NSServ,MailAddr,TSIG1,SOA}, Proto),
-                  ioc2rpz_fun:logMessageCEF("|201|Zone Transfer Success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p transfer_time=~p~n",[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),(erlang:system_time(millisecond)-STime)]);
+                  ioc2rpz_fun:logMessageCEF("|201|RPZ transfer Success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p transfer_time=~p~n",[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),(erlang:system_time(millisecond)-STime)]);
               {_,TSIGV} -> send_TSIG_error(TSIGV, Socket, DNSId, OptB, OptE, Question, TSIG1, ["zone ~p transfer failed ~p ~n",[Zone#rpz.zone_str,TSIGV]], Proto)
             end;
         _ ->
