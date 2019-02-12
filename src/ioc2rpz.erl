@@ -100,8 +100,8 @@ send_dns_tcp(Socket, Pkt, []) ->
 send_dns_udp(Socket, Dst, Port, Pkt, _Args) ->
   ok = gen_udp:send(Socket, Dst, Port, Pkt).
 
-parse_dns_request(Socket, <<>> = _Data, Proto) -> % "Device Event Class ID|Name|Severity|[Extension]" must be passed
-  ioc2rpz_fun:logMessage("|101|Empty request|3|src=~p proto=~p~n",[ip_to_str(Proto#proto.rip),Proto#proto.proto]);
+parse_dns_request(Socket, Data, Proto) when byte_size(Data)<6 -> 
+  ioc2rpz_fun:logMessageCEF("|101|Empty request|3|src=~p proto=~p~n",[ip_to_str(Proto#proto.rip),Proto#proto.proto]);
   
 parse_dns_request(Socket, <<DNSId:2/binary, _:1, OptB:7, _:1, OptE:3, _:4, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/big-unsigned-unit:8,NSCOUNT:2/binary,ARCOUNT:2/binary, Rest/binary>> = _Data, Proto) when QDCOUNT /= 1 -> %_:2/binary, ;ANCOUNT /= 0
   [QName,<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, _Other_REC/binary>>] = binary:split(Rest,<<0>>),
@@ -1124,5 +1124,10 @@ hexstr_to_bin([X|T], Acc) ->
   {ok, [V], []} = io_lib:fread("~16u", lists:flatten([X,"0"])),
   hexstr_to_bin(T, [V | Acc]).
 
+ip_to_str({0,0,0,0,0,65535,IP1,IP2}) ->
+  <<IP1B2:8, IP1B1:8>> = <<IP1:16>>,
+  <<IP2B2:8, IP2B1:8>> = <<IP2:16>>,
+  inet_parse:ntoa({IP1B1,IP1B2,IP2B1,IP2B2});
+  
 ip_to_str(IP) ->
   inet_parse:ntoa(IP).
