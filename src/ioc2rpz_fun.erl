@@ -44,17 +44,17 @@ logMessageCEF(Dest, Message, Vars) ->
 % Severity is a string or integer and reflects the importance of the event. The valid string values are Unknown, Low, Medium, High, and Very-High. The valid integer values are 0-3=Low, 4-6=Medium, 7- 8=High, and 9-10=Very-High.
 
 msg_CEF(101)    -> "|101|Bad DNS packet|3|src=~s spt=~p proto=~p~n";
-msg_CEF(102)    -> "|102|Bad DNS request|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p";
+msg_CEF(102)    -> "|102|Bad DNS request|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p~n";
 msg_CEF(103)    -> "|103|Refused|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
 msg_CEF(104)    -> "|104|TSIG key not found|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
 msg_CEF(105)    -> "|105|TSIG Bad MAC|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
 msg_CEF(106)    -> "|106|TSIG Bad time|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
 msg_CEF(107)    -> "|107|Other TSIG error|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p msg2=~p~n";
 
-msg_CEF(201)    -> "|201|RPZ transfer success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p";
-msg_CEF(202)    -> "|202|DNS Query|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p";
+msg_CEF(201)    -> "|201|RPZ transfer success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p~n";
+msg_CEF(202)    -> "|202|DNS Query|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p~n";
 
-msg_CEF(999)    -> "Not defined".
+msg_CEF(999)    -> "Not defined~n".
 
 strs_to_binary(Strs) ->
   strs_to_binary(Strs,[]).
