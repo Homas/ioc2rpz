@@ -2,7 +2,7 @@
 [CB] - Changed Behaviour
 
 ## 2019-02-11
-- Some (connection) log messages were formated in CEF
+- Connection and key validation log messages were formated in CEF
 
 ## 2018-09-22
 - IPv6 support

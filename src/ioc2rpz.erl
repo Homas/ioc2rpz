@@ -102,13 +102,13 @@ send_dns_udp(Socket, Dst, Port, Pkt, _Args) ->
 
 parse_dns_request(Socket, Data, Proto) when byte_size(Data) =< 12 ->
 %%% Bad DNS packet
-  ioc2rpz_fun:logMessageCEF("|101|Bad DNS packet|3|src=~s spt=~p proto=~p~n",[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto]);
+  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(101),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto]);
   
 parse_dns_request(Socket, <<DNSId:2/binary, _:1, OptB:7, _:1, OptE:3, _:4, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/big-unsigned-unit:8,NSCOUNT:2/binary,ARCOUNT:2/binary, Rest/binary>> = _Data, Proto) when QDCOUNT /= 1 -> %_:2/binary, ;ANCOUNT /= 0
 %%% Bad DNS request. QDCount != 1
   [QName,<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, _Other_REC/binary>>] = binary:split(Rest,<<0>>),
   QStr=dombin_to_str(QName),
-  ioc2rpz_fun:logMessageCEF("|102|Bad DNS request|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p~n",[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
+  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(102),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
   %to remove
   %LT=calendar:local_time(), ioc2rpz_fun:logMessage("~p ~p ~p bad request ~s ~s ~s~n",[LT, Proto#proto.rip,Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
   send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?SERVFAIL:4>>, <<QDCOUNT:2,ANCOUNT:2,NSCOUNT:2,ARCOUNT:2>>, Rest, [], Proto);
@@ -120,10 +120,11 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
   [QName,<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, Other_REC/binary>>] = binary:split(Rest,<<0>>),
   Question = <<QName/binary,0:8,QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8>>,
   QStr=dombin_to_str(QName),
+  %to remove
   %ioc2rpz_fun:logMessage("~p/~s:~p query ~s ~s ~s~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
 
   {RRRes,DNSRR,TSIG,SOA,RAWN} = parse_rr(NSCOUNT, ARCOUNT, Other_REC),
-  ioc2rpz_fun:logMessageCEF("|202|DNS Query|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p~n",[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name)]),
+  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(202),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name)]),
 
   [[NSServ,MailAddr,MKeys,ACL]] = ets:match(cfg_table,{srv,'$2','$3','$4','$5'}),
   MGMTIP=ioc2rpz_fun:ip_in_list(ip_to_str(Proto#proto.rip),ACL),
@@ -135,7 +136,7 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
       case TSIGV of
         noauth -> send_status(Socket,[Question,DNSId,OptB,OptE,[]]);
         valid ->  send_status(Socket,[Question,DNSId,OptB,OptE,TSIG1]);
-        TSIGV -> send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, ["ioc2rpz-status failed ~p ~n",[TSIGV]], Proto)
+        TSIGV -> send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, ["ioc2rpz-status request failed",[TSIGV],QStr, QType, QClass], Proto)
       end;
 
 %Reload configuration file
@@ -145,7 +146,7 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
       case TSIGV of
         noauth -> ok = ioc2rpz_sup:reload_config3(), send_txt_response(Socket,[Question,DNSId,OptB,OptE,[]],TXT);
         valid ->  ok = ioc2rpz_sup:reload_config3(), send_txt_response(Socket,[Question,DNSId,OptB,OptE,TSIG1],TXT);
-        TSIGV -> send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, ["ioc2rpz-reload-cfg failed ~p ~n",[TSIGV]], Proto)
+        TSIGV -> send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, ["ioc2rpz-reload-cfg request failed",[TSIGV],QStr, QType, QClass], Proto)
       end;
 
 %Terminate ioc2rpz
@@ -157,7 +158,7 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
       case TSIGV of
         noauth -> send_txt_response(Socket,[Question,DNSId,OptB,OptE,[]],TXT),ioc2rpz_sup:stop_ioc2rpz_sup();
         valid ->  send_txt_response(Socket,[Question,DNSId,OptB,OptE,TSIG1],TXT),ioc2rpz_sup:stop_ioc2rpz_sup(); %exit(SuperVPID, kill)
-        TSIGV -> send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, ["ioc2rpz-reload-cfg failed ~p ~n",[TSIGV]], Proto)
+        TSIGV -> send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, ["ioc2rpz-terminate request failed",[TSIGV],QStr, QType, QClass], Proto)
       end;
 
 %Update all zones/force AXFR for all zones
@@ -167,7 +168,7 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
       case TSIGV of
         noauth -> ioc2rpz_sup:update_all_zones(true), send_txt_response(Socket,[Question,DNSId,OptB,OptE,[]],TXT);
         valid ->  ioc2rpz_sup:update_all_zones(true), send_txt_response(Socket,[Question,DNSId,OptB,OptE,TSIG1],TXT);
-        TSIGV -> send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, ["ioc2rpz-reload-cfg failed ~p ~n",[TSIGV]], Proto)
+        TSIGV -> send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, ["ioc2rpz-update-all-rpz request failed",[TSIGV],QStr, QType, QClass], Proto)
       end;
 
 %Update a zone/force AXFR for a zone
@@ -180,14 +181,14 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
           case TSIGV of
             noauth -> spawn_opt(ioc2rpz_sup,update_zone_full,[Zone],[{fullsweep_after,0}]), send_txt_response(Socket,[Question,DNSId,OptB,OptE,[]],TXT);
             valid ->  spawn_opt(ioc2rpz_sup,update_zone_full,[Zone],[{fullsweep_after,0}]), send_txt_response(Socket,[Question,DNSId,OptB,OptE,TSIG1],TXT);
-            TSIGV -> send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, ["ioc2rpz-reload-cfg failed ~p ~n",[TSIGV]], Proto)
+            TSIGV -> send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, ["ioc2rpz force AXFR request failed",[TSIGV],QStr, QType, QClass], Proto)
           end;
         _ ->
           TXT = <<(list_to_binary(QStr))/binary," is not configured">>,
           case TSIGV of
             noauth -> send_txt_response(Socket,[Question,DNSId,OptB,OptE,[]],TXT);
             valid ->  send_txt_response(Socket,[Question,DNSId,OptB,OptE,TSIG1],TXT);
-            TSIGV -> send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, ["ioc2rpz-reload-cfg failed ~p ~n",[TSIGV]], Proto)
+            TSIGV -> send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, [TXT,[TSIGV],QStr, QType, QClass], Proto)
           end
       end;
 
@@ -203,7 +204,7 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
       case TSIGV of
         noauth -> send_sample_zone(Socket, DNSId, OptB, OptE, Question, MailAddr, NSServ, []);
         valid -> send_sample_zone(Socket, DNSId, OptB, OptE, Question, MailAddr, NSServ, TSIG1); %add TSIG
-        TSIGV -> send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, ["sample-zone transfer failed ~p ~n",[TSIGV]], Proto)
+        TSIGV -> send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, ["sample-zone transfer failed",[TSIGV],QStr, QType, QClass], Proto)
       end;
 
 %RPZs
@@ -217,11 +218,11 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
               {QType,noauth} when QType == ?T_SOA;QType == ?T_IXFR,Proto#proto.proto == udp -> send_SOA(Socket, Zone, DNSId, OptB, OptE, Question, MailAddr, NSServ, [], Proto);
               {QType,valid} when QType == ?T_SOA;QType == ?T_IXFR,Proto#proto.proto == udp -> send_SOA(Socket, Zone, DNSId, OptB, OptE, Question, MailAddr, NSServ, TSIG1, Proto);
               {_,noauth} -> send_zone(Zone#rpz.cache,Socket,{Question,DNSId,OptB,OptE,<<QDCOUNT:2,ANCOUNT:2,NSCOUNT:2,ARCOUNT:2>>,Rest,Zone, QType,NSServ,MailAddr,[],SOA}, Proto),
-                  ioc2rpz_fun:logMessageCEF("|201|RPZ transfer Success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey= transfer_time=~p~n",[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),(erlang:system_time(millisecond)-STime)]);
+                  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(201),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),"",(erlang:system_time(millisecond)-STime)]);
               {_,valid} ->
                   send_zone(Zone#rpz.cache,Socket,{Question,DNSId,OptB,OptE,<<QDCOUNT:2,ANCOUNT:2,NSCOUNT:2,ARCOUNT:2>>,Rest,Zone,QType,NSServ,MailAddr,TSIG1,SOA}, Proto),
-                  ioc2rpz_fun:logMessageCEF("|201|RPZ transfer Success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p transfer_time=~p~n",[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),(erlang:system_time(millisecond)-STime)]);
-              {_,TSIGV} -> send_TSIG_error(TSIGV, Socket, DNSId, OptB, OptE, Question, TSIG1, ["zone ~p transfer failed ~p ~n",[Zone#rpz.zone_str,TSIGV]], Proto)
+                  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(201),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),(erlang:system_time(millisecond)-STime)]);
+              {_,TSIGV} -> send_TSIG_error(TSIGV, Socket, DNSId, OptB, OptE, Question, TSIG1, ["zone transfer failed ~n",[Zone#rpz.zone_str,TSIGV],QStr, QType, QClass], Proto)
             end;
         _ ->
           ioc2rpz_fun:logMessage("No RPZ. ~p/~s:~p query ~s ~s ~s~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
@@ -235,21 +236,26 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
       ioc2rpz_fun:logMessage("Bad request ~p/~s:~p query ~s ~s ~s~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
       send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?NOTAUTH:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto)
   end,
+%  to remove
 %  ETime=erlang:system_time(millisecond),
 %  ioc2rpz_fun:logMessage("Zone ~p transfer time was ~p milliseconds ~n",[QStr, ETime - STime]),
   ok.
 
 
-send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, _TSIG, _MSG, Proto) ->
+send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, [MSG,_TSGV,QStr, QType, QClass], Proto) ->
+  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(103),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),MSG]),
   send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?REFUSED:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto);
 
-send_TSIG_error(keynotfound, Socket, DNSId, OptB, OptE, Question, TSIG, _MSG, Proto) ->
+send_TSIG_error(keynotfound, Socket, DNSId, OptB, OptE, Question, TSIG, [MSG,_TSGV,QStr, QType, QClass], Proto) ->
+  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(104),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),MSG]),
   send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?NOTAUTH:4>>, <<1:16,0:16,0:16,1:16>>,<<Question/binary,(TSIG#dns_TSIG_RR.name)/binary,?RT_TSIG:16/big-unsigned,?C_ANY:16/big-unsigned,0:32,(TSIG#dns_TSIG_RR.rdlength-TSIG#dns_TSIG_RR.mac_len):16/big-unsigned,(TSIG#dns_TSIG_RR.alg)/binary,(TSIG#dns_TSIG_RR.time)/binary,(TSIG#dns_TSIG_RR.fudge)/binary,0:16,DNSId/binary,?TSIG_BADKEY:16/big-unsigned,0:16>>, [], Proto);
 
-send_TSIG_error(badmac, Socket, DNSId, OptB, OptE, Question, TSIG, _MSG, Proto) ->
+send_TSIG_error(badmac, Socket, DNSId, OptB, OptE, Question, TSIG, [MSG,_TSGV,QStr, QType, QClass], Proto) ->
+  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(105),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),MSG]),
   send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?NOTAUTH:4>>, <<1:16,0:16,0:16,1:16>>,<<Question/binary,(TSIG#dns_TSIG_RR.name)/binary,?RT_TSIG:16/big-unsigned,?C_ANY:16/big-unsigned,0:32,(TSIG#dns_TSIG_RR.rdlength-TSIG#dns_TSIG_RR.mac_len):16/big-unsigned,(TSIG#dns_TSIG_RR.alg)/binary,(TSIG#dns_TSIG_RR.time)/binary,(TSIG#dns_TSIG_RR.fudge)/binary,0:16,DNSId/binary,?TSIG_BADSIG:16/big-unsigned,0:16>>, [], Proto);
 
-send_TSIG_error(badtimegoodmac, Socket, DNSId, OptB, OptE, Question, TSIG, MSG, Proto) ->
+send_TSIG_error(badtimegoodmac, Socket, DNSId, OptB, OptE, Question, TSIG, [MSG,_TSGV,QStr, QType, QClass], Proto) ->
+  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(106),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),MSG]),
   CTime=erlang:system_time(seconds),
   Pkt = <<DNSId:2/binary,1:1,OptB:7, 0:1, OptE:3,?NOTAUTH:4,1:16,0:16,0:16,0:16, Question/binary>>,
   PKT = <<(TSIG#dns_TSIG_RR.mac_len):2/big-unsigned-unit:8,(TSIG#dns_TSIG_RR.mac)/binary,Pkt/binary,(TSIG#dns_TSIG_RR.name)/binary,0:8,255:8,0:32,(TSIG#dns_TSIG_RR.alg)/binary,(TSIG#dns_TSIG_RR.time):6/binary,(TSIG#dns_TSIG_RR.fudge)/binary,?TSIG_BADTIME:16/big-unsigned,6:16,CTime:48>>,
@@ -265,8 +271,9 @@ send_TSIG_error(badtimegoodmac, Socket, DNSId, OptB, OptE, Question, TSIG, MSG, 
   send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?NOTAUTH:4>>,<<1:16,0:16,0:16,1:16>>,<<Question/binary,TSIGR/binary>>, [], Proto);
 
 
-send_TSIG_error(_, Socket, DNSId, OptB, OptE, Question, TSIG, [MSG,MSGP], Proto) ->
-  ioc2rpz_fun:logMessage(MSG,MSGP),
+send_TSIG_error(_, Socket, DNSId, OptB, OptE, Question, TSIG, [MSG,MSPG,QStr, QType, QClass], Proto) ->
+%  ioc2rpz_fun:logMessage(MSG,MSGP),
+  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(107),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),MSG, MSPG]),
   send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?SERVFAIL:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto).
 
 

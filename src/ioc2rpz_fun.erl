@@ -17,7 +17,7 @@
 -module(ioc2rpz_fun).
 -include_lib("ioc2rpz.hrl").
 -export([logMessage/2,logMessageCEF/2,strs_to_binary/1,curr_serial/0,curr_serial_60/0,constr_ixfr_url/3,ip_to_bin/1,read_local_actions/1,split_bin_bytes/2,split_tail/2,
-         bin_to_lowcase/1,ip_in_list/2,intersection/2,bin_to_hexstr/1,conv_to_Mb/1,q_class/1,q_type/1,split/2]).
+         bin_to_lowcase/1,ip_in_list/2,intersection/2,bin_to_hexstr/1,conv_to_Mb/1,q_class/1,q_type/1,split/2,msg_CEF/1]).
 
 logMessage(Message, Vars) ->
   logMessage(group_leader(), Message, Vars).
@@ -42,10 +42,19 @@ logMessageCEF(Dest, Message, Vars) ->
 
 %CEF:Version|Device Vendor|Device Product|Device Version|Device Event Class ID|Name|Severity|[Extension]
 % Severity is a string or integer and reflects the importance of the event. The valid string values are Unknown, Low, Medium, High, and Very-High. The valid integer values are 0-3=Low, 4-6=Medium, 7- 8=High, and 9-10=Very-High.
-% |101|Bad DNS packet|3|src=~s spt=~p proto=~p~n
-% |102|Bad DNS request|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p
-% |201|RPZ transfer success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p
-% |202|DNS Query|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p
+
+msg_CEF(101)    -> "|101|Bad DNS packet|3|src=~s spt=~p proto=~p~n";
+msg_CEF(102)    -> "|102|Bad DNS request|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p";
+msg_CEF(103)    -> "|103|Refused|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
+msg_CEF(104)    -> "|104|TSIG key not found|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
+msg_CEF(105)    -> "|105|TSIG Bad MAC|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
+msg_CEF(106)    -> "|106|TSIG Bad time|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
+msg_CEF(107)    -> "|107|Other TSIG error|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p msg2=~p~n";
+
+msg_CEF(201)    -> "|201|RPZ transfer success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p";
+msg_CEF(202)    -> "|202|DNS Query|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p";
+
+msg_CEF(999)    -> "Not defined".
 
 strs_to_binary(Strs) ->
   strs_to_binary(Strs,[]).
