@@ -216,10 +216,10 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
               {QType,noauth} when QType == ?T_SOA;QType == ?T_IXFR,Proto#proto.proto == udp -> send_SOA(Socket, Zone, DNSId, OptB, OptE, Question, MailAddr, NSServ, [], Proto);
               {QType,valid} when QType == ?T_SOA;QType == ?T_IXFR,Proto#proto.proto == udp -> send_SOA(Socket, Zone, DNSId, OptB, OptE, Question, MailAddr, NSServ, TSIG1, Proto);
               {_,noauth} -> send_zone(Zone#rpz.cache,Socket,{Question,DNSId,OptB,OptE,<<QDCOUNT:2,ANCOUNT:2,NSCOUNT:2,ARCOUNT:2>>,Rest,Zone, QType,NSServ,MailAddr,[],SOA}, Proto),
-                  ioc2rpz_fun:logMessageCEF("|201|Zone Transfer Success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey= transfer_time=~p~n",[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType),(erlang:system_time(millisecond)-STime)]);
+                  ioc2rpz_fun:logMessageCEF("|201|Zone Transfer Success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey= transfer_time=~p~n",[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),(erlang:system_time(millisecond)-STime)]);
               {_,valid} ->
                   send_zone(Zone#rpz.cache,Socket,{Question,DNSId,OptB,OptE,<<QDCOUNT:2,ANCOUNT:2,NSCOUNT:2,ARCOUNT:2>>,Rest,Zone,QType,NSServ,MailAddr,TSIG1,SOA}, Proto),
-                  ioc2rpz_fun:logMessageCEF("|201|Zone Transfer Success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p transfer_time=~p~n",[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType),dombin_to_str(TSIG#dns_TSIG_RR.name),(erlang:system_time(millisecond)-STime)]);
+                  ioc2rpz_fun:logMessageCEF("|201|Zone Transfer Success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p transfer_time=~p~n",[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),(erlang:system_time(millisecond)-STime)]);
               {_,TSIGV} -> send_TSIG_error(TSIGV, Socket, DNSId, OptB, OptE, Question, TSIG1, ["zone ~p transfer failed ~p ~n",[Zone#rpz.zone_str,TSIGV]], Proto)
             end;
         _ ->
