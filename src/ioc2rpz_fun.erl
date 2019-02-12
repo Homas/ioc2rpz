@@ -26,7 +26,8 @@ logMessage(Dest, Message, Vars) ->
 % {{Y,M,D},{HH,MM,SS}}=calendar:local_time(),
 % io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w ",[Y,M,D,HH,MM,SS]),
 % io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w "++Message,[Y,M,D,HH,MM,SS|Vars]).
- io:fwrite(Dest,Message,[Vars]).
+ ?addTS(Dest),
+ io:fwrite(Dest,Message,Vars).
 
 
 logMessageCEF(Message, Vars) -> % "Device Event Class ID|Name|Severity|[Extension]" must be passed
@@ -36,6 +37,7 @@ logMessageCEF(Dest, Message, Vars) ->
 % {{Y,M,D},{HH,MM,SS}}=calendar:local_time(),
 % io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w ",[Y,M,D,HH,MM,SS])
 % io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w CEF:0|ioc2rpz|ioc2rpz|~s"++Message,[Y,M,D,HH,MM,SS,?ioc2rpz_ver|Vars]).
+ ?addTS(Dest),
  io:fwrite(Dest,"CEF:0|ioc2rpz|ioc2rpz|~s"++Message,[?ioc2rpz_ver|Vars]).
 
 %CEF:Version|Device Vendor|Device Product|Device Version|Device Event Class ID|Name|Severity|[Extension]

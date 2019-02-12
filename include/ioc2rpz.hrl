@@ -21,6 +21,18 @@
 -define(Port,53). %DNS Port
 -define(TTL,900). %Default record TTL
 
+%Log timestamps
+%-define(logTS, true). 
+-ifdef(logTS).
+-define(addTS(Dest),(fun() ->
+		{{Y,M,D},{HH,MM,SS}}=calendar:local_time(),io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w ",[Y,M,D,HH,MM,SS])
+	end)()).
+-else.
+-define(addTS(Dest),true).
+-endif.
+
+
+
 %%%Optimization
 -define(DNSPktMax,16383). %Max DNS packet size. DNS Label Zip is available up to 16384 bytes 65000/max
 -define(Compression,6). % 0 - no compression, 9 - highest, 6 - default do it depending on the list/bin size. Used to store zones in cache
@@ -84,8 +96,8 @@
 %State record
 -record(state, {socket, socket6, params}).
 
-%Protocol udp/tcp
--record(proto, {proto,rip,rport}).
+%Protocol udp/tcp + qname, qtype, qclass, keyname
+-record(proto, {proto,rip,rport, qname, qtype, qclass, keyname}).
 
 %Config params
 -record(srv, {server,email,mkeys,acl}).
