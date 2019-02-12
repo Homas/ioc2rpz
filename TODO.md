@@ -3,6 +3,9 @@
 ## Core
 - [ ] DoH https://tools.ietf.org/html/rfc8484
 - [ ] DoT https://tools.ietf.org/html/rfc7858
+- [ ] Redo AXFR logs
+- [ ] All log messages in CEF
+- [ ] Update keys from cfg
 
 ## Sources
 - [ ] Source: ioc type, max # of IOCs, max file size, RPZ action, NS type, lowcase optimization option, spawn processes

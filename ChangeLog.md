@@ -1,6 +1,9 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
 
+## 2019-02-11
+- Log messages were formated in CEF
+
 ## 2018-09-22
 - IPv6 support
 - Configuration file name and IPs are moved to an app config file
