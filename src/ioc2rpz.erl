@@ -194,7 +194,8 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
 
 %Not permitted MGMT request
     {_,?T_TXT,?C_CHAOS,ok} when MGMTIP == false ->
-          ioc2rpz_fun:logMessage("MGMT not allowed from ~p/~s:~p. Request ~s ~s ~s~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
+%          ioc2rpz_fun:logMessage("MGMT not allowed from ~p/~s:~p. Request ~s ~s ~s~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
+          ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(301),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),""]),
           send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?NOTAUTH:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto);
 
 
@@ -226,15 +227,18 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
               {_,TSIGV} -> send_TSIG_error(TSIGV, Socket, DNSId, OptB, OptE, Question, TSIG1, ["zone transfer failed ~n",[Zone#rpz.zone_str,TSIGV],QStr, QType, QClass], Proto)
             end;
         _ ->
-          ioc2rpz_fun:logMessage("No RPZ. ~p/~s:~p query ~s ~s ~s~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
+%          ioc2rpz_fun:logMessage("No RPZ. ~p/~s:~p query ~s ~s ~s~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
+          ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(120),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),""]),
           send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?NOTAUTH:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto)
       end;
     {_,_,_,badTSIGposition} ->
     %rfc2845 If a TSIG record is present in any other position, the packet is dropped and a response with RCODE 1 (FORMERR) MUST be returned.
-      ioc2rpz_fun:logMessage("Wrong TSIG position ~p/~s:~p query ~s ~s ~s~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
+%      ioc2rpz_fun:logMessage("Wrong TSIG position ~p/~s:~p query ~s ~s ~s~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
+      ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(108),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),<<>>,""]),
       send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?FORMERR:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto);
     _ ->
-      ioc2rpz_fun:logMessage("Bad request ~p/~s:~p query ~s ~s ~s~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
+%      ioc2rpz_fun:logMessage("Bad request ~p/~s:~p query ~s ~s ~s~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
+      ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(102),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
       send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?NOTAUTH:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto)
   end,
 %  to remove
@@ -288,7 +292,8 @@ validate_REQ(_PH,_QDCOUNT,_ANCOUNT,_NSCOUNT,_ARCOUNT,_Question,_DNSRR,TSIG, KEYS
 validate_REQ(PH,QDCOUNT,ANCOUNT,NSCOUNT,ARCOUNT,Question,DNSRR,TSIG, KEYS) when TSIG#dns_TSIG_RR.name /= <<>> ->
   case {ets:select(cfg_table, [{{[key,TSIG#dns_TSIG_RR.name],'$1','$2','$3'},[],[['$1','$2','$3']]}]), lists:member(TSIG#dns_TSIG_RR.name,KEYS)} of
     {[[KeyName,Alg, KEY]],true} when Alg == "md5",TSIG#dns_TSIG_RR.alg == <<8:8,"hmac-md5",7:8,"sig-alg",3:8,"reg",3:8,"int",0:8>>; Alg == "sha256",TSIG#dns_TSIG_RR.alg == <<11:8,"hmac-sha256",0:8>>; Alg == "sha512",TSIG#dns_TSIG_RR.alg == <<11:8,"hmac-sha512",0:8>>  ->
-        ioc2rpz_fun:logMessage("Found Key ... ",[]), %TODO remove debug
+        %ioc2rpz_fun:logMessage("Found Key ... ",[]),
+        ?logDebugMSG("Found Key ... ",[]),
         LTime=erlang:system_time(seconds), RTimeL = binary:decode_unsigned(TSIG#dns_TSIG_RR.time) - binary:decode_unsigned(TSIG#dns_TSIG_RR.fudge), RTimeH = binary:decode_unsigned(TSIG#dns_TSIG_RR.time) + binary:decode_unsigned(TSIG#dns_TSIG_RR.fudge),
         PKT = <<PH/binary,QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/big-unsigned-unit:8,NSCOUNT:2/big-unsigned-unit:8,ARCOUNT:2/big-unsigned-unit:8,Question/binary,DNSRR/binary,(TSIG#dns_TSIG_RR.name)/binary,0,255,0,0,0,0,(TSIG#dns_TSIG_RR.alg)/binary,(TSIG#dns_TSIG_RR.time):6/binary,(TSIG#dns_TSIG_RR.fudge)/binary,(TSIG#dns_TSIG_RR.error)/binary,(TSIG#dns_TSIG_RR.olen):2/big-unsigned-unit:8,(TSIG#dns_TSIG_RR.odata)/binary>>,
         CH_MAC = case Alg of %TODO вынести в функцию
@@ -297,18 +302,19 @@ validate_REQ(PH,QDCOUNT,ANCOUNT,NSCOUNT,ARCOUNT,Question,DNSRR,TSIG, KEYS) when 
           "sha512" -> crypto:hmac(sha512,KEY,PKT)
         end,
         case CH_MAC == TSIG#dns_TSIG_RR.mac of
-          true when LTime >= RTimeL, LTime =< RTimeH -> ioc2rpz_fun:logMessage("Good timestamp ... Valid MAC~n",[]), %TODO remove debug
+          true when LTime >= RTimeL, LTime =< RTimeH -> ?logDebugMSG("Good timestamp ... Valid MAC~n",[]), %ioc2rpz_fun:logMessage("Good timestamp ... Valid MAC~n",[]), %TODO remove debug
             {valid,TSIG#dns_TSIG_RR{alg_str=Alg,key=KEY}};
-          false when LTime >= RTimeL, LTime =< RTimeH -> ioc2rpz_fun:logMessage("Good timestamp ... NOT Valid MAC ~n",[]), %debug
+          false when LTime >= RTimeL, LTime =< RTimeH -> ?logDebugMSG("Good timestamp ... NOT Valid MAC~n",[]), %ioc2rpz_fun:logMessage("Good timestamp ... NOT Valid MAC ~n",[]), %debug
             {badmac,[]};
-          true -> ioc2rpz_fun:logMessage("Bad timestamp ... Valid MAC ~n",[]), %debug
+          true -> ?logDebugMSG("Bad timestamp ... Valid MAC ~n",[]), %ioc2rpz_fun:logMessage("Bad timestamp ... Valid MAC ~n",[]), %debug
             %TODO 4.5.2 cache client time and if later request contains early time -> BADTIME
             {badtimegoodmac,TSIG#dns_TSIG_RR{alg_str=Alg,key=KEY}};
-          false -> ioc2rpz_fun:logMessage("Bad timestamp ... NOT Valid MAC ~n",[]), %debug
+          false -> ?logDebugMSG("Bad timestamp ... Valid MAC ~n",[]), %ioc2rpz_fun:logMessage("Bad timestamp ... NOT Valid MAC ~n",[]), %debug
             {badtime,[]}
         end;
     {_,_} ->
-        ioc2rpz_fun:logMessage("Key NOT found ~p ~p~n",[dombin_to_str(TSIG#dns_TSIG_RR.name), dombin_to_str(TSIG#dns_TSIG_RR.alg)]), %TODO remove debug
+        ?logDebugMSG("Key NOT found ~p ~p~n",[dombin_to_str(TSIG#dns_TSIG_RR.name), dombin_to_str(TSIG#dns_TSIG_RR.alg)]),
+        %ioc2rpz_fun:logMessage("Key NOT found ~p ~p~n",[dombin_to_str(TSIG#dns_TSIG_RR.name), dombin_to_str(TSIG#dns_TSIG_RR.alg)]), %TODO remove debug
         {keynotfound,TSIG}
   end.
 

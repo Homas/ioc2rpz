@@ -23,6 +23,7 @@
 
 
 %-define(logTS, true). % Log timestamps (comment or uncomment)
+%-define(debug, true). % Log debug messages
 
 
 %%%Optimization
@@ -51,6 +52,14 @@
 -else.
 -define(addTS(Dest),true).
 -endif.
+
+% Debug messages
+-ifdef(debug).
+-define(logDebugMSG(Message, Vars),ioc2rpz_fun:logMessage(Message, Vars)).
+-else.
+-define(logDebugMSG(Message, Vars),true).
+-endif.
+
 
 %DNS Response codes
 -define(NOERROR,0).
