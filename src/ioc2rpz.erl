@@ -29,7 +29,7 @@ start_ioc2rpz(Socket,Params) ->
   gen_server:start_link(?MODULE, [Socket,Params], []).
 
 init([Socket,Params]) ->
-  ?logDebugMSG("ioc2rpz tcp child started ~n", [])
+  ?logDebugMSG("ioc2rpz tcp child started ~n", []),
   gen_server:cast(self(), accept),
   {ok, #state{socket=Socket, params=Params}}.
 
@@ -267,7 +267,6 @@ send_TSIG_error(badtimegoodmac, Socket, DNSId, OptB, OptE, Question, TSIG, [MSG,
 
 
 send_TSIG_error(_, Socket, DNSId, OptB, OptE, Question, TSIG, [MSG,MSPG,QStr, QType, QClass], Proto) ->
-%  ioc2rpz_fun:logMessage(MSG,MSGP),
   ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(107),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),MSG, MSPG]),
   send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?SERVFAIL:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto).
 
@@ -354,12 +353,12 @@ parse_rr(NSCOUNT, ARCOUNT, <<Zip:8,_/binary>> = RAW, RR, SOA, RAWN) ->
       [MName,REST2] = binary:split(REST,<<0>>),
       [RName,<<Serial:32/big-unsigned, Refresh:32/big-unsigned, Retry:32/big-unsigned, Expire:32/big-unsigned, Minimum:32/big-unsigned,_/binary>>] = binary:split(REST2,<<0>>),
       if NSCOUNT > 0 -> NSCOUNT1=NSCOUNT-1, ARCOUNT1=ARCOUNT; true -> ARCOUNT1=ARCOUNT-1,NSCOUNT1=NSCOUNT end,
-      %ioc2rpz_fun:logMessage("SOA Serial ~p ~n",[Serial]),
+      %?logDebugMSG("SOA Serial ~p ~n",[Serial]),
       SOA2=#dns_SOA_RR{name=RNAME, type=RType, class=RClass, ttl=RTTL, rdlength=DLen, mname=MName, rname=RName, serial=Serial, refresh=Refresh, retry=Retry, expire=Expire, minimum=Minimum},
       parse_rr(NSCOUNT1, ARCOUNT1, RAW2, RR ++ [SOA2], SOA2, <<RAWN/binary,RNAME/binary, RType:2/big-unsigned-unit:8,RClass:2/big-unsigned-unit:8,RTTL:4/big-unsigned-unit:8,DLen:2/big-unsigned-unit:8,RDATA/binary>>);
 
     {?T_OPT, _ } -> %OPT Record
-%      ioc2rpz_fun:logMessage("Got OPT  RR. Type ~p UDP Payload ~p RCODE ~p RDLEN ~p ~n",[RType,RClass, RTTL, DLen]),
+      %?logDebugMSG("Got OPT  RR. Type ~p UDP Payload ~p RCODE ~p RDLEN ~p ~n",[RType,RClass, RTTL, DLen]),
       <<RDATA:DLen/bytes,RAW2/binary>> = REST,
       %EXTCode - High bits for Rcode (RFC1035), EDNSVer=0 according with RFC6891, DO - Can handle DNSEC (RFC3225), Z - must be 0
       %<<EXTCode:8, EDNSVer:8, DO:1, Z:15>> = RTTL,
@@ -1132,7 +1131,7 @@ hexstr_to_bin([X|T], Acc) ->
 ip_to_str({0,0,0,0,0,65535,IP1,IP2}) ->
   <<IP1B2:8, IP1B1:8>> = <<IP1:16>>,
   <<IP2B2:8, IP2B1:8>> = <<IP2:16>>,
-  inet_parse:ntoa({IP1B2,IP1B1,IP2B2,IP2B1});
+  inet_parse:ntoa({IP1B1,IP1B2,IP2B1,IP2B2});
   
 ip_to_str(IP) ->
   inet_parse:ntoa(IP).
