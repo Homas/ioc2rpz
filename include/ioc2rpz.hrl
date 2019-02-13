@@ -1,4 +1,4 @@
-%Copyright 2017-2018 Vadim Pavlov ioc2rpz[at]gmail[.]com
+%Copyright 2017-2019 Vadim Pavlov ioc2rpz[at]gmail[.]com
 %
 %Licensed under the Apache License, Version 2.0 (the "License");
 %you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@
 -define(SaveETS,false). % Save DB into files if DB is ETS.
 -define(Port,53). %DNS Port
 -define(TTL,900). %Default record TTL
-
 
 %-define(logTS, true). % Log timestamps (comment or uncomment)
 -define(debug, true). % Log debug messages
