@@ -20,7 +20,7 @@
 -include_lib("ioc2rpz.hrl").
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([start_ioc2rpz/2,send_notify/1,send_packets/19,domstr_to_bin/2,send_zone_live/8,mrpz_from_ioc/2,parse_dns_request/3]).
+-export([start_ioc2rpz/2,send_notify/1,send_packets/19,domstr_to_bin/2,send_zone_live/8,mrpz_from_ioc/2,parse_dns_request/3,ip_to_str/1]).
 
 
 %-compile([export_all]).
@@ -1129,9 +1129,11 @@ hexstr_to_bin([X|T], Acc) ->
 
 %%% Convert internal IP representation to a string 
 ip_to_str({0,0,0,0,0,65535,IP1,IP2}) ->
-  <<IP1B2:8, IP1B1:8>> = <<IP1:16>>,
-  <<IP2B2:8, IP2B1:8>> = <<IP2:16>>,
+  <<IP1B1:8, IP1B2:8>> = <<IP1:16>>,
+  <<IP2B1:8, IP2B2:8>> = <<IP2:16>>,
+  ?logDebugMSG("~p:~p ~p.~p.~p.~p~n",[IP1,IP2,IP1B1,IP1B2,IP2B1,IP2B2]),
   inet_parse:ntoa({IP1B1,IP1B2,IP2B1,IP2B2});
   
 ip_to_str(IP) ->
+  ?logDebugMSG("~p~n",[IP]),
   inet_parse:ntoa(IP).
