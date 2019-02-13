@@ -71,13 +71,13 @@ delete_db_pkt(Zone) -> %axfr
   delete_db_pkt(?DBStorage,Zone).
 
 delete_db_pkt(ets,Zone) when Zone#rpz.serial == 42 ->
-  %ioc2rpz_fun:logMessage("Removing AXFR zone ~p ~n",[Zone#rpz.zone_str]),
+  %?logDebugMSG("Removing AXFR zone ~p ~n",[Zone#rpz.zone_str]),
   ets:match_delete(rpz_axfr_table,{{rpz,Zone#rpz.zone,'_','_','_'},'_'}),
   ets:match_delete(rpz_axfr_table,{{axfr_rpz_cfg,Zone#rpz.zone},'_','_','_','_','_','_','_','_'});
 
 delete_db_pkt(ets,Zone) ->
   %axfr_rpz_cfg
-  %ioc2rpz_fun:logMessage("Removing AXFR zone ~p serial ~p ~n",[Zone#rpz.zone_str, Zone#rpz.serial]),
+  %?logDebugMSG("Removing AXFR zone ~p serial ~p ~n",[Zone#rpz.zone_str, Zone#rpz.serial]),
   ets:select_delete(rpz_axfr_table,[{{{rpz,Zone#rpz.zone,Zone#rpz.serial,'$1','_'},'_'},[{'=<','$1',Zone#rpz.serial}],[true]}]);
 
 delete_db_pkt(mnesia,Zone) ->
@@ -148,7 +148,7 @@ delete_old_db_record(Zone) ->
 
 
 delete_old_db_record(ets, Zone) when Zone#rpz.serial == 42 ->
-  ioc2rpz_fun:logMessage("Removing IXFR zone ~p ~n",[Zone#rpz.zone_str]),
+  %?logDebugMSG("Removing IXFR zone ~p ~n",[Zone#rpz.zone_str]),
   ets:match_delete(rpz_ixfr_table,{{ioc,Zone#rpz.zone,'_','_'},'_'}),
   ets:match_delete(rpz_ixfr_table,{{ixfr_rpz_cfg,Zone#rpz.zone},'_','_','_','_'});
 
@@ -156,16 +156,16 @@ delete_old_db_record(ets, Zone) ->
   NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[],['true']}]),
   ets:select_delete(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'_','$1'},'_'},[{'<','$1',Zone#rpz.serial}],[true]}]),
   NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[],['true']}]),
-  if NRbefore /= NRafter -> ioc2rpz_fun:logMessage("Delete old records from zone ~p.  before ~p after ~p ~n",[Zone#rpz.zone_str, NRbefore, NRafter]); true -> ok end;
+  if NRbefore /= NRafter -> ?logDebugMSG("Delete old records from zone ~p.  before ~p after ~p ~n",[Zone#rpz.zone_str, NRbefore, NRafter]); true -> ok end;
 delete_old_db_record(mnesia, Zone) ->
 ok.
 
 clean_DB(RPZ) ->
   AXFR=get_allzones_info(ets,axfr),
   RPZn = [X#rpz.zone || X <- RPZ ],
-  [{ioc2rpz_fun:logMessage("Zone ~p removing from cache ~n",[Y]), delete_db_pkt(#rpz{zone=X,zone_str=Y,serial=42}),delete_old_db_record(#rpz{zone=X,zone_str=Y,serial=42})} || [X,Y|_] <- AXFR, not lists:member(X, RPZn) ],
+  [{?logDebugMSG("Zone ~p removing from cache ~n",[Y]), delete_db_pkt(#rpz{zone=X,zone_str=Y,serial=42}),delete_old_db_record(#rpz{zone=X,zone_str=Y,serial=42})} || [X,Y|_] <- AXFR, not lists:member(X, RPZn) ],
   IXFR=get_allzones_info(ets,ixfr),
-  [{ioc2rpz_fun:logMessage("Zone ~p removing from cache ~n",[Y]), delete_db_pkt(#rpz{zone=X,zone_str=Y,serial=42}),delete_old_db_record(#rpz{zone=X,zone_str=Y,serial=42})} || [X,Y|_] <- IXFR, not lists:member(X, RPZn) ].
+  [{?logDebugMSG("Zone ~p removing from cache ~n",[Y]), delete_db_pkt(#rpz{zone=X,zone_str=Y,serial=42}),delete_old_db_record(#rpz{zone=X,zone_str=Y,serial=42})} || [X,Y|_] <- IXFR, not lists:member(X, RPZn) ].
 
 get_zone_info(Zone,DB) ->
   get_zone_info(?DBStorage,Zone,DB).

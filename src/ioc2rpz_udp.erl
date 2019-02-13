@@ -51,7 +51,6 @@ handle_info(E, State) ->
   {noreply, State}.
 
 handle_call(_E, _From, State) ->
-%  io:format("ioc2rpz accept connection~n"),
   {noreply, State}.
 
 terminate(_Reason, _Tab) ->

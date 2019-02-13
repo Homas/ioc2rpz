@@ -518,10 +518,10 @@ gen_txt_rec(TXT) ->
 send_notify(Zone) ->
   %TODO wait for the confirmation
   Pkt = <<0:1, ?OP_NOTIFY, 1:1, 0:6, ?NOERROR:4, 1:16,0:16,0:16,0:16,(Zone#rpz.zone)/binary,?T_SOA:16,?C_IN:16>>,
-  [ioc2rpz_fun:logMessage("Zone ~p send notify ~p proto ~p ~n",[Zone#rpz.zone_str,IP,Proto]) || {Proto,IP} <- Zone#rpz.notifylist ],
-  [ spawn(ioc2rpz,send_notify,[IP,Pkt,Proto,0]) || {Proto,IP} <- Zone#rpz.notifylist ].
+  [ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(221),[IP,53,Proto,Zone#rpz.zone_str]) || {Proto,IP} <- Zone#rpz.notifylist ],
+  [ spawn(ioc2rpz,send_notify,[IP,Pkt,Proto,0,Zone#rpz.zone_str]) || {Proto,IP} <- Zone#rpz.notifylist ].
 
-send_notify(Dst,Pkt,udp,NRuns) -> % TODO NRuns - will be used to resend Notify if not confirmation was not received
+send_notify(Dst,Pkt,udp,NRuns,Zone) -> % TODO NRuns - will be used to resend Notify if not confirmation was not received
   Port=rand:uniform(55535)+10000,
   case gen_udp:open(Port, [{active,false}]) of
   	{ok, Sock} ->
@@ -529,15 +529,15 @@ send_notify(Dst,Pkt,udp,NRuns) -> % TODO NRuns - will be used to resend Notify i
       send_dns_udp(Sock, Dst, 53, [DNSId,Pkt],[]),
 %      {Status,Pkt} = get_packet(Sock,Server,DNSId), %TODO wait for the response
       gen_udp:close(Sock);
-    {error, eaddrinuse} when NRuns < 3 -> send_notify(Dst,Pkt,udp,NRuns+1);
+    {error, eaddrinuse} when NRuns < 3 -> send_notify(Dst,Pkt,udp,NRuns+1,Zone);
   	{error, Reason} -> {Reason,[]}
   end;
 
-send_notify(Dst,Pkt,tcp,NRuns) ->
+send_notify(Dst,Pkt,tcp,NRuns,Zone) ->
   case gen_tcp:connect(Dst, 53, [{active, false}], ?TCPTimeout) of
     {ok, Socket} -> DNSId = crypto:strong_rand_bytes(2), send_dns_tcp(Socket, <<DNSId/binary,Pkt/binary>>, addlen), gen_tcp:close(Socket);
-    {error, eaddrinuse} when NRuns < 3 -> send_notify(Dst,Pkt,tcp,NRuns+1);
-  	{error, Reason} -> ioc2rpz_fun:logMessage("TCP Notify error ~p ~n",[Reason]), {Reason,[]}
+    {error, eaddrinuse} when NRuns < 3 -> send_notify(Dst,Pkt,tcp,NRuns+1,Zone);
+  	{error, Reason} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(222),[Dst,53,"tcp",Zone,Reason]), {Reason,[]}
   end.
 
 send_cached_zone(Socket,NSREC, SOAREC, TSIG, PktH, Questions, Pkts) -> %created becasue of concurent zone creation
@@ -612,8 +612,9 @@ send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,RH,Rest,Zone,?T_IXFR,NSSe
   ok;
 
 %Zone was not cached, but should be
-send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,_RH,_Rest,Zone,_QType,_NSServ,_MailAddr,TSIG,SOA}, Proto) when Zone#rpz.status == notready;Zone#rpz.status == updating ->
-  ioc2rpz_fun:logMessage("Zone ~p is not ready ~n", [Zone#rpz.zone_str]),
+send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,_RH,_Rest,Zone,QType,_NSServ,_MailAddr,TSIG,SOA}, Proto) when Zone#rpz.status == notready;Zone#rpz.status == updating ->
+ % ioc2rpz_fun:logMessage("Zone ~p is not ready ~n", [Zone#rpz.zone_str]), 
+  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(121),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,Zone#rpz.zone_str, ioc2rpz_fun:q_type(QType), "IN",dombin_to_str(TSIG#dns_TSIG_RR.name),""]),
   send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?SERVFAIL:4>>, <<1:16,0:16,0:16,0:16>>, Questions, TSIG, Proto);
 
 %Non cachable zones
@@ -1131,9 +1132,9 @@ hexstr_to_bin([X|T], Acc) ->
 ip_to_str({0,0,0,0,0,65535,IP1,IP2}) ->
   <<IP1B1:8, IP1B2:8>> = <<IP1:16>>,
   <<IP2B1:8, IP2B2:8>> = <<IP2:16>>,
-  ?logDebugMSG("~p:~p ~p.~p.~p.~p~n",[IP1,IP2,IP1B1,IP1B2,IP2B1,IP2B2]),
+  %?logDebugMSG("~p:~p ~p.~p.~p.~p~n",[IP1,IP2,IP1B1,IP1B2,IP2B1,IP2B2]),
   inet_parse:ntoa({IP1B1,IP1B2,IP2B1,IP2B2});
   
 ip_to_str(IP) ->
-  ?logDebugMSG("~p~n",[IP]),
+  %?logDebugMSG("~p~n",[IP]),
   inet_parse:ntoa(IP).

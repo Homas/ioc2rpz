@@ -48,9 +48,13 @@ msg_CEF(108)    -> "|000108|Wrong TSIG position|5|src=~s spt=~p proto=~p qname=~
 
 
 msg_CEF(120)    -> "|000120|RPZ not found|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
+msg_CEF(121)    -> "|000121|RPZ not ready|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
 
 msg_CEF(201)    -> "|000201|RPZ transfer success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p~n";
 msg_CEF(202)    -> "|000202|DNS Query|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p~n";
+
+msg_CEF(221)    -> "|000221|DNS Notify|3|dst=~s dpt=~s proto=~p zone=~p~n";
+msg_CEF(222)    -> "|000222|DNS Notify error|5|dst=~s dpt=~s proto=~s zone=~p msg=~p~n";
 
 msg_CEF(301)    -> "|000301|MGMT request refused|7|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
 
