@@ -23,7 +23,7 @@
 
 
 %-define(logTS, true). % Log timestamps (comment or uncomment)
-%-define(debug, true). % Log debug messages
+-define(debug, true). % Log debug messages
 
 
 %%%Optimization
