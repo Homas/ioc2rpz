@@ -29,7 +29,7 @@ start_ioc2rpz(Socket,Params) ->
   gen_server:start_link(?MODULE, [Socket,Params], []).
 
 init([Socket,Params]) ->
-  ioc2rpz_fun:logMessage("ioc2rpz tcp child started ~n", []),
+  ?logDebugMSG("ioc2rpz tcp child started ~n", [])
   gen_server:cast(self(), accept),
   {ok, #state{socket=Socket, params=Params}}.
 
@@ -190,7 +190,6 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
 
 %Not permitted MGMT request
     {_,?T_TXT,?C_CHAOS,ok} when MGMTIP == false ->
-%          ioc2rpz_fun:logMessage("MGMT not allowed from ~p/~s:~p. Request ~s ~s ~s~n",[Proto#proto.proto,ip_to_str(Proto#proto.rip),Proto#proto.rport, QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
           ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(301),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),""]),
           send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?NOTAUTH:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto);
 
@@ -1133,7 +1132,7 @@ hexstr_to_bin([X|T], Acc) ->
 ip_to_str({0,0,0,0,0,65535,IP1,IP2}) ->
   <<IP1B2:8, IP1B1:8>> = <<IP1:16>>,
   <<IP2B2:8, IP2B1:8>> = <<IP2:16>>,
-  inet_parse:ntoa({IP1B1,IP1B2,IP2B1,IP2B2});
+  inet_parse:ntoa({IP1B2,IP1B1,IP2B2,IP2B1});
   
 ip_to_str(IP) ->
   inet_parse:ntoa(IP).
