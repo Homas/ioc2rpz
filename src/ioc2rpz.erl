@@ -140,9 +140,20 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
       {TSIGV,TSIG1} = validate_REQ(PH,QDCOUNT,ANCOUNT,NSCOUNT,ARCOUNT-1,Question,RAWN,TSIG,MKeys),
       TXT = <<"ioc2rpz configuration was reloaded">>,
       case TSIGV of
-        noauth -> ok = ioc2rpz_sup:reload_config3(), send_txt_response(Socket,[Question,DNSId,OptB,OptE,[]],TXT);
-        valid ->  ok = ioc2rpz_sup:reload_config3(), send_txt_response(Socket,[Question,DNSId,OptB,OptE,TSIG1],TXT);
+        noauth -> ok = ioc2rpz_sup:reload_config3(reload), send_txt_response(Socket,[Question,DNSId,OptB,OptE,[]],TXT);
+        valid ->  ok = ioc2rpz_sup:reload_config3(reload), send_txt_response(Socket,[Question,DNSId,OptB,OptE,TSIG1],TXT);
         TSIGV -> send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, ["ioc2rpz-reload-cfg request failed",[TSIGV],QStr, QType, QClass], Proto)
+      end;
+
+
+%Reload tkeys from configuration
+    {<<_,"ioc2rpz-update-tkeys">>,?T_TXT,?C_CHAOS,ok} when MGMTIP, Proto#proto.proto == tcp, ?MGMToDNS == true ->
+      {TSIGV,TSIG1} = validate_REQ(PH,QDCOUNT,ANCOUNT,NSCOUNT,ARCOUNT-1,Question,RAWN,TSIG,MKeys),
+      TXT = <<"ioc2rpz tkeys were updated">>,
+      case TSIGV of
+        noauth -> ok = ioc2rpz_sup:reload_config3(updTkeys), send_txt_response(Socket,[Question,DNSId,OptB,OptE,[]],TXT);
+        valid ->  ok = ioc2rpz_sup:reload_config3(updTkeys), send_txt_response(Socket,[Question,DNSId,OptB,OptE,TSIG1],TXT);
+        TSIGV -> send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, ["ioc2rpz-update-tkeys request failed",[TSIGV],QStr, QType, QClass], Proto)
       end;
 
 %Terminate ioc2rpz

@@ -18,7 +18,7 @@
 -include_lib("kernel/include/file.hrl").
 -include_lib("ioc2rpz.hrl").
 -export([start_ioc2rpz_sup/1,stop_ioc2rpz_sup/0, start_socket/0,reload_config/0,update_all_zones/1,update_zone_full/1,
-        update_zone_inc/1,reload_config3/0]).
+        update_zone_inc/1,reload_config3/1,read_config3/1]).
 -export([init/1]).
 
 %-compile([export_all]).
@@ -111,10 +111,12 @@ reload_config()->
   update_all_zones(false),
   ok.
 
-reload_config3()->
+reload_config3(Action)->
   [[Filename]] = ets:match(cfg_table,{cfg_file,'$1'}),
-  ioc2rpz_fun:logMessage("ioc2rpz reloading configuration from ~p ~n", [Filename]),
-  read_config3(Filename,reload),
+  ioc2rpz_fun:logMessage("ioc2rpz reloading configuration from ~p action ~p~n", [Filename, Action]),
+%%% TODO we have to update get zone info..... to get rid of this.
+  [ ioc2rpz_db:save_zone_info(X) || [X] <- ets:match(cfg_table,{[rpz,'_'],'_','$4'}),  X#rpz.cache == <<"true">>],
+  read_config3(Filename,Action),
   ok.
 
     
@@ -172,9 +174,9 @@ read_config3(Filename)  ->
   {ok,CFG} = file:consult(Filename),
   read_config3(CFG,startup,[],[],[],[],[]).
 
-read_config3(Filename,reload)  ->
+read_config3(Filename,Action)  ->
   {ok,CFG} = file:consult(Filename),
-  read_config3(CFG,reload,[],[],[],[],[]).
+  read_config3(CFG,Action,[],[],[],[],[]).
 
 read_config3([{srv,{Serv,Email,MKeys,ACL}}|REST],RType,_,Keys,WhiteLists,Sources,RPZ) ->
   {ok,ServB}=ioc2rpz:domstr_to_bin(list_to_binary(Serv),0),
@@ -222,6 +224,20 @@ read_config3([],startup,Srv,Keys,WhiteLists,Sources,RPZ)  ->
   [ ets:insert_new(cfg_table, {[rpz,X#rpz.zone],X#rpz.zone,X}) || X <- [ validateCFGRPZ(Y,Sources_V,WhiteLists_V) || Y <- RPZ ] ],
   {ok,RPZ,Keys,Srv};
 
+% Update TSIG Keys w/o refreshing zones.
+read_config3([],updTkeys,Srv,Keys,WhiteLists,Sources,RPZ)  ->
+% update TKEYs
+  Keys_C=ets:match(cfg_table, {[key,'$1'],'$2','$3','$4'}),
+  Keys_V=[ validateCFGKeys(Y) || Y <- Keys ],
+  [ ets:delete(cfg_table, [key,X]) || [X,Y,_,_] <- Keys_C, not lists:member(Y, [ Z#key.name || Z <- Keys_V ]) ],
+  [ ets:insert(cfg_table, {[key,X#key.name_bin],X#key.name,X#key.alg,X#key.key}) || X <- Keys_V ],
+% Update SRV Management TSIG Keys
+  SrvV = validateCFGSrv(Srv), ets:update_element(cfg_table, srv, [{4, SrvV#srv.mkeys}]),
+% Update RPZs TSIG Keys
+  RPZ_C=[ X || [X] <- ets:match(cfg_table, {[rpz,'_'],'_','$3'})],
+  [ ets:update_element(cfg_table, [rpz,X#rpz.zone], [{3, X#rpz{akeys=(lists:keyfind(X#rpz.zone,3,RPZ))#rpz.akeys}}]) || X <- RPZ_C ],
+  ok;
+
 read_config3([],reload,Srv,Keys,WhiteLists,Sources,RPZ)  ->
   RPZ_C=[ X || [X] <- ets:match(cfg_table, {[rpz,'_'],'_','$3'})],
   [ ets:update_element(cfg_table, [rpz,X#rpz.zone], [{3, X#rpz{serial_new=-1, status=updating, update_time=-1}}]) || X <- RPZ_C ],
@@ -230,7 +246,9 @@ read_config3([],reload,Srv,Keys,WhiteLists,Sources,RPZ)  ->
   Keys_V=[ validateCFGKeys(Y) || Y <- Keys ],
   [ ets:delete(cfg_table, [key,X]) || [X,Y,_,_] <- Keys_C, not lists:member(Y, [ Z#key.name || Z <- Keys_V ]) ],
   [ ets:insert(cfg_table, {[key,X#key.name_bin],X#key.name,X#key.alg,X#key.key}) || X <- Keys_V ],
+
   SrvV = validateCFGSrv(Srv), ets:insert(cfg_table, {srv,SrvV#srv.server,SrvV#srv.email,SrvV#srv.mkeys,SrvV#srv.acl}),
+
   SW=ets:match(cfg_table, {[source,'_'],'$2'}),
   WhiteLists_C=[X||[X] <- SW,X#source.ixfr_url == undefined ],
   Sources_C=[X||[X] <- SW,X#source.ixfr_url /= undefined ],
@@ -255,6 +273,7 @@ read_config3([],reload,Srv,Keys,WhiteLists,Sources,RPZ)  ->
   RPZ_D = [ X || X <- RPZ_C, not lists:member(X#rpz.zone, [ Z#rpz.zone || Z <- RPZ_V ]) ],
   RPZ_N = [ X || X <- RPZ_V, not lists:member(X#rpz.zone, [ Z#rpz.zone || Z <- RPZ_C ]) ],
 
+%TODO TKEYS should be checked
   RPZ_UPD = [ X || X <- RPZ_V, not checkRPZEq(X,lists:keyfind(X#rpz.zone,3,RPZ_C)),lists:member(X#rpz.zone, [ Z#rpz.zone || Z <- RPZ_C ]) ] ++ 
             [ X || X <- RPZ_V, ioc2rpz_fun:intersection(X#rpz.whitelist,[Z#source.name || Z <- WhiteLists_UPD]) /= [] ] ++
             [ X || X <- RPZ_V, ioc2rpz_fun:intersection(X#rpz.sources,[Z#source.name || Z <- Sources_UPD]) /= [] ],
