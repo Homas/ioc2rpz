@@ -1,4 +1,4 @@
-%Copyright 2017-2018 Vadim Pavlov ioc2rpz[at]gmail[.]com
+%Copyright 2017-2019 Vadim Pavlov ioc2rpz[at]gmail[.]com
 %
 %Licensed under the Apache License, Version 2.0 (the "License");
 %you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
   {modules, [
              ioc2rpz_app,
              ioc2rpz_sup,
+             ioc2rpz_tcp_sup,
              ioc2rpz,
              ioc2rpz_conn,
              ioc2rpz_fun,

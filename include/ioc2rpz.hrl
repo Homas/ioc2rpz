@@ -38,7 +38,7 @@
 %%%%%%
 %%%%%% Do not modify any settings below the line
 %%%%%%
--define(ioc2rpz_ver, "0.9.1-2019021101").
+-define(ioc2rpz_ver, "0.9.1.1-2019022201").
 
 -define(ZNameZip,16#c00c:16). %Zone name/original fqdn from a request is always at byte 10 in the response
 -define(MaxZipPSize,16#3FFF:16). %Max packet size to zip DNS labels

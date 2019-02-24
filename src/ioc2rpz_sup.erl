@@ -1,4 +1,4 @@
-%Copyright 2017-2018 Vadim Pavlov ioc2rpz[at]gmail[.]com
+%Copyright 2017-2019 Vadim Pavlov ioc2rpz[at]gmail[.]com
 %
 %Licensed under the Apache License, Version 2.0 (the "License");
 %you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 -behaviour(supervisor).
 -include_lib("kernel/include/file.hrl").
 -include_lib("ioc2rpz.hrl").
--export([start_ioc2rpz_sup/1,stop_ioc2rpz_sup/0, start_socket/0,reload_config/0,update_all_zones/1,update_zone_full/1,
+-export([start_ioc2rpz_sup/1,stop_ioc2rpz_sup/0, reload_config/0,update_all_zones/1,update_zone_full/1,
         update_zone_inc/1,reload_config3/1,read_config3/1]).
 -export([init/1]).
 
@@ -30,8 +30,8 @@ stop_ioc2rpz_sup() ->
   ioc2rpz_fun:logMessage("ioc2rpz recieved stop message ~n", []),
   ioc2rpz_fun:logMessage("saving DB ~n", []),
   ioc2rpz_db:saveZones(),
-  ioc2rpz_fun:logMessage("ioc2rpz is terminating ~n", []),
-  gen_server:stop(?MODULE).
+  ioc2rpz_fun:logMessage("ioc2rpz is terminating ~n", []).
+%  gen_server:stop(?MODULE).
 
 init([IPStr,IPStr6, Filename, DBDir]) ->
   Pid=self(),
@@ -52,46 +52,59 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
   timer:apply_interval(?ZoneRefTime,ioc2rpz_sup,update_all_zones,[false]),
 
 %  {ok, TCPSocket} = open_sockets(IPStr) ,
-  {ok, TCPSocket} = open_sockets6(IPStr6) ,
-
-  spawn_opt(fun empty_listeners/0,[link,{fullsweep_after,0}]),
-  ioc2rpz_fun:logMessage("ioc2rpz started ~n", []),
-
-  {ok, {{simple_one_for_one, 60, 3600}, [{ioc2rpz, {ioc2rpz, start_ioc2rpz, [TCPSocket, [Pid]]}, temporary, 1000, worker, [ioc2rpz]} %simple_one_for_one
-                                 %,{ioc2rpz_udp, {ioc2rpz_udp, start_ioc2rpz_udp, [IP, []]}, temporary, 1000, worker, [ioc2rpz_udp]}
-                                 ]}}.
 
 
+% TODO remove after test using supervisors under the supervisor
+%  {ok, TCPSocket} = open_sockets6(IPStr6) ,
+%  spawn_opt(fun empty_listeners/0,[link,{fullsweep_after,0}]),
 
-open_sockets(IPStr) when IPStr /= "", IPStr /= [] ->
-  {ok,IP}=inet:parse_address(IPStr),
-  {ok, TCPSocket} = gen_tcp:listen(?Port, [{ip, IP},{active,once}, binary]),
-  ioc2rpz_udp:start_ioc2rpz_udp(IPStr, [inet]), % TODO - put it in supervisor
-  {ok, TCPSocket};
+  ioc2rpz_fun:logMessage("ioc2rpz supervisor started ~n", []),
 
-open_sockets(IPStr) ->
-  {ok, TCPSocket} = gen_tcp:listen(?Port, [{active,once}, binary]),
-  ioc2rpz_udp:start_ioc2rpz_udp(IPStr, [inet]), % TODO - put it in supervisor
-  {ok, TCPSocket}.
-  
-open_sockets6(IPStr) when IPStr /= "", IPStr /= [] ->
-  {ok,IP}=inet:parse_address(IPStr),
-  {ok, TCPSocket} = gen_tcp:listen(?Port, [{ip, IP},{active,once}, binary, inet6]),
-  ioc2rpz_udp:start_ioc2rpz_udp(IPStr, [inet6]), % TODO - put it in supervisor
-  {ok, TCPSocket};
+%  {ok, {{simple_one_for_one, 60, 3600}, [{ioc2rpz, {ioc2rpz, start_ioc2rpz, [TCPSocket, [Pid]]}, temporary, 1000, worker, [ioc2rpz]} %simple_one_for_one
+%                                 %,{ioc2rpz_udp, {ioc2rpz_udp, start_ioc2rpz_udp, [IP, []]}, temporary, 1000, worker, [ioc2rpz_udp]}
+%                                 ]}}.
 
-open_sockets6(IPStr) ->
-  {ok, TCPSocket} = gen_tcp:listen(?Port, [{active,once}, binary, inet6]), %{ipv6_v6only,true}
-  ioc2rpz_udp:start_ioc2rpz_udp(IPStr, [inet6]), % TODO - put it in supervisor
-  {ok, TCPSocket}.
-  
 
-start_socket() ->
-  supervisor:start_child(?MODULE, []).
+    SupFlags = #{strategy => one_for_one, intensity => 60, period => 3600},
+    ChildSpecs = [
+      %%%ioc2rpz TCP supervisors
+      #{id => ioc2rpz_tcp_sup_v4,
+      start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[tcp_sup,IPStr,inet]]},
+      restart => transient,
+      shutdown => 1000,
+      type => supervisor,
+      modules => [ioc2rpz_proc_sup]},
+      
+      #{id => ioc2rpz_tcp_sup_v6,
+      start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[tcp6_sup,IPStr6,inet6]]},
+      restart => transient,
+      shutdown => 1000,
+      type => supervisor,
+      modules => [ioc2rpz_proc_sup]},
 
-empty_listeners() ->
-  [start_socket() || _ <- lists:seq(1,5)],
-  ok.
+
+      %%%ioc2rpz UDP supervisors
+      #{id => ioc2rpz_udp_sup_v4,
+      start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[udp_sup,IPStr,inet]]},
+      restart => transient,
+      shutdown => 1000,
+      type => supervisor,
+      modules => [ioc2rpz_proc_sup]},
+
+      #{id => ioc2rpz_udp_sup_v6,
+      start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[udp6_sup,IPStr6,inet6]]},
+      restart => transient,
+      shutdown => 1000,
+      type => supervisor,
+      modules => [ioc2rpz_proc_sup]}
+
+
+      %%%ioc2rpz TLS supervisors
+
+      
+    ],
+    {ok, {SupFlags, ChildSpecs}}.
+
 
 
 %TODO task to clean hotcache ?HotCacheTime
@@ -234,6 +247,7 @@ read_config3([],updTkeys,Srv,Keys,WhiteLists,Sources,RPZ)  ->
 % Update SRV Management TSIG Keys
   SrvV = validateCFGSrv(Srv), ets:update_element(cfg_table, srv, [{4, SrvV#srv.mkeys}]),
 % Update RPZs TSIG Keys
+% TODO validate is a key is exists
   RPZ_C=[ X || [X] <- ets:match(cfg_table, {[rpz,'_'],'_','$3'})],
   [ ets:update_element(cfg_table, [rpz,X#rpz.zone], [{3, X#rpz{akeys=(lists:keyfind(X#rpz.zone,3,RPZ))#rpz.akeys}}]) || X <- RPZ_C ],
   ok;

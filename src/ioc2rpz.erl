@@ -1,4 +1,4 @@
-%Copyright 2017-2018 Vadim Pavlov ioc2rpz[at]gmail[.]com
+%Copyright 2017-2019 Vadim Pavlov ioc2rpz[at]gmail[.]com
 %
 %Licensed under the Apache License, Version 2.0 (the "License");
 %you may not use this file except in compliance with the License.
@@ -28,17 +28,17 @@
 start_ioc2rpz(Socket,Params) ->
   gen_server:start_link(?MODULE, [Socket,Params], []).
 
-init([Socket,Params]) ->
-  ?logDebugMSG("ioc2rpz tcp child started ~n", []),
+init([Socket,[Pid,Proc]]) ->
+  ?logDebugMSG("ioc2rpz ~p child started ~n", [Proc]),
   gen_server:cast(self(), accept),
-  {ok, #state{socket=Socket, params=Params}}.
+  {ok, #state{socket=Socket, params=[Pid,Proc]}}.
 
 
-handle_cast(accept, State = #state{socket=ListenSocket, params=Params}) ->
+handle_cast(accept, State = #state{socket=ListenSocket, params=[Pid,Proc]}) ->
   {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
   %% Boot a new listener to replace this one.
-  ioc2rpz_sup:start_socket(),
-  {noreply, State#state{socket=AcceptSocket, params=Params}};
+  ioc2rpz_proc_sup:start_socket(Proc),
+  {noreply, State#state{socket=AcceptSocket, params=[Pid,Proc]}};
 handle_cast(_, State) ->
   {noreply, State}.
 
@@ -59,7 +59,7 @@ handle_info({tcp, Socket, <<_:2/binary,Pkt1/binary>>=_Pkt}, State = #state{socke
 %  fprof:trace(stop),
   {noreply, State};
 
-handle_info({tcp_closed, _Socket}, State) ->
+handle_info({tcp_closed, _Socket}, State = #state{socket=ListenSocket, params=[Pid,Proc]}) ->
   {stop, normal, State};
 handle_info({tcp_error, _Socket, _}, State) ->
   {stop, normal, State};
@@ -91,11 +91,15 @@ send_dns(Socket,Pkt,[Proto,Args]) when Proto#proto.proto == udp ->
   send_dns_udp(Socket, Proto#proto.rip, Proto#proto.rport, Pkt, Args).
 
 send_dns_tcp(Socket, Pkt, addlen) ->
-  gen_tcp:send(Socket, [<<(byte_size(Pkt)):16>>,Pkt]);
-  %ok = inet:setopts(Socket, [{active, once}]); %TODO check why it was here
+  gen_tcp:send(Socket, [<<(byte_size(Pkt)):16>>,Pkt]),
+% The connection will not be reused and a child will be terminated
+% TODO check compliance with DoT
+  ok = inet:setopts(Socket, [{active, once}]); 
 send_dns_tcp(Socket, Pkt, []) ->
-  gen_tcp:send(Socket, Pkt).
-  %ok = inet:setopts(Socket, [{active, once}]).  %TODO check why it was here
+  gen_tcp:send(Socket, Pkt),
+% The connection will not be reused and a child will be terminated
+% TODO check compliance with DoT
+  ok = inet:setopts(Socket, [{active, once}]).
 
 send_dns_udp(Socket, Dst, Port, Pkt, _Args) ->
   ok = gen_udp:send(Socket, Dst, Port, Pkt).

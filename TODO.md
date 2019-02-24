@@ -4,8 +4,8 @@
 - [ ] DoH https://tools.ietf.org/html/rfc8484
 - [ ] DoT https://tools.ietf.org/html/rfc7858
 - [ ] Redo AXFR logs
-- [ ] All log messages in CEF
-- [ ] Update keys from cfg
+- [x] Error log messages in CEF
+- [ ] MGMT Request to update TSIG keys and RPZs
 
 ## Sources
 - [ ] Source: ioc type, max # of IOCs, max file size, RPZ action, NS type, lowcase optimization option, spawn processes
@@ -19,7 +19,7 @@
 - [ ] Max IOCs, current IOCs
 
 ## RPZ
-- [ ] Source Intercetion zones
+- [ ] RPZ only by source intersections
 - [ ] Max # of IOCs
 - [ ] Catalog zones
 - [ ] (2) FDateTime,ToDateTime,FDateTimeZ,ToDateTimeZ + support them for AXFR  
@@ -32,18 +32,19 @@
 - [ ] Secondary DNS via MNESIA
 
 ## REST
-
-## Configuration
-- [\] Configuration file name pass as a variable to the container
-
-## Management
-- [ ] IPv4 addresses in IPv6 format
 - [ ] MGMT via REST API
   - [ ] Reload CFG (no unchanged zones refresh)
   - [ ] Refresh a zone
   - [ ] Refresh all zones
   - [ ] Terminate processes/Exit
   - [ ] Statistics per source, RPZ, performance
+
+## Configuration
+- [\] Configuration file name pass as a variable to the container
+
+## Management
+- [x] IPv4 addresses in IPv6 format
+- [ ] DNS health check requests
 - [ ] (2) MGMT via DNS move to a separate port/IP
 - [ ] Statistics per zone (# records, last update, # AXFR, # IXFR, last axfr update time, avg axfr update time, last ixfr update time, avg ixfr update time)
 
@@ -71,7 +72,7 @@
   - [ ] (3) Share IOC between the feeds in IXFR table (do not forget about different whitelists)
 - [ ] Access to the hotcache and the cfg_table via FUNs
 - [ ] DNS over TLS https://tools.ietf.org/html/rfc8310
-- [ ] Parrallel source downloads
+- [ ] Simultanious source downloads
 
 ## Other/optimization TODO
 - [ ] (1) Do not cache expired IOCs if ExpDateTime<Serial_IXFR / update ExpDateTime if exists
