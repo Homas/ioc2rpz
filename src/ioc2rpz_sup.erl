@@ -68,12 +68,12 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
     SupFlags = #{strategy => one_for_one, intensity => 60, period => 3600},
     ChildSpecs = [
       %%%ioc2rpz TCP supervisors
-      #{id => ioc2rpz_tcp_sup_v4,
-      start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[tcp_sup,IPStr,inet]]},
-      restart => transient,
-      shutdown => 1000,
-      type => supervisor,
-      modules => [ioc2rpz_proc_sup]},
+      %#{id => ioc2rpz_tcp_sup_v4,
+      %start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[tcp_sup,IPStr,inet]]},
+      %restart => transient,
+      %shutdown => 1000,
+      %type => supervisor,
+      %modules => [ioc2rpz_proc_sup]},
       
       #{id => ioc2rpz_tcp_sup_v6,
       start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[tcp6_sup,IPStr6,inet6]]},
@@ -84,12 +84,12 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
 
 
       %%%ioc2rpz UDP supervisors
-      #{id => ioc2rpz_udp_sup_v4,
-      start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[udp_sup,IPStr,inet]]},
-      restart => transient,
-      shutdown => 1000,
-      type => supervisor,
-      modules => [ioc2rpz_proc_sup]},
+      %#{id => ioc2rpz_udp_sup_v4,
+      %start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[udp_sup,IPStr,inet]]},
+      %restart => transient,
+      %shutdown => 1000,
+      %type => supervisor,
+      %modules => [ioc2rpz_proc_sup]},
 
       #{id => ioc2rpz_udp_sup_v6,
       start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[udp6_sup,IPStr6,inet6]]},
