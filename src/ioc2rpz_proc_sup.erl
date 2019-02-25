@@ -28,32 +28,49 @@ stop_ioc2rpz_proc_sup() ->
   ioc2rpz_fun:logMessage("ioc2rpz tcp is terminating ~n", []),
   gen_server:stop(?MODULE).
 	
-init([Proc,IPStr,Proto]) when Proc == tcp_sup; Proc == tcp6_sup ->
+init([Proc,IPStr,Proto]) when Proc == tcp_sup; Proc == tcp6_sup -> %DNS TCP
   Pid=self(),
-  {ok, TCPSocket} = open_sockets(IPStr, Proto) ,
+  {ok, TCPSocket} = open_tcp_sockets(IPStr, Proto) ,
 	spawn_opt(ioc2rpz_proc_sup,empty_listeners,[Proc],[link,{fullsweep_after,0}]),
   ioc2rpz_fun:logMessage("ioc2rpz ~p started ~n", [Proc]),
-  {ok, {{simple_one_for_one, 60, 3600}, [{ioc2rpz, {ioc2rpz, start_ioc2rpz, [TCPSocket, [Pid,Proc]]}, temporary, 1000, worker, [ioc2rpz]}]}};
+  {ok, {{simple_one_for_one, 60, 3600}, [{ioc2rpz, {ioc2rpz, start_ioc2rpz, [TCPSocket, [Pid,Proc,no]]}, temporary, 1000, worker, [ioc2rpz]}]}};
 		
 
-init([Proc,IPStr,Proto]) when Proc == udp_sup; Proc == udp6_sup ->
-  Pid=self(),
+init([Proc,IPStr,Proto]) when Proc == udp_sup; Proc == udp6_sup -> %DNS UDP
   ioc2rpz_fun:logMessage("ioc2rpz ~p started ~n", [udp_sup]),
-	
-	%ioc2rpz_udp:start_ioc2rpz_udp(IPStr, [inet6]),
-	
-  {ok, {{one_for_one, 60, 3600}, [{ioc2rpz, {ioc2rpz_udp, start_ioc2rpz_udp, [IPStr, [Proto]]}, temporary, 1000, worker, [ioc2rpz_udp]}]}}.
+  {ok, {{one_for_one, 60, 3600}, [{ioc2rpz, {ioc2rpz_udp, start_ioc2rpz_udp, [IPStr, [Proto]]}, temporary, 1000, worker, [ioc2rpz_udp]}]}};
 
 
-open_sockets(IPStr,Proto) when IPStr /= "", IPStr /= [] ->
+init([Proc,IPStr,Proto]) when Proc == tls_sup; Proc == tls6_sup -> %DoT
+  Pid=self(),
+  {ok, TLSSocket} = open_tls_sockets(IPStr, Proto) ,
+	spawn_opt(ioc2rpz_proc_sup,empty_listeners,[Proc],[link,{fullsweep_after,0}]),
+  ioc2rpz_fun:logMessage("ioc2rpz ~p started ~n", [Proc]),
+  {ok, {{simple_one_for_one, 60, 3600}, [{ioc2rpz, {ioc2rpz, start_ioc2rpz, [TLSSocket, [Pid,Proc,yes]]}, temporary, 1000, worker, [ioc2rpz]}]}}.
+
+
+open_tcp_sockets(IPStr,Proto) when IPStr /= "", IPStr /= [] ->
   {ok,IP}=inet:parse_address(IPStr),
   {ok, TCPSocket} = gen_tcp:listen(?Port, [{ip, IP},{active,once}, binary, Proto]),
   {ok, TCPSocket};
 
-open_sockets(IPStr,Proto) ->
+open_tcp_sockets(_IPStr,Proto) ->
   {ok, TCPSocket} = gen_tcp:listen(?Port, [{active,once}, binary, Proto]),  %{ipv6_v6only,true}
   {ok, TCPSocket}.
   
+
+open_tls_sockets(IPStr,Proto) when IPStr /= "", IPStr /= [] ->
+  {ok,IP}=inet:parse_address(IPStr),
+	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6'}),
+	Ciphers=ssl:cipher_suites(default, 'tlsv1.2'),
+	{ok, TLSSocket} = ssl:listen(?PortTLS, [{ip, IP},{active,once}, binary, Proto, {certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile}, {ciphers, Ciphers} ]), %,{cacertfile, Cert#cert.cacertfile}
+  {ok, TLSSocket};
+
+open_tls_sockets(_IPStr,Proto) ->
+	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6'}),
+	Ciphers=ssl:cipher_suites(default, 'tlsv1.2'),
+	{ok, TLSSocket} = ssl:listen(?PortTLS, [{active,once}, binary, Proto, {certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile}, {ciphers, Ciphers}]), %,{cacertfile, Cert#cert.cacertfile}
+  {ok, TLSSocket}.
 
 start_socket(Proc) ->
   supervisor:start_child(Proc, []).

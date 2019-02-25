@@ -1,12 +1,15 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
 
+## 2019-02-24 v0.9.2.0
+- DoT (DNS over TLS) support for zone transfer, SOA and management requests (DNS Notify is not supported).
+
 ## 2019-02-22 v0.9.1.1
 - UDP service moved under supervisor
 
 ## 2019-02-15 v0.9.1
 - [CB] Connection and key validation log messages were formated in CEF
-- [ ] Request to reload TSIG keys list only.
+- Request to reload TSIG keys list only.
 
 ## 2018-09-22
 - IPv6 support

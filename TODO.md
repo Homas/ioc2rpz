@@ -3,6 +3,7 @@
 ## Core
 - [ ] DoH https://tools.ietf.org/html/rfc8484
 - [ ] DoT https://tools.ietf.org/html/rfc7858
+- [ ] DoD https://tools.ietf.org/html/draft-ietf-dprive-dnsodtls-06
 - [ ] Redo AXFR logs
 - [x] Error log messages in CEF
 - [ ] MGMT Request to update TSIG keys and RPZs

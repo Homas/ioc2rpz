@@ -298,8 +298,10 @@ responsepolicyzone,notracking.ioc2rpz,FORWARD,Nxdomain,,default,responsepolicy,s
 
 ### Sample DIG (to get SOA)
 ```
-dig @94.130.30.123 -y hmac-sha256:ioc2rpz-public:CM1HB7f6JC5lwRa5SruT2A== dns-bh.ioc2rpz SOA
-dig @94.130.30.123 -y hmac-sha256:ioc2rpz-public:CM1HB7f6JC5lwRa5SruT2A== notracking.ioc2rpz SOA
+dig  @94.130.30.123 -y hmac-sha256:ioc2rpz-public:CM1HB7f6JC5lwRa5SruT2A== dns-bh.ioc2rpz SOA
+dig  @94.130.30.123 -y hmac-sha256:ioc2rpz-public:CM1HB7f6JC5lwRa5SruT2A== notracking.ioc2rpz SOA
+kdig @94.130.30.123 -y hmac-sha256:ioc2rpz-public:CM1HB7f6JC5lwRa5SruT2A== dns-bh.ioc2rpz SOA +tls
+
 ```  
 
 ## Some free threat intelligence feeds
@@ -322,6 +324,7 @@ You can find other IOC feeds on the wiki-page: https://github.com/Homas/ioc2rpz/
 - [A Mechanism for Prompt Notification of Zone Changes (DNS NOTIFY)](https://tools.ietf.org/html/rfc1996)
 - [Extension Mechanisms for DNS (EDNS(0))](https://tools.ietf.org/html/rfc6891) + [ENDS Option Codes](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11)
 - [Domain Name System (DNS) Cookies](https://tools.ietf.org/html/rfc7873)
+- [Specification for DNS over Transport Layer Security (TLS)](https://tools.ietf.org/html/rfc7858)
 
 # License
 Copyright 2017 - 2018 Vadim Pavlov ioc2rpz[at]gmail[.]com
