@@ -35,7 +35,8 @@ You can use ioc2rpz with any DNS server which supports Response Policy Zones e.g
 
 ## ioc2rpz vs ISC BIND vs other DNS:
 - ioc2rpz was built to handle RPZ distribution only;
-- ioc2rpz supports as many RPZs as you need. ISC BIND supports only 32 zones per DNS view;
+- ioc2rpz supports DoT (DNS over TLS) so nobody can easily eavesdrop on your RPZs/indicators;
+- ioc2rpz supports as many RPZs as you need;
 - ioc2rpz supports live/non cached zones. It creates zones by an incoming request;
 - indicators can be pulled from different sources and via different protocols (e.g. via REST API calls);
 - RPZs are automatically updated;
@@ -89,12 +90,13 @@ dig +tcp -y dnsmkey_1:ayVnL+h2QKMszRVohrngagcEuIpN3RkecXKdwSa5WsHD5N4Y5R3NUMGM W
 The configuration is an Erlang file. Every configuration option is an Erlang term so the configuration must comply with Erlang syntax. ioc2rpz does not check the configuration file for possible errors, typos etc.
 ioc2rpz supports the following configuration parameters:
 - a single **srv** record (required);
+- a single **cert** record (optional);
 - zero or more **key** records (optional);
 - zero or more **whitelist** records (optional);
 - one or more **source** records (minimum one source is required);
 - one or more **rpz** records (minimum one rpz is required).
 ### **srv** record
-**srv** record consist of:
+**srv** record is used to define server default values. It consists of:
 - NS server name used in SOA record;
 - an email address for SOA record (in SOA format);
 - list of management TSIG keys (names only). Please refer [the management section](#ioc2rpz-management) for the details.
@@ -102,6 +104,18 @@ ioc2rpz supports the following configuration parameters:
 Sample **srv** record:  
 ```
 {srv,{"ns1.example.com","support.email.example.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"],["acl_ip1","acl_ip2"]}}.
+```
+
+### **cert** record
+**cert** record is used to define a certificate and a private key for DNS over TLS communications.
+It consists of:
+- path to a file containing a certificate;
+- path to a file containing a private PEM-encoded key;
+- path to a file with PEM-encoded CA certificates.  
+
+Sample **cert** record:  
+```
+{cert,{"cfg/cert.pem", "cfg/key.pem",	"cfg/cacerts.pem"}}.
 ```
 ### **key** record
 TSIG keys are used for authentication and authorization. It is recommended to use different TSIG keys for ioc2rpz management and zones transfers.  
@@ -176,6 +190,7 @@ Sample **rpz** record:
 ## Sample configuration file
 ```
 {srv,{"ns1.rpz-proxy.com","support.rpz-proxy.com",["dnsmkey_3"],["127.0.0.1","10.42.0.10"]}}.
+{cert,{"cfg/ioc2rpz_dot.crt", "cfg/ioc2rpz_dot.key",	""}}.
 
 {key,{"dnsproxykey_1","md5","apXqLsDs90H213eV6LS9ryYp5tY8YTpkttOkRCve7dp1Zeob3SGAbaVU9BShpsW25MmR8mTiX5OY0Qetv977Yw=="}}.
 {key,{"dnsproxykey_2","sha512","03uuaGl9kqfenjRgIeCv6e29lVvMwviB1+cDX1I0jcVOcTU4jWFwRkfo3ULRMD+NGDfwzYvXkJ94FNEaAW4vzw=="}}.
@@ -301,7 +316,6 @@ responsepolicyzone,notracking.ioc2rpz,FORWARD,Nxdomain,,default,responsepolicy,s
 dig  @94.130.30.123 -y hmac-sha256:ioc2rpz-public:CM1HB7f6JC5lwRa5SruT2A== dns-bh.ioc2rpz SOA
 dig  @94.130.30.123 -y hmac-sha256:ioc2rpz-public:CM1HB7f6JC5lwRa5SruT2A== notracking.ioc2rpz SOA
 kdig @94.130.30.123 -y hmac-sha256:ioc2rpz-public:CM1HB7f6JC5lwRa5SruT2A== dns-bh.ioc2rpz SOA +tls
-
 ```  
 
 ## Some free threat intelligence feeds
