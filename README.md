@@ -53,11 +53,11 @@ ioc2rpz supports RPZ distribution over DoT. The SSL listener service is automati
 ioc2rpz is available on the Docker Hub. Just look for ioc2rpz.
 Prerequisites:
 - ioc2rpz doesn't contain a configuration file, you need to mount /opt/ioc2rpz/cfg to a directory on a host system with the configuration file (ioc2rpz.conf);
-- ioc2rpz use 53/udp and 53/tcp ports. The ports should be exposed to a host system;
+- ioc2rpz uses 53/udp, 53/tcp and 853/tcp ports. The ports should be exposed to a host system;
 - ioc2rpz saves ETS database into files for faster boot. You may mount /opt/ioc2rpz/db to a directory on a host system to preserve DB over restarts;
 You can start ioc2rpz with the following command:
 ```
-sudo docker run -d --name ioc2rpz --log-driver=syslog --restart always --mount type=bind,source=/home/ioc2rpz/cfg,target=/opt/ioc2rpz/cfg --mount type=bind,source=/home/ioc2rpz/db,target=/opt/ioc2rpz/db -p53:53 -p53:53/udp pvmdel/ioc2rpz
+sudo docker run -d --name ioc2rpz --log-driver=syslog --restart always --mount type=bind,source=/home/ioc2rpz/cfg,target=/opt/ioc2rpz/cfg --mount type=bind,source=/home/ioc2rpz/db,target=/opt/ioc2rpz/db -p53:53 -p53:53/udp -p853:853 pvmdel/ioc2rpz
 
 ```
 where /home/ioc2rpz/cfg, /home/ioc2rpz/db directories on a host system.
