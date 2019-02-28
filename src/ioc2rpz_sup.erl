@@ -55,7 +55,8 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
 
 % Check if a certificate was configured
 	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6'}),
-  if Cert /= [] -> ChildTLS=[
+  ioc2rpz_fun:logMessage("cert '~p' ~n", [Cert]),
+  if Cert /= [], Cert /= undefined -> ChildTLS=[
       %%%ioc2rpz TLS supervisors
       %#{id => ioc2rpz_tls_sup_v4,
       %start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[tls_sup,IPStr,inet]]},

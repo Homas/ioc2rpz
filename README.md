@@ -22,7 +22,7 @@ ioc2rpz is a custom DNS server which automatically converts indicators (e.g. mal
 
 With ioc2rpz you can define your own feeds, actions and prevent undesired communications.
 
-<b>ioc2rpz is a place where threat intelligence meets DNS.</b>
+## ioc2rpz is a place where threat intelligence meets DNS
 
 ioc2rpz transforms IOC feeds into response policy zones (RPZ). You can mix feeds to generate a single RPZ or multiple RPZs. Trusted domains and IPs can be whitelisted. ioc2rpz supports expiration of indicators and accordingly rebuilds zones.  
 ![Alt ioc2rpz](https://github.com/Homas/ioc2rpz/blob/master/IOC2RPZ.jpg)
@@ -32,6 +32,12 @@ The current release supports: local files and files/requests via http/https/ftp 
 You can use ioc2rpz with any DNS server which supports Response Policy Zones e.g. recent versions of ISC BIND. A sample bind's configuration file (named.conf) is provided in the cfg folder.
 <p align="center"><a href="http://www.youtube.com/watch?feature=player_embedded&v=bvhyMFa_mBM" target="_blank"><img src="https://github.com/Homas/ioc2rpz/blob/master/ioc2rpz_demo.png"></a></p>
 
+## DNS over TLS (DoT)
+ioc2rpz supports RPZ distribution over DoT. The SSL listener service is automatically started on port 853 (PortTLS) if a certificate is provided in the configuration (``cert``). Current implementation has following limitations:
+- TLS 1.2 only;
+- single request per session;
+- TLS PIN is not supported;
+- DNS Notify messages are unencrypted.
 
 ## ioc2rpz vs ISC BIND vs other DNS:
 - ioc2rpz was built to handle RPZ distribution only;
