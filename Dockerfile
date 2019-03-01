@@ -29,7 +29,7 @@ RUN erlc -I include/ -o ebin/ src/*.erl
 
 VOLUME ["/opt/ioc2rpz/cfg", "/opt/ioc2rpz/db"]
 
-EXPOSE 53/tcp 53/udp
+EXPOSE 53/tcp 53/udp 853/tcp
 
 #ENTRYPOINT ["erl", "-noshell", "-pa", "./ebin", "-sname", "ioc2rpz", "-eval", "application:start(ioc2rpz,permanent)", "-config", "ioc2rpz_app"]
 CMD ["/bin/sh", "/opt/ioc2rpz/scripts/run_ioc2rpz.sh"]
