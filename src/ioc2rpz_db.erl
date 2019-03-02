@@ -17,7 +17,7 @@
 -module(ioc2rpz_db).
 -include_lib("ioc2rpz.hrl").
 -export([init_db/3,db_table_info/2,read_db_pkt/1,write_db_pkt/2,delete_db_pkt/1,read_db_record/3,write_db_record/3,delete_old_db_record/1,saveZones/0,loadZones/0,loadZones/1,
-        get_zone_info/2,clean_DB/1,save_zone_info/1]).
+        get_zone_info/2,clean_DB/1,save_zone_info/1,get_allzones_info/2]).
 
 
 init_db(ets,DBDir,PID) ->
@@ -163,9 +163,9 @@ ok.
 clean_DB(RPZ) ->
   AXFR=get_allzones_info(ets,axfr),
   RPZn = [X#rpz.zone || X <- RPZ ],
-  [{?logDebugMSG("Zone ~p removing from cache ~n",[Y]), delete_db_pkt(#rpz{zone=X,zone_str=Y,serial=42}),delete_old_db_record(#rpz{zone=X,zone_str=Y,serial=42})} || [X,Y|_] <- AXFR, not lists:member(X, RPZn) ],
+  [{?logDebugMSG("Zone ~p removing from AXFR cache ~n",[Y]), delete_db_pkt(#rpz{zone=X,zone_str=Y,serial=42}),delete_old_db_record(#rpz{zone=X,zone_str=Y,serial=42})} || [X,Y|_] <- AXFR, lists:member(X, RPZn) ], %looks like was a bug -->>>> not lists:member
   IXFR=get_allzones_info(ets,ixfr),
-  [{?logDebugMSG("Zone ~p removing from cache ~n",[Y]), delete_db_pkt(#rpz{zone=X,zone_str=Y,serial=42}),delete_old_db_record(#rpz{zone=X,zone_str=Y,serial=42})} || [X,Y|_] <- IXFR, not lists:member(X, RPZn) ].
+  [{?logDebugMSG("Zone ~p removing from IXFR cache ~n",[Y]), delete_db_pkt(#rpz{zone=X,zone_str=Y,serial=42}),delete_old_db_record(#rpz{zone=X,zone_str=Y,serial=42})} || [X,Y|_] <- IXFR, lists:member(X, RPZn) ]. %looks like was a bug -->>>> not lists:member
 
 get_zone_info(Zone,DB) ->
   get_zone_info(?DBStorage,Zone,DB).

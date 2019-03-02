@@ -55,7 +55,7 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
 
 % Check if a certificate was configured
 	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6'}),
-  ioc2rpz_fun:logMessage("cert '~p' ~n", [Cert]),
+  %ioc2rpz_fun:logMessage("cert '~p' ~n", [Cert]),
   if Cert /= [], Cert /= undefined -> ChildTLS=[
       %%%ioc2rpz TLS supervisors
       %#{id => ioc2rpz_tls_sup_v4,
@@ -261,7 +261,9 @@ read_config3([],reload,Srv,Keys,WhiteLists,Sources,RPZ)  ->
   [ ets:delete(cfg_table, [rpz,X#rpz.zone]) || X <- RPZ_D ],
   [ ets:insert(cfg_table, {[rpz,X#rpz.zone],X#rpz.zone,X}) || X <- RPZ_V ],
   [ ets:match_delete(rpz_hotcache_table,{{pkthotcache,X#rpz.zone,'_'},'_','_'}) || X <- RPZ_D ++ RPZ_UPD ],
+
   ioc2rpz_db:clean_DB(RPZ_D ++ RPZ_UPD), %TODO check
+
   [ ets:update_element(cfg_table, [rpz,X#rpz.zone], [{3, X#rpz{status=notready}}]) || X <- RPZ_UPD ],
 
   [ ioc2rpz_fun:logMessage("Whitelist ~p was added.~n",[X#source.name]) || X <- WhiteLists_N ],
