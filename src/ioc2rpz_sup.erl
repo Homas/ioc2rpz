@@ -197,10 +197,16 @@ read_config3([{rpz,{Zone, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards,
 read_config3([],startup,Srv,Keys,WhiteLists,Sources,RPZ)  ->
   [ ets:insert_new(cfg_table, {[key,X#key.name_bin],X#key.name,X#key.alg,X#key.key}) || X <- [ validateCFGKeys(Y) || Y <- Keys ] ],
   SrvV = validateCFGSrv(Srv), ets:insert_new(cfg_table, {srv,SrvV#srv.server,SrvV#srv.email,SrvV#srv.mkeys,SrvV#srv.acl,SrvV#srv.cert}),
-  WhiteLists_V=[ X || X <- [ validateCFGWL(Y) || Y <- WhiteLists ] ],
+  
+%  WhiteLists_V=[ X || X <- [ validateCFGWL(Y) || Y <- WhiteLists ] ],
+  WhiteLists_Used=lists:merge([ X#rpz.whitelist || X <- RPZ]),
+  WhiteLists_V=[ validateCFGWL(Y) || Y <- WhiteLists, lists:member(Y#source.name,WhiteLists_Used) ],
   [ ets:insert_new(cfg_table, {[source,X#source.name],X}) || X <- WhiteLists_V ],
-  Sources_V=[ X || X <- [ validateCFGSrc(Y) || Y <- Sources ] ],
+%  Sources_V=[ X || X <- [ validateCFGSrc(Y) || Y <- Sources ] ],
+  Sources_Used=lists:merge([ X#rpz.sources || X <- RPZ]),
+  Sources_V=[ validateCFGSrc(Y) || Y <- Sources, lists:member(Y#source.name,Sources_Used) ],
   [ ets:insert_new(cfg_table, {[source,X#source.name],X}) || X <- Sources_V ],
+
   [ ets:insert_new(cfg_table, {[rpz,X#rpz.zone],X#rpz.zone,X}) || X <- [ validateCFGRPZ(Y,Sources_V,WhiteLists_V) || Y <- RPZ ] ],
   {ok,RPZ,Keys,Srv};
 
@@ -233,18 +239,26 @@ read_config3([],reload,Srv,Keys,WhiteLists,Sources,RPZ)  ->
   SW=ets:match(cfg_table, {[source,'_'],'$2'}),
   WhiteLists_C=[X||[X] <- SW,X#source.ixfr_url == undefined ],
   Sources_C=[X||[X] <- SW,X#source.ixfr_url /= undefined ],
-  WhiteLists_V=[ validateCFGWL(Y) || Y <- WhiteLists ],
-  Sources_V=[ validateCFGSrc(Y) || Y <- Sources ],
+
+  WhiteLists_Used=lists:merge([ X#rpz.whitelist || X <- RPZ]),
+  Sources_Used=lists:merge([ X#rpz.sources || X <- RPZ]),
+  
+  WhiteLists_V=[ validateCFGWL(Y) || Y <- WhiteLists, lists:member(Y#source.name,WhiteLists_Used) ],
+  Sources_V=[ validateCFGSrc(Y) || Y <- Sources, lists:member(Y#source.name,Sources_Used) ],
+
+  %ioc2rpz_fun:logMessage("Sources U ~p V ~p ~n", [Sources_Used,Sources_V]),
+
   WhiteLists_D = [ X || X <- WhiteLists_C, not lists:member(X#source.name, [ Z#source.name || Z <- WhiteLists_V ]) ],
   Sources_D = [ X || X <- Sources_C, not lists:member(X#source.name, [ Z#source.name || Z <- Sources_V ]) ],
 
   WhiteLists_N = [ X || X <- WhiteLists_V, not lists:member(X#source.name, [ Z#source.name || Z <- WhiteLists_C ]) ],
   Sources_N = [ X || X <- Sources_V, not lists:member(X#source.name, [ Z#source.name || Z <- Sources_C ]) ],
 
-  WhiteLists_UPD = [ X || X <- WhiteLists_V, X /= lists:keyfind(X#source.name,2,WhiteLists_C),lists:member(X#source.name, [ Z#source.name || Z <- WhiteLists_C ]) ],
-  Sources_UPD = [ X || X <- Sources_V, X /= lists:keyfind(X#source.name,2,Sources_C),lists:member(X#source.name, [ Z#source.name || Z <- Sources_C ]) ],
+  WhiteLists_UPD = [ X || X <- WhiteLists_V, X#source.axfr_url /= (lists:keyfind(X#source.name,2,WhiteLists_C))#source.axfr_url,lists:member(X#source.name, [ Z#source.name || Z <- WhiteLists_C ]) ],
+  Sources_UPD = [ X || X <- Sources_V, ((X#source.axfr_url /= (lists:keyfind(X#source.name,2,Sources_C))#source.axfr_url) or (X#source.ixfr_url /= (lists:keyfind(X#source.name,2,Sources_C))#source.ixfr_url)),lists:member(X#source.name, [ Z#source.name || Z <- Sources_C ]) ],
 
-  [ ets:insert(cfg_table, {[source,X#source.name],X}) || X <- WhiteLists_V ++ Sources_V ],
+  [ ets:insert(cfg_table, {[source,X#source.name],X}) || X <- WhiteLists_N ++ Sources_N ++ WhiteLists_UPD ++ Sources_UPD ],
+
   [ ets:delete(cfg_table, [source,X#source.name]) || X <- WhiteLists_D ++ Sources_D ],
   [ ets:delete(rpz_hotcache_table, {X#source.name,Y}) || X <- WhiteLists_UPD ++ Sources_UPD ++ WhiteLists_D ++ Sources_D, Y <- [axfr,ixfr] ],
 

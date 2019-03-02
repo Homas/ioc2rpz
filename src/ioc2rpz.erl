@@ -927,6 +927,7 @@ mrpz_from_ioc([SRC|REST], RPZ,UType, IOC) -> %List of the sources, RPZ zone, UTy
       ioc2rpz_fun:logMessage("Memory total ~p after garbage collector. processes ~p binary ~p ~n",[erlang:memory(total)/1024/1024,erlang:memory(processes)/1024/1024,erlang:memory(binary)/1024/1024]) %TODO debug
 
   end,
+  ets:update_element(cfg_table, [source,SRC], [{2, Source#source{ioc_count=length(IOC1)}}]),
   mrpz_from_ioc(REST,RPZ,UType,IOC1 ++ IOC);
 
 mrpz_from_ioc([],_RPZ,_UType,IOC) ->

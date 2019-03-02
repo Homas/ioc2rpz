@@ -111,10 +111,13 @@
 
 %Config params
 -record(cert, {certfile,keyfile,cacertfile}).
--record(srv, {server,email,mkeys,acl,cert}).
+-record(srv, {server,email,mkeys,acl,cert, max_ioc}).
 -record(key, {name,alg,key,name_bin}).
 %SOA timers refresh, retry, expiration, neg_ttl
 %status: notready, updating, ready
 %serial_ixfr - minimum serial for ixfr - first ixfr update after axfr
 -record(rpz, {rpzid, zone, zone_str, soa_timers, cache, wildcards, notify, action, akeys, ioc_type, axfr_time, ixfr_time, sources, status, serial, serial_new, serial_ixfr, notifylist, whitelist, ioc_md5, update_time, ixfr_update_time, pid}).
--record(source, {name, axfr_url, ixfr_url, regex}).
+-record(source, {name, axfr_url, ixfr_url, regex, ioc_count, userid, max_ioc}).
+
+%user restriction
+-record(user, {userid,max_ioc,max_wl}). %max # of IOCs and WL entries
