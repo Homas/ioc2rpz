@@ -20,7 +20,7 @@
 -include_lib("ioc2rpz.hrl").
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([start_ioc2rpz/2,send_notify/1,send_packets/20,domstr_to_bin/2,send_zone_live/9,mrpz_from_ioc/2,parse_dns_request/3,ip_to_str/1]).
+-export([start_ioc2rpz/2,send_notify/1,send_packets/20,domstr_to_bin/2,send_zone_live/9,mrpz_from_ioc/2,parse_dns_request/3,ip_to_str/1,dombin_to_str/1]).
 
 
 %-compile([export_all]).
@@ -94,7 +94,7 @@ handle_info(E, State) ->
 handle_call(_E, _From, State) ->
 %  io:format("ioc2rpz accept connection~n"),
   {noreply, State}.
-terminate(_Reason, _Tab) ->
+terminate(Reason, _Tab) ->
 %  ioc2rpz_db:tab2file([]),
   ok.
 code_change(_OldVersion, Tab, _Extra) ->
@@ -678,7 +678,7 @@ send_zone_live(Socket,Op,Zone,PktH,Questions, SOAREC,NSRec,TSIG,Proto) ->
   IOC = mrpz_from_ioc(Zone,axfr),
   MD5=crypto:hash(md5,term_to_binary(IOC)),
   case {Op, Zone#rpz.ioc_md5} of
-    {cache, MD5} -> {updateSOA, MD5};
+    {cache, MD5} -> {updateSOA, MD5,length(IOC)};
     _Else ->
       {ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3})$"), %
       PktHLen = 12+byte_size(Questions),
@@ -687,7 +687,9 @@ send_zone_live(Socket,Op,Zone,PktH,Questions, SOAREC,NSRec,TSIG,Proto) ->
       T_ZIP_L=ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), % нужны ли {read_concurrency, true}, {write_concurrency, true} ???
       send_packets(Socket,IOC, [], 0, 0, true, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,0,Op,0,true,Proto),
       ets:delete(T_ZIP_L),
-      {ok,MD5}
+% # of IoC in live zones
+%      ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{ioc_count=length(IOC)}}]),
+      {ok,MD5,length(IOC)}
   end.
 
 w_send_packets(PID, Zone) ->      
@@ -930,7 +932,7 @@ mrpz_from_ioc([SRC|REST], RPZ,UType, IOC) -> %List of the sources, RPZ zone, UTy
   ets:update_element(cfg_table, [source,SRC], [{2, Source#source{ioc_count=length(IOC1)}}]),
   mrpz_from_ioc(REST,RPZ,UType,IOC1 ++ IOC);
 
-mrpz_from_ioc([],_RPZ,_UType,IOC) ->
+mrpz_from_ioc([],RPZ,_UType,IOC) ->
   IOC.
 
 %Используется только для sample zone

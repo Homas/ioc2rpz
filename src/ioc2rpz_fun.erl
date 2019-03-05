@@ -225,3 +225,4 @@ split([H|T],1)->
 split([H|T],Index)->
     [RH,RT]=split(T,Index-1),
     [[H|RH],RT].
+

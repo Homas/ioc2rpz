@@ -33,7 +33,7 @@ get_ioc(URL,REGEX,Source) ->
       %TODO spawn cleanup
       CTime=ioc2rpz_fun:curr_serial_60(),
       %L=[ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX) ],
-      L=p_clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX), 
+      L=p_clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX,Source#source.max_ioc), 
       
       ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators, clean time ~p ~n",[Source#source.name, length(L), (ioc2rpz_fun:curr_serial_60()-CTime)]), %TODO debug
       L;
@@ -45,16 +45,22 @@ w_clean_feed(PID) ->
   receive 
     { ok, PID, IOC } -> [ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- IOC ]
   end.
+
+p_clean_feed(IOC,REGEX,Max) when Max == undefined; Max == 0 ->
+  p_clean_feed(IOC,REGEX,Max,0);
+
+p_clean_feed(IOC,REGEX,Max) when Max /= undefined ->
+  lists:sublist(p_clean_feed(IOC,REGEX,Max,0),Max).
   
-p_clean_feed(IOC,REGEX)  ->
+p_clean_feed(IOC,REGEX,Max,Count)  ->
   ParentPID = self(),
   [IOC1,IOC2]=ioc2rpz_fun:split(IOC,?IOCperProc),  
   PID=spawn_opt(fun() ->
       ParentPID ! {ok, self(), ioc2rpz_conn:clean_feed(IOC1,REGEX)  }
       end
       ,[{fullsweep_after,0}]),
-  L = if IOC2 /= [] ->
-    p_clean_feed(IOC2,REGEX);
+  L = if IOC2 /= [] , Count+?IOCperProc < Max ; IOC2 /= [],Max == undefined; IOC2 /= [],Max == 0 ->
+    p_clean_feed(IOC2,REGEX,Max,Count+?IOCperProc);
     true -> []
   end,
   w_clean_feed(PID) ++ L .

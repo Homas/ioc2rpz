@@ -1,6 +1,10 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
 
+## 2019-03-01 v0.9.3.0
+- REST API
+- added rebar3 to manage dependencies
+
 ## 2019-03-01 v0.9.2.1
 - bug with configuration reload
 

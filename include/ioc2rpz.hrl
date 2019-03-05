@@ -20,6 +20,7 @@
 -define(SaveETS,false). % Save DB into files if DB is ETS.
 -define(Port,53). %DNS Port
 -define(PortTLS,853). %DoT Port
+-define(PortREST,8443). %REST Port
 -define(TTL,900). %Default record TTL
 
 %-define(logTS, true). % Log timestamps (comment or uncomment)
@@ -39,7 +40,7 @@
 %%%%%%
 %%%%%% Do not modify any settings below the line
 %%%%%%
--define(ioc2rpz_ver, "0.9.2.1-2019022701").
+-define(ioc2rpz_ver, "0.9.3.0-2019030401").
 
 -define(ZNameZip,16#c00c:16). %Zone name/original fqdn from a request is always at byte 10 in the response
 -define(MaxZipPSize,16#3FFF:16). %Max packet size to zip DNS labels
@@ -104,7 +105,7 @@
 -record(dns_SOA_RR, {name, type, class, ttl, rdlength, mname, rname, serial, refresh, retry, expire, minimum}).
 
 %State record
--record(state, {socket, tls, params}).
+-record(state, {socket, tls, params, op, user, lang}).
 
 %Protocol udp/tcp + qname, qtype, qclass, keyname
 -record(proto, {proto, tls, rip, rport, qname, qtype, qclass, keyname}).
@@ -116,7 +117,7 @@
 %SOA timers refresh, retry, expiration, neg_ttl
 %status: notready, updating, ready
 %serial_ixfr - minimum serial for ixfr - first ixfr update after axfr
--record(rpz, {rpzid, zone, zone_str, soa_timers, cache, wildcards, notify, action, akeys, ioc_type, axfr_time, ixfr_time, sources, status, serial, serial_new, serial_ixfr, notifylist, whitelist, ioc_md5, update_time, ixfr_update_time, pid}).
+-record(rpz, {rpzid, zone, zone_str, soa_timers, cache, wildcards, notify, action, akeys, ioc_type, axfr_time, ixfr_time, sources, status, serial, serial_new, serial_ixfr, notifylist, whitelist, ioc_md5, update_time, ixfr_update_time, pid, ioc_count, userid, max_ioc}).
 -record(source, {name, axfr_url, ixfr_url, regex, ioc_count, userid, max_ioc}).
 
 %user restriction

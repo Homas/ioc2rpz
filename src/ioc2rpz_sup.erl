@@ -70,7 +70,16 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
       restart => transient,
       shutdown => 1000,
       type => supervisor,
+      modules => [ioc2rpz_proc_sup]},
+      
+      %REST
+      #{id => ioc2rpz_rest_tls_sup_v6,
+      start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[rest_tls6_sup,IPStr6,inet6]]},
+      restart => transient,
+      shutdown => 1000,
+      type => supervisor,
       modules => [ioc2rpz_proc_sup]}
+      
     ];
     true -> ChildTLS=[]
   end,
@@ -170,11 +179,18 @@ read_config3([{key,{KName,Alg,Key}}|REST],RType,Srv,Keys,WhiteLists,Sources,RPZ)
   KeyB=base64:decode(Key),
   read_config3(REST,RType,Srv,[#key{name=KNameB,alg=Alg,key=KeyB,name_bin=KeyDNSF}|Keys],WhiteLists,Sources,RPZ);
 
+%%% No UserId, max count
 read_config3([{whitelist,{Name,AXFR,REGEX}}|REST],RType,Srv,Keys,WhiteLists,Sources,RPZ) ->
   read_config3(REST,RType,Srv,Keys,[#source{name=Name,axfr_url=AXFR,regex=REGEX}|WhiteLists],Sources,RPZ);
-
 read_config3([{source,{Name,AXFR,IXFR,REGEX}}|REST],RType,Srv,Keys,WhiteLists,Sources,RPZ) ->
   read_config3(REST,RType,Srv,Keys,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX}|Sources],RPZ);
+
+%%% With UserId, max count
+read_config3([{whitelist,{Name,AXFR,REGEX,UserID,Max_Count}}|REST],RType,Srv,Keys,WhiteLists,Sources,RPZ) ->
+  read_config3(REST,RType,Srv,Keys,[#source{name=Name,axfr_url=AXFR,regex=REGEX,userid=UserID,max_ioc=Max_Count}|WhiteLists],Sources,RPZ);
+read_config3([{source,{Name,AXFR,IXFR,REGEX,UserID,Max_Count}}|REST],RType,Srv,Keys,WhiteLists,Sources,RPZ) ->
+  read_config3(REST,RType,Srv,Keys,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX,userid=UserID,max_ioc=Max_Count}|Sources],RPZ);
+
 
 read_config3([{rpz,{Zone, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards, Action, AKeys, IOCType, AXFR_Time, IXFR_Time, Sources, NotifyList, Whitelist}}|REST],RType,Srv,Keys,WhiteLists,SourcesC,RPZ) ->
   {ok,ZoneB} = ioc2rpz:domstr_to_bin(list_to_binary(Zone),0),
@@ -400,13 +416,13 @@ update_zone_full(Zone) ->
   NSRec = <<?ZNameZip, ?T_NS:16, ?C_IN:16, 604800:32, (byte_size(NSServ)):16, NSServ/binary>>,
   ioc2rpz_fun:logMessage("Updating zone ~p full ~n",[Zone#rpz.zone_str]),
   ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{serial_new=CTime, status=updating, update_time=CTime, pid=Pid}}]),
-  {Status,MD5} = ioc2rpz:send_zone_live(<<>>,cache,Zone#rpz{serial=CTime},<<>>,<<(Zone#rpz.zone)/binary,0:32>>, SOAREC,NSRec,[],[]),
+  {Status,MD5,IOC_Cnt} = ioc2rpz:send_zone_live(<<>>,cache,Zone#rpz{serial=CTime},<<>>,<<(Zone#rpz.zone)/binary,0:32>>, SOAREC,NSRec,[],[]),
   if Status == updateSOA ->
-      ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, serial_new=0, ioc_md5=MD5, update_time=CTime, ixfr_update_time=CTime, pid=undefined}}]),
+      ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, serial_new=0, ioc_md5=MD5, update_time=CTime, ixfr_update_time=CTime, pid=undefined, ioc_count=IOC_Cnt}}]),
       ioc2rpz_fun:logMessage("Zone ~p is the same. Checked in ~p seconds, check timestamp ~p ~n",[Zone#rpz.zone_str, (ioc2rpz_fun:curr_serial()- CTime), CTime]);
     true ->
       %if Zone#rpz.serial_ixfr == 0 -> Serial_IXFR=CTime; true -> Serial_IXFR=Zone#rpz.serial_ixfr end,
-      ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{serial=CTime, status=ready, serial_new=0, ioc_md5=MD5, update_time=CTime, ixfr_update_time=CTime, serial_ixfr=CTime, pid=undefined}}]),
+      ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{serial=CTime, status=ready, serial_new=0, ioc_md5=MD5, update_time=CTime, ixfr_update_time=CTime, serial_ixfr=CTime, pid=undefined, ioc_count=IOC_Cnt}}]),
       ioc2rpz_db:delete_db_pkt(Zone),
       %erlang:garbage_collect(), %TODO check if need
       ioc2rpz:send_notify(Zone),
@@ -443,7 +459,7 @@ update_zone_inc(Zone) ->
           rebuild_axfr_zone(Zone#rpz{serial=CTime}),
           NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[],['true']}]),
           ioc2rpz_fun:logMessage("Zone ~p records before ~p after ~p. ~n",[Zone#rpz.zone_str, NRbefore, NRafter]),
-          ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, serial=CTime, ixfr_update_time=CTime, pid=undefined}}]),
+          ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, serial=CTime, ixfr_update_time=CTime, pid=undefined, ioc_count=length(IOC)}}]),
           ioc2rpz_db:delete_db_pkt(Zone),
           ioc2rpz_db:saveZones(),
           ioc2rpz:send_notify(Zone)

@@ -46,7 +46,29 @@ init([Proc,IPStr,Proto]) when Proc == tls_sup; Proc == tls6_sup -> %DoT
   {ok, TLSSocket} = open_tls_sockets(IPStr, Proto) ,
 	spawn_opt(ioc2rpz_proc_sup,empty_listeners,[Proc],[link,{fullsweep_after,0}]),
   ioc2rpz_fun:logMessage("ioc2rpz ~p started ~n", [Proc]),
-  {ok, {{simple_one_for_one, 60, 3600}, [{ioc2rpz, {ioc2rpz, start_ioc2rpz, [TLSSocket, [Pid,Proc,yes]]}, temporary, 1000, worker, [ioc2rpz]}]}}.
+  {ok, {{simple_one_for_one, 60, 3600}, [{ioc2rpz, {ioc2rpz, start_ioc2rpz, [TLSSocket, [Pid,Proc,yes]]}, temporary, 1000, worker, [ioc2rpz]}]}};
+
+
+init([Proc,_IPStr,_Proto]) when Proc == rest_tls_sup; Proc == rest_tls6_sup -> %REST
+
+	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6'}),
+	Ciphers=ssl:cipher_suites(default, 'tlsv1.2'),	
+	Dispatch = cowboy_router:compile([{'_', [
+				{"/", ioc2rpz_rest, [root]},
+				{"/api/[:api_ver]/stats/serv", ioc2rpz_rest, [stats_serv]},
+				{"/api/[:api_ver]/stats/rpz", ioc2rpz_rest, [stats_rpz]},
+				{"/api/[:api_ver]/stats/source", ioc2rpz_rest, [stats_source]},
+				{"/api/[:api_ver]/update/all_rpz", ioc2rpz_rest, [update_all_rpz]},
+				{"/api/[:api_ver]/update/:rpz", ioc2rpz_rest, [update_rpz]},
+				{"/api/[:api_ver]/mgmt/reload_cfg", ioc2rpz_rest, [reload_cfg]},
+				{"/api/[:api_ver]/mgmt/update_tkeys", ioc2rpz_rest, [update_tkeys]},
+				{"/api/[:api_ver]/mgmt/terminate", ioc2rpz_rest, [terminate]},
+				{'_', ioc2rpz_rest, [catch_all]}
+					]}]),
+	{ok, _} = cowboy:start_tls(https, [{port, ?PortREST},{certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile}, {ciphers, Ciphers}], #{env => #{dispatch => Dispatch}}),
+	%{cacertfile, Cert#cert.cacertfile},
+  ioc2rpz_fun:logMessage("ioc2rpz ~p started ~n", [Proc]),
+  {ok, {{one_for_one, 10, 10}, []}}.
 
 
 open_tcp_sockets(IPStr,Proto) when IPStr /= "", IPStr /= [] ->
