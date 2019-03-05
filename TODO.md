@@ -1,12 +1,10 @@
 #TODO
+- [ ] Dockerfile because of rebar3
 
 ## Core
 - [ ] DoH https://tools.ietf.org/html/rfc8484
-- [ ] DoT https://tools.ietf.org/html/rfc7858
 - [ ] DoD https://tools.ietf.org/html/draft-ietf-dprive-dnsodtls-06
 - [ ] Redo AXFR logs
-- [x] Error log messages in CEF
-- [ ] MGMT Request to update TSIG keys and RPZs
 
 ## Sources
 - [ ] Source: ioc type, max # of IOCs, max file size, RPZ action, NS type, lowcase optimization option, spawn processes
@@ -34,17 +32,16 @@
 
 ## REST
 - [ ] MGMT via REST API
-  - [ ] Reload CFG (no unchanged zones refresh)
-  - [ ] Refresh a zone
-  - [ ] Refresh all zones
-  - [ ] Terminate processes/Exit
+  - [x] Reload CFG (no unchanged zones refresh)
+  - [x] Refresh a zone
+  - [x] Refresh all zones
+  - [x] Terminate processes/Exit
   - [ ] Statistics per source, RPZ, performance
 
 ## Configuration
-- [\] Configuration file name pass as a variable to the container
+- [.] Validate: Configuration file name pass as a variable to the container
 
 ## Management
-- [x] IPv4 addresses in IPv6 format
 - [ ] DNS health check requests
 - [ ] (2) MGMT via DNS move to a separate port/IP
 - [ ] Statistics per zone (# records, last update, # AXFR, # IXFR, last axfr update time, avg axfr update time, last ixfr update time, avg ixfr update time)
