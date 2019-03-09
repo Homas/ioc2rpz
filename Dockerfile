@@ -38,4 +38,4 @@ VOLUME ["/opt/ioc2rpz/cfg", "/opt/ioc2rpz/db"]
 
 EXPOSE 53/tcp 53/udp 853/tcp
 
-ENTRYPOINT ["CD=/opt/ioc2rpz/", "DB=/opt/ioc2rpz/db", "/opt/ioc2rpz/_build/default/rel/ioc2rpz/bin/ioc2rpz", "foreground"]
+ENTRYPOINT ["CD=/opt/ioc2rpz/ DB=/opt/ioc2rpz/db /opt/ioc2rpz/_build/default/rel/ioc2rpz/bin/ioc2rpz", "foreground"]
