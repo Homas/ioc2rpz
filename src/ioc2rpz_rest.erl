@@ -58,24 +58,24 @@ to_txt(Req, State) ->
 
 srv_mgmt(Req, State, Format) when State#state.op == reload_cfg ->
 	#{peer := {IP, _Port}} = Req,
-	Body = case {ioc2rpz_sup:reload_config3(reload), Format} of
-		{ok, json} -> "{\"status\":\"ok\",\"msg\":\"Configuration reloaded\"}\n";
-		{ok, txt} -> "status: ok\nmsg: Configuration reloaded\n";
-		{_, json} -> "{\"status\":\"error\",\"msg\":\"Configuration reload error\"}\n";
-		{_, json} -> "status: error\nmsg: Configuration reload error\n"
+	{Body,Req0} = case {ioc2rpz_sup:reload_config3(reload), Format} of
+		{ok, json} -> {"{\"status\":\"ok\",\"msg\":\"Configuration reloaded\"}\n",Req};
+		{ok, txt} -> {"status: ok\nmsg: Configuration reloaded\n",Req};
+		{_, json} -> {"{\"status\":\"error\",\"msg\":\"Configuration reload error\"}\n",cowboy_req:reply(520, Req)};
+		{_, json} -> {"status: error\nmsg: Configuration reload error\n",cowboy_req:reply(520, Req)}
 	end,
-	{Body, Req, State};
+	{Body, Req0, State};
 
 
 srv_mgmt(Req, State, Format) when State#state.op == update_tkeys ->
 	#{peer := {IP, _Port}} = Req,
-	Body = case {ioc2rpz_sup:reload_config3(updTkeys), Format} of
-		{ok, json} -> "{\"status\":\"ok\",\"msg\":\"TSIG keys were updated\"}\n";
-		{ok, txt} -> "status: ok\nmsg: TSIG keys were updated\n";
-		{_, json} -> "{\"status\":\"error\",\"msg\":\"TSIG keys update error\"}\n";
-		{_, json} -> "status: error\nmsg: TSIG keys update error\n"
+	{Body,Req0} = case {ioc2rpz_sup:reload_config3(updTkeys), Format} of
+		{ok, json} -> {"{\"status\":\"ok\",\"msg\":\"TSIG keys were updated\"}\n",Req};
+		{ok, txt} -> {"status: ok\nmsg: TSIG keys were updated\n",Req};
+		{_, json} -> {"{\"status\":\"error\",\"msg\":\"TSIG keys update error\"}\n",cowboy_req:reply(520, Req)};
+		{_, json} -> {"status: error\nmsg: TSIG keys update error\n",cowboy_req:reply(520, Req)}
 	end,
-	{Body, Req, State};
+	{Body, Req0, State};
 
 
 srv_mgmt(Req, State, Format) when State#state.op == update_all_rpz ->
@@ -95,13 +95,13 @@ srv_mgmt(Req, State, Format) when State#state.op == update_rpz ->
 		[X] -> spawn_opt(ioc2rpz_sup,update_zone_full,[X],[{fullsweep_after,0}]), true;
 		[] -> false
 	end,
-	Body = case {ZoneS, Format} of
-		{true,json} -> io_lib:format("{\"status\":\"ok\",\"msg\":\"RPZ ~s will be updated\"}\n",[RPZ]);
-		{false,json} -> io_lib:format("{\"status\":\"error\",\"msg\":\"RPZ ~s not found\"}\n",[RPZ]);
-		{true,txt} -> io_lib:format("status: ok\nmsg: RPZ ~s will be updated\n",[RPZ]);
-		{false,txt} -> io_lib:format("status: error\nmsg: RPZ ~s not found\n",[RPZ])
+	{Body,Req0} = case {ZoneS, Format} of
+		{true,json} -> {io_lib:format("{\"status\":\"ok\",\"msg\":\"RPZ ~s will be updated\"}\n",[RPZ]),Req};
+		{true,txt} -> {io_lib:format("status: ok\nmsg: RPZ ~s will be updated\n",[RPZ]),Req};
+		{false,json} -> {io_lib:format("{\"status\":\"error\",\"msg\":\"RPZ ~s not found\"}\n",[RPZ]),cowboy_req:reply(520, Req)};
+		{false,txt} -> {io_lib:format("status: error\nmsg: RPZ ~s not found\n",[RPZ]),cowboy_req:reply(520, Req)}
 	end,
-	{Body, Req, State};
+	{Body, Req0, State};
 
 srv_mgmt(Req, State, Format) when State#state.op == terminate ->
 	#{peer := {IP, _Port}} = Req,
