@@ -94,14 +94,14 @@ dig +tcp -y dnsmkey_1:ayVnL+h2QKMszRVohrngagcEuIpN3RkecXKdwSa5WsHD5N4Y5R3NUMGM W
 - Request a sample zone. RR Name ``sample-zone.ioc2rpz``, RR Class ``IN``, RR Type ``AXFR``
 ### via REST
 REST API (port 8443/tcp) is the preffered management interface. For serurity reasons all management traffic must be encrypted and REST API interface is not started if there is no SSL certificate.
-Basic HTTP authentication is used to authenticate requests. ioc2rpz doesn't maintain separate list of management users so management TSIG keys should be used for that. A TSIG key name is the username and TSIG key is the password. Access to the REST API is restricted using the ACL.  
+Basic HTTP authentication is used to authenticate requests. ManagementTSIG keys are used for request authentication. A TSIG key name is used as the HTTP username and TSIG key as the password. Access to the REST API is restricted with the ACL.  
 The REST API supports json (default) and text as an output format based on the "Accept" header. E.g.: 
 ```
 curl -i -u "dnsmkey_1:ayVnL+h2QKMszRVohrngagcEuIpN3RkecXKdwSa5WsHD5N4Y5R3NUMGM W8sIGv36gPkAtWtgarqKzN9tmHqEnA==" --insecure -H "Accept: text/plain" https://127.0.0.1:8443/api/mgmt/update_tkeys
 ```
 API requests:
 - GET ``/api/v1.0/update/all_rpz`` - full refresh of all zones.
-- GET ``/api/v1.0/update/:rpz`` - full refresh a zone, where :rpz is the zone name. 
+- GET ``/api/v1.0/update/:rpz`` - full refresh a zone, where ``:rpz`` is the zone name. 
 - GET ``/api/v1.0/mgmt/reload_cfg`` - reload configuration file.
 - GET ``/api/v1.0/mgmt/update_tkeys`` - update TSIG keys.
 - GET ``/api/v1.0/mgmt/terminate`` - shutdown ioc2rpz server.
