@@ -29,6 +29,8 @@ WORKDIR /opt/ioc2rpz
 RUN mkdir /opt/ioc2rpz/cfg /opt/ioc2rpz/db /opt/ioc2rpz/include /opt/ioc2rpz/src /opt/ioc2rpz/log && apk add bind-tools curl python3
 ADD src/* /opt/ioc2rpz/src/
 ADD include/* /opt/ioc2rpz/include/
+ADD config/* /opt/ioc2rpz/config/
+ADD rebar.config /opt/ioc2rpz/
 
 RUN rebar3 release -d false
 
