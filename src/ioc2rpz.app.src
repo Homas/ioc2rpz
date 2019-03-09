@@ -33,8 +33,10 @@
   {applications, [
                   kernel,
                   stdlib,
+                  inets,
+                  ssl,
+                  sasl,
                   cowboy
                  ]},
-  {mod, { ioc2rpz_app, []}} %, %["","./cfg/ioc2rpz.conf","./db"]
-  %{env, []}
+  {mod, { ioc2rpz_app, []}}
  ]}.

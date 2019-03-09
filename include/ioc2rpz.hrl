@@ -22,6 +22,8 @@
 -define(PortTLS,853). %DoT Port
 -define(PortREST,8443). %REST Port
 -define(TTL,900). %Default record TTL
+-define(DefConf,"./cfg/ioc2rpz.conf"). %Default configuration
+-define(DefDB,"./db"). %Default DB location
 
 %-define(logTS, true). % Log timestamps (comment or uncomment)
 -define(debug, true). % Log debug messages

@@ -16,13 +16,26 @@
 -module(ioc2rpz_app).
 -behaviour(application).
 -export([start/2, stop/1]).
+-include_lib("ioc2rpz.hrl").
 
 start(_StartType, _Start_Args) ->
-    IPv4=application:get_env(ioc2rpz, ipv4, ""),
-    IPv6=application:get_env(ioc2rpz, ipv6, ""),
-    Conf_File=application:get_env(ioc2rpz, conf_file, "./cfg/ioc2rpz.conf"),
-    DB=application:get_env(ioc2rpz, db_dir, "./db"),
+    IPv4=get_env(ioc2rpz, ipv4, ""),
+    IPv6=get_env(ioc2rpz, ipv6, ""),
+    Conf_File=get_env(ioc2rpz, conf_file, ?DefConf),
+    DB=get_env(ioc2rpz, db_dir, ?DefDB),
+    {ok, CWD} = file:get_cwd(),
+    Dir=get_env(ioc2rpz, cd, CWD),
+    file:set_cwd(Dir),
+    io:format("Env ip4: ~p ip6: ~p conf: ~p db: ~p cwd: ~p ~n",[IPv4,IPv6,Conf_File,DB,Dir]),
     ioc2rpz_sup:start_ioc2rpz_sup([IPv4,IPv6,Conf_File,DB]).
 
 stop(_State) ->
     ok.
+    
+
+get_env(App, Param, Default) ->
+  case application:get_env(App, Param) of
+    undefined   ->  Default;
+    {ok, []}    ->  Default;
+    {ok, X}     ->  X
+  end.

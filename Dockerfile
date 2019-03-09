@@ -18,18 +18,22 @@ FROM erlang:alpine
 MAINTAINER Vadim Pavlov<ioc2rpz@gmail.com>
 WORKDIR /opt/ioc2rpz
 
-RUN mkdir /opt/ioc2rpz/ebin /opt/ioc2rpz/cfg /opt/ioc2rpz/db /opt/ioc2rpz/include /opt/ioc2rpz/src /opt/ioc2rpz/scripts /opt/ioc2rpz/log && apk add bind-tools curl python3
-ADD ebin/ioc2rpz.app /opt/ioc2rpz/ebin/
+#RUN mkdir /opt/ioc2rpz/ebin /opt/ioc2rpz/cfg /opt/ioc2rpz/db /opt/ioc2rpz/include /opt/ioc2rpz/src /opt/ioc2rpz/scripts /opt/ioc2rpz/log && apk add bind-tools curl python3
+#ADD ebin/ioc2rpz.app /opt/ioc2rpz/ebin/
+#ADD scripts/* /opt/ioc2rpz/scripts/
+#ADD ioc2rpz_app.config  /opt/ioc2rpz/
+#RUN erlc -I include/ -o ebin/ src/*.erl
+#ENTRYPOINT ["erl", "-noshell", "-pa", "./ebin", "-sname", "ioc2rpz", "-eval", "application:start(ioc2rpz,permanent)", "-config", "ioc2rpz_app"]
+#CMD ["/bin/sh", "/opt/ioc2rpz/scripts/run_ioc2rpz.sh"]
+
+RUN mkdir /opt/ioc2rpz/cfg /opt/ioc2rpz/db /opt/ioc2rpz/include /opt/ioc2rpz/src /opt/ioc2rpz/log && apk add bind-tools curl python3
 ADD src/* /opt/ioc2rpz/src/
 ADD include/* /opt/ioc2rpz/include/
-ADD scripts/* /opt/ioc2rpz/scripts/
-ADD ioc2rpz_app.config  /opt/ioc2rpz/
 
-RUN erlc -I include/ -o ebin/ src/*.erl
+RUN rebar3 release -d false
 
 VOLUME ["/opt/ioc2rpz/cfg", "/opt/ioc2rpz/db"]
 
 EXPOSE 53/tcp 53/udp 853/tcp
 
-#ENTRYPOINT ["erl", "-noshell", "-pa", "./ebin", "-sname", "ioc2rpz", "-eval", "application:start(ioc2rpz,permanent)", "-config", "ioc2rpz_app"]
-CMD ["/bin/sh", "/opt/ioc2rpz/scripts/run_ioc2rpz.sh"]
+ENTRYPOINT ["CD=/opt/ioc2rpz/", "DB=/opt/ioc2rpz/db", "/opt/ioc2rpz/_build/default/rel/ioc2rpz/bin/ioc2rpz", "foreground"]

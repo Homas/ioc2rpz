@@ -1,0 +1,1 @@
+[{ioc2rpz,[{ipv4,"${IPv4}"},{ipv6,"${IPv6}"},{conf_file,"${CONF}"},{db_dir,"${DB}"},{cd,"${CD}"}]}].
