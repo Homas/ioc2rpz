@@ -34,7 +34,7 @@ is_authorized(Req, State) ->
 			case {lists:member(UserB,MKeys), TKey == Password} of
 				{true, true} -> {true, Req, State#state{user=User}};
 				_ ->
-					Body = io_lib:format("Auth failed ~p \n\n",[User]),
+					Body = io_lib:format("{status: \"error\", msg: \"Authentication failed\"}\n",[]),
 					Req0=cowboy_req:set_resp_body(Body,Req),
 					{{false, <<"Basic">>}, Req0, State}
 			end;
@@ -42,7 +42,7 @@ is_authorized(Req, State) ->
 			User = <<"get tsig name">>,
 			{true, Req, State#state{user=User}};		
 		_ ->
-			Body = io_lib:format("Auth failed state:\n~p\n\n",[State]),
+			Body = io_lib:format("{status: \"error\", msg: \"Authentication failed\"}\n",[]),
 			Req0=cowboy_req:set_resp_body(Body,Req),
 			{{false, <<"Basic">>}, Req0, State}
 	end.
@@ -117,8 +117,8 @@ srv_mgmt(Req, State, Format) ->
 	Srv_IOCs = lists:sum(([ element(25,X) || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), element(25,X) /= undefined])),
 	RPZ_stat = [ {element(4,X),element(25,X)} || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), element(25,X) /= undefined],
 	Sources_stat = [ {element(2,X),element(6,X)} || [X]  <- ets:match(cfg_table,{[source,'_'],'$2'}),element(6,X) /= undefined],
-	Body=io_lib:format("Peer: ~s:~p\nSrv IOCs: ~p\nRPZ:\n ~p\nSources:\n ~p\n",[ioc2rpz:ip_to_str(IP),Port,Srv_IOCs,RPZ_stat,Sources_stat])++
-		 io_lib:format("\n\nReq:\n~p\n\nState:\n~p\n\n",[Req,State]),
+	Body=io_lib:format("Peer: ~s:~p\nSrv IOCs: ~p\nRPZ:\n ~p\nSources:\n ~p\n",[ioc2rpz:ip_to_str(IP),Port,Srv_IOCs,RPZ_stat,Sources_stat]),
+	%Body0=Body++io_lib:format("\n\nReq:\n~p\n\nState:\n~p\n\n",[Req,State]),
 	{Body, Req, State}.
 	
 rest_terminate(Req, State) ->
