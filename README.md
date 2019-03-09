@@ -231,15 +231,21 @@ Sample **rpz** record:
 {rpz,{"tor-exit-ip.ioc2rpz",7202,3600,2592000,7200,"false","true","nxdomain",["dnsproxykey_1","dnsproxykey_2"],"ip",172800,0,["tor-exit"],[],[]}}.
 ```
 
-## Constants - include/ioc2rpz.hrl
+## Predefined configuration values - include/ioc2rpz.hrl
 include/ioc2rpz.hrl contains pre-compiled parameters.
 
 Standard parameters:
 - ``MGMToDNS`` (true/false) - enabled management over DNS/TCP;
 - ``DBStorage`` (ets) - defines DB storage for AXFR and IXFR caches. Current version supports ETS only;
 - ``SaveETS`` (true/false) - defines if ETS AXFR/IXFR tables should be saved on disk;
-- ``Port`` (numerical value, 1 - 65535) - defines a port on which service is running;
+- ``Port`` (numerical value, 1 - 65535) - defines a DNS port on which service is running;
+- ``PortTLS`` (numerical value, 1 - 65535) - defines a DoT port on which service is running;
+- ``PortREST`` (numerical value, 1 - 65535) - defines a HTTPs port on which service is running;
 - ``TTL`` (numerical value, in secodns) - default TTL for DNS records/RPZ rules.
+- ``DefConf`` (string) - default configuration file;
+- ``DefDB`` (string) - default database path;
+- ``logTS`` - if defined timestamp is added in log messages;
+- ``debug`` - if defined debug log messages are printed;
 
 Optimization parameters:
 - ``DNSPktMax`` (numerical value, 100 - 65535) - maximum packet size. Recommended values:
