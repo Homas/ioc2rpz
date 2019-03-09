@@ -1,29 +1,35 @@
 #TODO
 - [ ] Rebar3 update
-  - [x] update Dockerfile and startup script
-  - [x] node name
-  - [ ] remove ioc2rpz_app.config, ebin/ioc2rpz.app, scripts/run_ioc2rpz.sh
-  - [x] add config/*
+  - [ ] Review and update readme and wiki
+  - [ ] Bug RPZ stats after reload config
  
  
 ## Core / DNS
-- [ ] DoH https://tools.ietf.org/html/rfc8484
-- [ ] DoD https://tools.ietf.org/html/draft-ietf-dprive-dnsodtls-06
 - [ ] Redo AXFR logs
-- [ ] Mnesia for storage (and auto creation)
-- [ ] Distributed configuration
-- [ ] Wait while a remote server confirms receiving a notification
 - [ ] Access to the hotcache and the cfg_table via FUNs
+- [ ] (1) Terminate updating zones during config reload
 - [ ] (1) Clean up the code & add comments
-- [ ] (2) EDNS0 Support: DNS Cookie, edns-tcp-keepalive, NSID
-- [ ] (3) Memory optimization for huge zones (erl -pa ebin +MEas bf ?????)
 - [ ] (*) saveZones - doesn't correctly save zones if there a lot of updates. Save strategy based on update size and time and currently running updates.
 - [ ] Logs level startup config
 - [ ] Check delete in ioc2rpz: rpz_hotcache_table/pkthotcache
-- [ ] (1) Terminate updating zones during config reload
+
+- [ ] Mnesia for storage (and auto creation)
+- [ ] Distributed configuration
+- [ ] Wait while a remote server confirms receiving a notification
+- [ ] (2) EDNS0 Support: DNS Cookie, edns-tcp-keepalive, NSID
+- [ ] (3) Memory optimization for huge zones (erl -pa ebin +MEas bf ?????)
+- [ ] DoH https://tools.ietf.org/html/rfc8484
+- [ ] DoD https://tools.ietf.org/html/draft-ietf-dprive-dnsodtls-06
 
 ## Sources
-- [ ] ioc type
+- [ ] Add script for RPZ via "shell:"
+- [ ] Add source PostreSQL, MySQL via "shell:"
+- [ ] RPZ action per source
+- [ ] (2) Source based on files check by mod.date and size -> read by chunks
+- [ ] Retry if source is not available
+- [ ] Simultanious source downloads
+
+- [ ] ioc type in config
 - [x] max # of IOCs
 - [ ] max file size
 - [ ] RPZ action
@@ -34,38 +40,29 @@
 - [ ] Hot cache optimization depending on RPZ refresh time and source usage in multiple feeds
 - [ ] Cache optimization for huge zones
 - [ ] Statistics table
-- [ ] Add script for RPZ via "shell:"
-- [ ] Add source PostreSQL, MySQL via "shell:"
-- [ ] RPZ action per source
-- [ ] (2) Source based on files check by mod.date and size -> read by chunks
-- [ ] Retry if source is not available
-- [ ] Simultanious source downloads
 
 
 ## RPZ
 - [ ] RPZ by source intersection
 - [ ] Max # of IOCs
 - [ ] Catalog zones
-- [ ] (2) FDateTime,ToDateTime,FDateTimeZ,ToDateTimeZ + support them for AXFR  
-[:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z"  
-[:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z"
 - [ ] Statistics per zone (# records, last update, # AXFR, # IXFR, last axfr update time, avg axfr update time, last ixfr update time, avg ixfr update time)
 - [ ] RPZ behavior: ignore unreachable sources, use old data for unreachable sources, do not update the zone
 - [ ] Additional local records: ptr, srv, mx etc
 - [ ] An action per source: {"",action,locdata} //default action ,{"source_name",action,locdata}
 - [ ] RPZ transfer rate limiting
 
+- [ ] (2) FDateTime,ToDateTime,FDateTimeZ,ToDateTimeZ + support them for AXFR  
+[:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z"  
+[:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z"
+
 
 ## Servers
 - [ ] Enforcement max # of IOCs
-- [ ] Secondary DNS via MNESIA
+- [ ] Secondary DNS via MNESIA and distributed
 
 ## REST
 - [ ] MGMT via REST API
-  - [x] Reload CFG (no unchanged zones refresh)
-  - [x] Refresh a zone
-  - [x] Refresh all zones
-  - [x] Terminate processes/Exit
   - [ ] Statistics per source, RPZ, performance
 
 ## Configuration
@@ -73,11 +70,10 @@
 
 ## Management
 - [ ] DNS health check requests
-- [ ] By default disable MGMT via DNS (update ioc2rpz.gui first)
+- [ ] Disable MGMT via DNS (update ioc2rpz.gui first) - default behaviour
 
 
 ## Unsorted
-- [x] (1) http/https/ftp errors handling - source status in the record. If a source is not available - work w/o it
 - [ ] Performance testing vs bind:
   - [ ] 1 core/8GB RAM: start time, zone transfer time, zone size, CPU, Memory
     - [ ] 100k rules

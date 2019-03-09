@@ -12,13 +12,13 @@ init(Req, Opts) ->
     {cowboy_rest, Req, State}.
 	
 allowed_methods(Req, State) ->
-    Methods = [<<"GET">>, <<"POST">>, <<"HEAD">>],
+    Methods = [<<"GET">>, <<"POST">>],
     {Methods, Req, State}.
 
 content_types_provided(Req, State) ->
     {[
-      {<<"application/json">>, to_json}
-%      {<<"text/plain">>, to_txt}	  
+      {<<"application/json">>, to_json},
+      {<<"text/plain">>, to_txt}	  
      ], Req, State}.
 
 is_authorized(Req, State) ->
@@ -112,7 +112,7 @@ srv_mgmt(Req, State, Format) when State#state.op == terminate ->
 	ioc2rpz_sup:stop_ioc2rpz_sup(),
 	{Body, Req, State};
 		
-srv_mgmt(Req, State, Format) ->
+srv_mgmt(Req, State, Format) -> % TODO Statistics
 	#{peer := {IP, Port}} = Req,
 	Srv_IOCs = lists:sum(([ element(25,X) || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), element(25,X) /= undefined])),
 	RPZ_stat = [ {element(4,X),element(25,X)} || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), element(25,X) /= undefined],
