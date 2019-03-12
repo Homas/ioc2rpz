@@ -71,7 +71,7 @@ srv_mgmt(Req, State, Format) when State#state.op == reload_cfg -> %Reload server
 		{ok, json} -> {"{\"status\":\"ok\",\"msg\":\"Configuration reloaded\"}\n",Req};
 		{ok, txt} -> {"status: ok\nmsg: Configuration reloaded\n",Req};
 		{_, json} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(136),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {"{\"status\":\"error\",\"msg\":\"Configuration reload error\"}\n",cowboy_req:reply(520, Req)};
-		{_, json} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(136),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {"status: error\nmsg: Configuration reload error\n",cowboy_req:reply(520, Req)}
+		{_, txt} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(136),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {"status: error\nmsg: Configuration reload error\n",cowboy_req:reply(520, Req)}
 	end,
 	{Body, Req0, State};
 
@@ -83,7 +83,7 @@ srv_mgmt(Req, State, Format) when State#state.op == update_tkeys -> %Reload TSIG
 		{ok, json} -> {"{\"status\":\"ok\",\"msg\":\"TSIG keys were updated\"}\n",Req};
 		{ok, txt} -> {"status: ok\nmsg: TSIG keys were updated\n",Req};
 		{_, json} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(136),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {"{\"status\":\"error\",\"msg\":\"TSIG keys update error\"}\n",cowboy_req:reply(520, Req)};
-		{_, json} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(136),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {"status: error\nmsg: TSIG keys update error\n",cowboy_req:reply(520, Req)}
+		{_, txt} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(136),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {"status: error\nmsg: TSIG keys update error\n",cowboy_req:reply(520, Req)}
 	end,
 	{Body, Req0, State};
 
@@ -125,7 +125,7 @@ srv_mgmt(Req, State, Format) when State#state.op == terminate -> %Shutdown serve
 	ioc2rpz_sup:stop_ioc2rpz_sup(),
 	{Body, Req, State};
 		
-srv_mgmt(Req, State, Format) -> % Statistics -- TODO
+srv_mgmt(Req, State, Format) when State#state.op == stats_serv -> % Statistics -- TODO
 	#{peer := {IP, Port}} = Req,
     ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(230),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
 	Srv_IOCs = lists:sum(([ element(25,X) || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), element(25,X) /= undefined])),
@@ -133,7 +133,21 @@ srv_mgmt(Req, State, Format) -> % Statistics -- TODO
 	Sources_stat = [ {element(2,X),element(6,X)} || [X]  <- ets:match(cfg_table,{[source,'_'],'$2'}),element(6,X) /= undefined],
 	Body=io_lib:format("Peer: ~s:~p\nSrv IOCs: ~p\nRPZ:\n ~p\nSources:\n ~p\n",[ioc2rpz:ip_to_str(IP),Port,Srv_IOCs,RPZ_stat,Sources_stat]),
 	%Body0=Body++io_lib:format("\n\nReq:\n~p\n\nState:\n~p\n\n",[Req,State]),
+	{Body, Req, State};
+
+srv_mgmt(Req, State, Format) when State#state.op == catch_all -> % Catch all unsupported requests from authenticated users
+	#{peer := {IP, Port}} = Req,
+    ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(137),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
+    Body = case Format of
+		json -> "{\"status\":\"error\",\"msg\":\"Unsupported request\"}\n";
+		txt ->  "status: error\nmsg: Unsupported request\n"
+    end,
 	{Body, Req, State}.
+%    Req0 = case Format of
+%		json -> cowboy_req:reply(501,#{<<"content-type">> => <<"application/json">>}, ["{\"status\":\"error\",\"msg\":\"Unsupported request\"}\n"],Req);
+%		txt ->  cowboy_req:reply(501,#{<<"content-type">> => <<"text/html">>}, ["status: error\nmsg: Unsupported request\n"],Req)
+%    end,
+%	{false, Req0, State}.
 	
 rest_terminate(Req, State) ->
 	ok.
