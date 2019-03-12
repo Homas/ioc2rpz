@@ -63,6 +63,7 @@
 - [ ] MGMT via REST API
   - [ ] Statistics per source, RPZ, performance
   - [ ] Bug RPZ stats after reload config
+- [ ] Bug in cowboy. Can not send 501 in "catch all"
 
 ## Configuration
 - [.] Validate: Configuration file name pass as a variable to the container

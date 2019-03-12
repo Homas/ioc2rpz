@@ -131,8 +131,10 @@ srv_mgmt(Req, State, Format) when State#state.op == stats_serv -> % Statistics -
 	Srv_IOCs = lists:sum(([ element(25,X) || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), element(25,X) /= undefined])),
 	RPZ_stat = [ {element(4,X),element(25,X)} || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), element(25,X) /= undefined],
 	Sources_stat = [ {element(2,X),element(6,X)} || [X]  <- ets:match(cfg_table,{[source,'_'],'$2'}),element(6,X) /= undefined],
-	Body=io_lib:format("Peer: ~s:~p\nSrv IOCs: ~p\nRPZ:\n ~p\nSources:\n ~p\n",[ioc2rpz:ip_to_str(IP),Port,Srv_IOCs,RPZ_stat,Sources_stat]),
-	%Body0=Body++io_lib:format("\n\nReq:\n~p\n\nState:\n~p\n\n",[Req,State]),
+	Body=case Format of
+		txt     ->  io_lib:format("Srv total RPZ IOCs: ~p\nRPZ:\n ~p\nSources:\n ~p\n",[Srv_IOCs,RPZ_stat,Sources_stat]);
+        json    ->  io_lib:format("{\"srv_total_rules\":~p,\"rpz\":~s,\"sources\":~s}\n",[Srv_IOCs,list_tuples_to_json(RPZ_stat),list_tuples_to_json(Sources_stat)])
+    end,
 	{Body, Req, State};
 
 srv_mgmt(Req, State, Format) when State#state.op == catch_all -> % Catch all unsupported requests from authenticated users
@@ -151,3 +153,21 @@ srv_mgmt(Req, State, Format) when State#state.op == catch_all -> % Catch all uns
 	
 rest_terminate(Req, State) ->
 	ok.
+
+list_tuples_to_json(Array) ->
+    io_lib:format("[~s]",[list_tuples_to_json([],Array)]).    
+
+list_tuples_to_json([],[E|Rest]) ->
+    list_tuples_to_json(tuple_to_json(E),Rest);
+
+list_tuples_to_json(Resp,[E|Rest]) ->
+    list_tuples_to_json(tuple_to_json(E)++","++Resp,Rest);
+
+list_tuples_to_json(Resp,[]) ->
+    Resp.
+
+tuple_to_json({Name,Value}) when is_integer(Value)->
+    io_lib:format("{\"~s\":~b}",[Name,Value]);
+    
+tuple_to_json({Name,Value}) ->
+    io_lib:format("{\"~s\":\"~b\"}",[Name,Value]).
