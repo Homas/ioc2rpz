@@ -365,9 +365,11 @@ You can find other IOC feeds on the wiki-page: https://github.com/Homas/ioc2rpz/
 - [Extension Mechanisms for DNS (EDNS(0))](https://tools.ietf.org/html/rfc6891) + [ENDS Option Codes](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11)
 - [Domain Name System (DNS) Cookies](https://tools.ietf.org/html/rfc7873)
 - [Specification for DNS over Transport Layer Security (TLS)](https://tools.ietf.org/html/rfc7858)
+- [Cowboy Web Server](https://ninenines.eu)
+- [Rebar3](https://www.rebar3.org)
 
 # License
-Copyright 2017 - 2018 Vadim Pavlov ioc2rpz[at]gmail[.]com
+Copyright 2017 - 2019 Vadim Pavlov ioc2rpz[at]gmail[.]com
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
 You may obtain a copy of the License at  

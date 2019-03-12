@@ -1,8 +1,4 @@
 #TODO
-- [ ] Rebar3 update
-  - [ ] Review and update readme and wiki
-  - [ ] Bug RPZ stats after reload config
- 
  
 ## Core / DNS
 - [ ] Redo AXFR logs
@@ -20,6 +16,8 @@
 - [ ] (3) Memory optimization for huge zones (erl -pa ebin +MEas bf ?????)
 - [ ] DoH https://tools.ietf.org/html/rfc8484
 - [ ] DoD https://tools.ietf.org/html/draft-ietf-dprive-dnsodtls-06
+
+- [ ] EUnit Tests
 
 ## Sources
 - [ ] Add script for RPZ via "shell:"
@@ -64,6 +62,7 @@
 ## REST
 - [ ] MGMT via REST API
   - [ ] Statistics per source, RPZ, performance
+  - [ ] Bug RPZ stats after reload config
 
 ## Configuration
 - [.] Validate: Configuration file name pass as a variable to the container
