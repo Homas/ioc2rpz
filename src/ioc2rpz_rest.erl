@@ -137,6 +137,25 @@ srv_mgmt(Req, State, Format) when State#state.op == stats_serv -> % Statistics -
     end,
 	{Body, Req, State};
 
+
+srv_mgmt(Req, State, Format) when State#state.op == get_rpz -> % Get RPZ
+	#{peer := {IP, Port}} = Req,
+    ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(230),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
+	RPZ = binary_to_list(cowboy_req:binding(rpz, Req)),
+	Zones = ets:match(cfg_table,{[rpz,'_'],'_','$4'}),
+    Data = case [ X || [X] <- Zones, X#rpz.zone_str == RPZ ] of
+		[] -> [];
+        [Zone] -> ioc2rpz_db:read_db_record(Zone,0,active)
+	end,
+	{Body,Req0} = case {Data, Format} of
+		{[],json} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(138),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {io_lib:format("{\"status\":\"error\",\"msg\":\"RPZ ~s not found\"}\n",[RPZ]),cowboy_req:reply(520, Req)};
+		{[],txt} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(138),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {io_lib:format("status: error\nmsg: RPZ ~s not found\n",[RPZ]),cowboy_req:reply(520, Req)};
+		{_,json} -> {io_lib:format("{\"status\":\"ok\",\"rpz\":\"~s\",\"iocs\":[~s]}\n",[RPZ,ioc2jsonarr(Data)]),Req};
+		{_,txt} -> {lists:flatten([ io_lib:format("~s\n",[binary_to_list(X)]) || [X,_Y,_Z] <- Data]),Req}
+	end,
+	{Body, Req0, State};
+
+
 srv_mgmt(Req, State, Format) when State#state.op == catch_all -> % Catch all unsupported requests from authenticated users
 	#{peer := {IP, Port}} = Req,
     ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(137),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
@@ -171,3 +190,16 @@ tuple_to_json({Name,Value}) when is_integer(Value)->
     
 tuple_to_json({Name,Value}) ->
     io_lib:format("{\"~s\":\"~b\"}",[Name,Value]).
+    
+ioc2jsonarr(IOCs) ->
+    ioc2rpz_fun:logMessage("~p\n\n",[IOCs]),
+    ioc2jsonarr([],IOCs).
+
+ioc2jsonarr([],[[IOC|_]|REST]) ->
+    ioc2jsonarr(io_lib:format("\"~s\"",[binary_to_list(IOC)]),REST);
+
+ioc2jsonarr(Resp,[[IOC|_]|REST]) ->
+    ioc2jsonarr(io_lib:format("\"~s\",",[binary_to_list(IOC)])++Resp,REST);
+
+ioc2jsonarr(Resp,[]) ->
+    Resp.

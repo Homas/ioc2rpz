@@ -63,6 +63,7 @@ init([Proc,_IPStr,_Proto]) when Proc == rest_tls_sup; Proc == rest_tls6_sup -> %
 				{"/api/[:api_ver]/mgmt/reload_cfg", ioc2rpz_rest, [reload_cfg]},
 				{"/api/[:api_ver]/mgmt/update_tkeys", ioc2rpz_rest, [update_tkeys]},
 				{"/api/[:api_ver]/mgmt/terminate", ioc2rpz_rest, [terminate]},
+				{"/api/[:api_ver]/feed/:rpz", ioc2rpz_rest, [get_rpz]},
 				{'_', ioc2rpz_rest, [catch_all]}
 					]}]),
 	{ok, _} = cowboy:start_tls(https, [{port, ?PortREST},{certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile}, {ciphers, Ciphers}], #{env => #{dispatch => Dispatch}}),

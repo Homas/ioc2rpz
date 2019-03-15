@@ -55,6 +55,7 @@ msg_CEF(131)    -> "|000131|REST API Authentication failed|7|src=~s spt=~p path=
 msg_CEF(135)    -> "|000135|REST MGMT request denied|7|src=~s spt=~p path=~p msg=~p~n";
 msg_CEF(136)    -> "|000136|MGMT request failed|7|src=~s spt=~p path=~p msg=~p~n";
 msg_CEF(137)    -> "|000137|Unsupported request|7|src=~s spt=~p path=~p msg=~p~n";
+msg_CEF(138)    -> "|000138|Zone not found|7|src=~s spt=~p path=~p msg=~p~n";
 
 msg_CEF(201)    -> "|000201|RPZ transfer success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p~n";
 msg_CEF(202)    -> "|000202|DNS Query|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p~n";
