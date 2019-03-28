@@ -262,7 +262,6 @@ read_config3([],reload,Srv,Keys,WhiteLists,Sources,RPZ)  ->
   WhiteLists_V=[ validateCFGWL(Y) || Y <- WhiteLists, lists:member(Y#source.name,WhiteLists_Used) ],
   Sources_V=[ validateCFGSrc(Y) || Y <- Sources, lists:member(Y#source.name,Sources_Used) ],
 
-  %ioc2rpz_fun:logMessage("Sources U ~p V ~p ~n", [Sources_Used,Sources_V]),
 
   WhiteLists_D = [ X || X <- WhiteLists_C, not lists:member(X#source.name, [ Z#source.name || Z <- WhiteLists_V ]) ],
   Sources_D = [ X || X <- Sources_C, not lists:member(X#source.name, [ Z#source.name || Z <- Sources_V ]) ],
@@ -270,8 +269,9 @@ read_config3([],reload,Srv,Keys,WhiteLists,Sources,RPZ)  ->
   WhiteLists_N = [ X || X <- WhiteLists_V, not lists:member(X#source.name, [ Z#source.name || Z <- WhiteLists_C ]) ],
   Sources_N = [ X || X <- Sources_V, not lists:member(X#source.name, [ Z#source.name || Z <- Sources_C ]) ],
 
-  WhiteLists_UPD = [ X || X <- WhiteLists_V, X#source.axfr_url /= (lists:keyfind(X#source.name,2,WhiteLists_C))#source.axfr_url,lists:member(X#source.name, [ Z#source.name || Z <- WhiteLists_C ]) ],
-  Sources_UPD = [ X || X <- Sources_V, ((X#source.axfr_url /= (lists:keyfind(X#source.name,2,Sources_C))#source.axfr_url) or (X#source.ixfr_url /= (lists:keyfind(X#source.name,2,Sources_C))#source.ixfr_url)),lists:member(X#source.name, [ Z#source.name || Z <- Sources_C ]) ],
+  WhiteLists_UPD = [ X || X <- WhiteLists_V, X#source.axfr_url /= (checkSrcRec(lists:keyfind(X#source.name,2,WhiteLists_C)))#source.axfr_url,lists:member(X#source.name, [ Z#source.name || Z <- WhiteLists_C ]) ],
+
+  Sources_UPD = [ X || X <- Sources_V, ((X#source.axfr_url /= (checkSrcRec(lists:keyfind(X#source.name,2,Sources_C)))#source.axfr_url) or (X#source.ixfr_url /= (checkSrcRec(lists:keyfind(X#source.name,2,Sources_C)))#source.ixfr_url)),lists:member(X#source.name, [ Z#source.name || Z <- Sources_C ]) ],
 
   [ ets:insert(cfg_table, {[source,X#source.name],X}) || X <- WhiteLists_N ++ Sources_N ++ WhiteLists_UPD ++ Sources_UPD ],
 
@@ -321,6 +321,11 @@ checkRPZEq(R1,R2) when R1#rpz.zone == R2#rpz.zone,R1#rpz.soa_timers == R2#rpz.so
 
 checkRPZEq(R1,R2) ->
   false.
+
+checkSrcRec(Rec) when Rec#source.name /= undefined ->
+	Rec;
+checkSrcRec(_Rec) ->
+	#source{}.
 
 validateCFGKeys(Keys) -> %Check if key is good
   Keys.
