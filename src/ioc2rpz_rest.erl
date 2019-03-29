@@ -192,7 +192,7 @@ tuple_to_json({Name,Value}) ->
     io_lib:format("{\"~s\":\"~b\"}",[Name,Value]).
     
 ioc2jsonarr(IOCs) ->
-    ioc2rpz_fun:logMessage("~p\n\n",[IOCs]),
+    %ioc2rpz_fun:logMessage("~p\n\n",[IOCs]),
     ioc2jsonarr([],IOCs).
 
 ioc2jsonarr([],[[IOC|_]|REST]) ->
