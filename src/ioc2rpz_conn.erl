@@ -84,9 +84,12 @@ get_ioc(<<"shell:",CMD/binary>> = _URL) ->
 %download IOCs from http/https/ftp
 get_ioc(<<Proto:5/bytes,_/binary>> = URL) when Proto == <<"http:">>;Proto == <<"https">>;Proto == <<"ftp:/">> ->
 	httpc:set_options([{cookies,enabled}]),
-  case httpc:request(get,{binary_to_list(URL),[]},[],[{body_format,binary},{sync,true}]) of
+  case httpc:request(get,{binary_to_list(URL),[{"User-Agent", "Mozilla"}]},[],[{body_format,binary},{sync,true}]) of %,{socket_opts,[{cookies,enabled}]}
   {ok,{{_,200,_},_,Response}} ->
     {ok,Response};
+  {ok,{{_,Code,_},Headers,Response}} ->
+    ioc2rpz_fun:logMessage("Unexpected response code ~p, headers ~p ~n",[Code, Headers]), 
+		{ok,<<>>};
   {error,Reason} ->
     ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p ~n",[URL, Reason]), %TODO debug
     {error,Reason}

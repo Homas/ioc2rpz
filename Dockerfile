@@ -26,7 +26,7 @@ WORKDIR /opt/ioc2rpz
 #ENTRYPOINT ["erl", "-noshell", "-pa", "./ebin", "-sname", "ioc2rpz", "-eval", "application:start(ioc2rpz,permanent)", "-config", "ioc2rpz_app"]
 #CMD ["/bin/sh", "/opt/ioc2rpz/scripts/run_ioc2rpz.sh"]
 
-RUN mkdir /opt/ioc2rpz/cfg /opt/ioc2rpz/db /opt/ioc2rpz/include /opt/ioc2rpz/src /opt/ioc2rpz/log && apk add bind-tools curl python3
+RUN mkdir /opt/ioc2rpz/cfg /opt/ioc2rpz/db /opt/ioc2rpz/include /opt/ioc2rpz/src /opt/ioc2rpz/log && apk add bind-tools curl python3 gawk
 ADD src/* /opt/ioc2rpz/src/
 ADD include/* /opt/ioc2rpz/include/
 ADD config/* /opt/ioc2rpz/config/
