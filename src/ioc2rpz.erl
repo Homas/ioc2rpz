@@ -854,7 +854,7 @@ send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Question
       end;
       true -> Cnt=0, Rules=[], Rules2=[]
   end,
-
+ 
   if ((IOCExp>Zone#rpz.serial) or (IOCExp==0)) and (DBOp == ixfr) and (IXFRNewR /= true) -> Rules1 = [SOAREC | Rules], Cnt1=Cnt+1, IXFRNewR1 = true; true -> Rules1=Rules, Cnt1=Cnt, IXFRNewR1 = IXFRNewR end,
   Pkt1 = list_to_binary([Pkt, Rules1, Rules2]),
   PSize1 = byte_size(Pkt1)+SOANSSize,
@@ -976,11 +976,14 @@ gen_rpzrule(Domain,RPZ,TTL,<<"false">>,Action,_,PktHLen,T_ZIP_L) when Action==<<
 gen_rpzrule(Domain,RPZ,TTL,<<"false">>,{Action,LocData},_,PktHLen,T_ZIP_L) when Action==<<"redirect_domain">>;Action==<<"local_cname">> ->
   case domstr_to_bin_zip(Domain,PktHLen,T_ZIP_L) of
     {ok,BDomain} ->
-      {_,LocDataZ} = domstr_to_bin_zip(LocData,0,PktHLen+10+byte_size(list_to_binary([BDomain,RPZ])),T_ZIP_L),
+%     {_,LocDataZ} = domstr_to_bin_zip(LocData,0,PktHLen+10+byte_size(list_to_binary([BDomain,RPZ])),T_ZIP_L), %bug in rule name because of that
+     {_,LocDataZ} = domstr_to_bin(LocData,0),
       ELDS=byte_size(LocDataZ),
       {ok,1,[list_to_binary([BDomain,RPZ,<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])],[list_to_binary([<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])]};
     {zip,BDomain} ->
-      {_,LocDataZ} = domstr_to_bin_zip(LocData,0,PktHLen+10+byte_size(BDomain),T_ZIP_L),
+		  %ioc2rpz_fun:logMessage("ZIP Domain ~p, Action ~p ~n",[Domain,Action]), %TODO debug
+%      {_,LocDataZ} = domstr_to_bin_zip(LocData,0,PktHLen+10+byte_size(BDomain),T_ZIP_L),
+      {_,LocDataZ} = domstr_to_bin(LocData,0),
       ELDS=byte_size(LocDataZ),
       {ok,1,[list_to_binary([BDomain,<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])],[list_to_binary([<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])]};
     {error, _} ->
