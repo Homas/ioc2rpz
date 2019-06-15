@@ -27,6 +27,7 @@
 
 %-define(logTS, true). % Log timestamps (comment or uncomment)
 -define(debug, true). % Log debug messages
+-define(ioc2rpzSampleRPZ,"sample-zone.ioc2rpz"). %Default DB location
 
 
 %%%Optimization
@@ -45,6 +46,7 @@
 -define(ioc2rpz_ver, "0.9.3.1-2019031101").
 
 -define(ZNameZip,16#c00c:16). %Zone name/original fqdn from a request is always at byte 10 in the response
+-define(ZNameZipN,16#c00c). % Offset in bytes - Zone name/original fqdn from a request is always at byte 10 in the response
 -define(MaxZipPSize,16#3FFF:16). %Max packet size to zip DNS labels
 
 % Log timestamps
@@ -114,12 +116,13 @@
 
 %Config params
 -record(cert, {certfile,keyfile,cacertfile}).
--record(srv, {server,email,mkeys,acl,cert, max_ioc}).
--record(key, {name,alg,key,name_bin}).
+-record(srv, {server,email,mkeys,acl,cert, max_ioc, key_groups}).
+-record(key, {name,alg,key,name_bin, key_groups}).
+-record(key_group, {name,keys}).
 %SOA timers refresh, retry, expiration, neg_ttl
 %status: notready, updating, ready
 %serial_ixfr - minimum serial for ixfr - first ixfr update after axfr
--record(rpz, {rpzid, zone, zone_str, soa_timers, cache, wildcards, notify, action, akeys, ioc_type, axfr_time, ixfr_time, sources, status, serial, serial_new, serial_ixfr, notifylist, whitelist, ioc_md5, update_time, ixfr_update_time, pid, ioc_count, userid, max_ioc}).
+-record(rpz, {rpzid, zone, zone_str, soa_timers, cache, wildcards, notify, action, akeys, ioc_type, axfr_time, ixfr_time, sources, status, serial, serial_new, serial_ixfr, notifylist, whitelist, ioc_md5, update_time, ixfr_update_time, pid, ioc_count, userid, max_ioc, key_groups}).
 -record(source, {name, axfr_url, ixfr_url, regex, ioc_count, userid, max_ioc}).
 
 %user restriction

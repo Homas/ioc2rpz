@@ -1,6 +1,14 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
 
+## 2019-06-13 v0.9.4.0
+- Fixed bugs:
+	- #10
+	- live zones, wrong records count in the hot cache
+- Rule generation code was optimized
+- Configuration can be split by multiple files using "include" 
+- Key groups for RPZs and SRV
+
 ## 2019-03-11 v0.9.3.1
 - REST API
 - added rebar3 to manage dependencies

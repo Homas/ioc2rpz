@@ -54,7 +54,7 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
   ioc2rpz_fun:logMessage("ioc2rpz supervisor started ~n", []),
 
 % Check if a certificate was configured
-	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6'}),
+	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6','_'}),
   %ioc2rpz_fun:logMessage("cert '~p' ~n", [Cert]),
   if Cert /= [], Cert /= undefined -> ChildTLS=[
       %%%ioc2rpz TLS supervisors
@@ -148,53 +148,68 @@ reload_config3(Action)->
 
 read_config3(Filename)  ->
   case file:consult(Filename) of
-    {ok,CFG} -> read_config3(CFG,startup,#srv{},[],[],[],[]);
+    {ok,CFG} -> read_config3(CFG,startup,#srv{},[],[],[],[],[]);
     {error, Error} when is_atom(Error) -> ioc2rpz_fun:logMessage("Error ~p opening or reading ~p ~n", [Error, Filename]), exit(config_error);
     {error, Reason} -> ioc2rpz_fun:logMessage("Error in configuration file ~p. ~p ~p ~n", [Filename,Reason, file:format_error(Reason)]), exit(config_error)
   end.
 
 read_config3(Filename,Action)  ->
-%  {ok,CFG} = file:consult(Filename),
-%  read_config3(CFG,Action,[],[],[],[],[]).
   case file:consult(Filename) of
-    {ok,CFG} -> read_config3(CFG,Action,#srv{},[],[],[],[]);
+    {ok,CFG} -> read_config3(CFG,Action,#srv{},[],[],[],[],[]);
     {error, Error} when is_atom(Error) -> ioc2rpz_fun:logMessage("Error ~p opening or reading ~p ~n", [Error, Filename]);
     {error, Reason} -> ioc2rpz_fun:logMessage("Error in configuration file ~p. ~p ~p ~n", [Filename,Reason, file:format_error(Reason)])
   end.
 
 
-read_config3([{srv,{Serv,Email,MKeys,ACL}}|REST],RType,Srv,Keys,WhiteLists,Sources,RPZ) ->
+read_config3([{include,Filename}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
+  ioc2rpz_fun:logMessage("ioc2rpz including configuration from ~p~n", [Filename]),
+	{ok,_SrvI,KeysI,Key_GroupsI,WhiteListsI,SourcesI,RPZI}=read_config3(Filename,include),
+  read_config3(REST,RType, Srv, KeysI ++ Keys,Key_GroupsI ++ Key_Groups, WhiteListsI ++ WhiteLists, SourcesI ++ Sources, RPZI ++ RPZ);
+	
+
+read_config3([{srv,{Serv,Email,MKeys,ACL}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
   {ok,ServB}=ioc2rpz:domstr_to_bin(list_to_binary(Serv),0),
   {ok,EmailB}=ioc2rpz:domstr_to_bin(list_to_binary(Email),0),
-  MKeysX=[ioc2rpz:domstr_to_bin(list_to_binary(X),0)|| X <- MKeys], MKeysB=[X || {_,X} <- MKeysX],
-  read_config3(REST,RType,Srv#srv{server=ServB,email=EmailB,mkeys=MKeysB,acl=ACL},Keys,WhiteLists,Sources,RPZ);
+  MKeysX=[ioc2rpz:domstr_to_bin(list_to_binary(X),0)|| X <- MKeys, is_list(X)], MKeysB=[X || {_,X} <- MKeysX], %keys group support
+	KeyGroups=lists:append([ Y || {groups, Y} <- [ X || X <- MKeys, is_tuple(X) ], is_list(Y) ]),
+  read_config3(REST,RType,Srv#srv{server=ServB,email=EmailB,mkeys=MKeysB,acl=ACL,key_groups=KeyGroups},Keys,Key_Groups,WhiteLists,Sources,RPZ);
 
-read_config3([{cert,{Certfile,Keyfile,CAcertfile}}|REST],RType,Srv,Keys,WhiteLists,Sources,RPZ) ->
+read_config3([{cert,{Certfile,Keyfile,CAcertfile}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
 %%% TODO validate the certificate
-  read_config3(REST,RType,Srv#srv{cert=#cert{certfile=Certfile,keyfile=Keyfile,cacertfile=CAcertfile}},Keys,WhiteLists,Sources,RPZ);
+  read_config3(REST,RType,Srv#srv{cert=#cert{certfile=Certfile,keyfile=Keyfile,cacertfile=CAcertfile}},Keys,Key_Groups,WhiteLists,Sources,RPZ);
 
-read_config3([{key,{KName,Alg,Key}}|REST],RType,Srv,Keys,WhiteLists,Sources,RPZ) ->
+read_config3([{key,{KName,Alg,Key}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
   [KNameB] = ioc2rpz_fun:strs_to_binary([KName]),
   {ok,KeyDNSF}=ioc2rpz:domstr_to_bin(KNameB,0),
   KeyB=base64:decode(Key),
-  read_config3(REST,RType,Srv,[#key{name=KNameB,alg=Alg,key=KeyB,name_bin=KeyDNSF}|Keys],WhiteLists,Sources,RPZ);
+  read_config3(REST,RType,Srv,[#key{name=KNameB,alg=Alg,key=KeyB,name_bin=KeyDNSF,key_groups=[]}|Keys],Key_Groups,WhiteLists,Sources,RPZ);
+
+read_config3([{key,{KName,Alg,Key,Groups}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
+  [KNameB] = ioc2rpz_fun:strs_to_binary([KName]),
+  {ok,KeyDNSF}=ioc2rpz:domstr_to_bin(KNameB,0),
+  KeyB=base64:decode(Key),
+  read_config3(REST,RType,Srv,[#key{name=KNameB,alg=Alg,key=KeyB,name_bin=KeyDNSF,key_groups=Groups}|Keys],Key_Groups,WhiteLists,Sources,RPZ);
+
+read_config3([{key_group,{GName,Keys}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
+  read_config3(REST,RType,Srv,Keys,[#key_group{name=GName,keys=Keys}|Key_Groups],WhiteLists,Sources,RPZ);
 
 %%% No UserId, max count
-read_config3([{whitelist,{Name,AXFR,REGEX}}|REST],RType,Srv,Keys,WhiteLists,Sources,RPZ) ->
-  read_config3(REST,RType,Srv,Keys,[#source{name=Name,axfr_url=AXFR,regex=REGEX}|WhiteLists],Sources,RPZ);
-read_config3([{source,{Name,AXFR,IXFR,REGEX}}|REST],RType,Srv,Keys,WhiteLists,Sources,RPZ) ->
-  read_config3(REST,RType,Srv,Keys,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX}|Sources],RPZ);
+read_config3([{whitelist,{Name,AXFR,REGEX}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
+  read_config3(REST,RType,Srv,Keys,Key_Groups,[#source{name=Name,axfr_url=AXFR,regex=REGEX}|WhiteLists],Sources,RPZ);
+read_config3([{source,{Name,AXFR,IXFR,REGEX}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
+  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX}|Sources],RPZ);
 
 %%% With UserId, max count
-read_config3([{whitelist,{Name,AXFR,REGEX,UserID,Max_Count}}|REST],RType,Srv,Keys,WhiteLists,Sources,RPZ) ->
-  read_config3(REST,RType,Srv,Keys,[#source{name=Name,axfr_url=AXFR,regex=REGEX,userid=UserID,max_ioc=Max_Count}|WhiteLists],Sources,RPZ);
-read_config3([{source,{Name,AXFR,IXFR,REGEX,UserID,Max_Count}}|REST],RType,Srv,Keys,WhiteLists,Sources,RPZ) ->
-  read_config3(REST,RType,Srv,Keys,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX,userid=UserID,max_ioc=Max_Count}|Sources],RPZ);
+read_config3([{whitelist,{Name,AXFR,REGEX,UserID,Max_Count}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
+  read_config3(REST,RType,Srv,Keys,Key_Groups,[#source{name=Name,axfr_url=AXFR,regex=REGEX,userid=UserID,max_ioc=Max_Count}|WhiteLists],Sources,RPZ);
+read_config3([{source,{Name,AXFR,IXFR,REGEX,UserID,Max_Count}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
+  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX,userid=UserID,max_ioc=Max_Count}|Sources],RPZ);
 
 
-read_config3([{rpz,{Zone, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards, Action, AKeys, IOCType, AXFR_Time, IXFR_Time, Sources, NotifyList, Whitelist}}|REST],RType,Srv,Keys,WhiteLists,SourcesC,RPZ) ->
+read_config3([{rpz,{Zone, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards, Action, AKeys, IOCType, AXFR_Time, IXFR_Time, Sources, NotifyList, Whitelist}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,RPZ) ->
   {ok,ZoneB} = ioc2rpz:domstr_to_bin(list_to_binary(Zone),0),
-  AKeysX=[ioc2rpz:domstr_to_bin(list_to_binary(X),0)|| X <- AKeys], AKeysB=[X || {_,X} <- AKeysX],
+  AKeysX=[ioc2rpz:domstr_to_bin(list_to_binary(X),0)|| X <- AKeys, is_list(X) ], AKeysB=[X || {_,X} <- AKeysX],
+	KeyGroups=lists:append([ Y || {groups, Y} <- [ X || X <- AKeys, is_tuple(X) ], is_list(Y) ]),
   SOATimers = <<Refresh:32,Retry:32,Expiration:32,Neg_ttl:32>>,
   case {Cache,load_zone_info(#rpz{zone=ZoneB,axfr_time=AXFR_Time, zone_str=Zone,ixfr_time=AXFR_Time, cache=Cache})} of
     {"true",[ready = Status,Serial,_Soa_timersC,_CacheC,_WildcardsC,_SourcesC,_Ioc_md5,Update_time, ready,_Serial,Serial_IXFR,IXFR_Update_time]} -> ok;
@@ -208,11 +223,14 @@ read_config3([{rpz,{Zone, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards,
    [{LAction,LData}] when LAction=="redirect_ip" -> {list_to_binary(LAction),ioc2rpz_fun:ip_to_bin(LData)};
    _ -> ioc2rpz_fun:read_local_actions(Action)
   end,
-  read_config3(REST,RType,Srv,Keys,WhiteLists,SourcesC,[#rpz{zone=ZoneB, zone_str=Zone, soa_timers=SOATimers, cache=list_to_binary(Cache), wildcards=list_to_binary(Wildcards), action=ZAction, akeys=AKeysB, ioc_type=list_to_binary(IOCType), axfr_time=AXFR_Time, ixfr_time=IXFR_Time, sources=Sources, notifylist=NotifyList, whitelist=Whitelist, serial=Serial, status=Status, update_time=Update_time, ixfr_update_time=IXFR_Update_time, serial_ixfr=Serial_IXFR}|RPZ]);
+  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,[#rpz{zone=ZoneB, zone_str=Zone, soa_timers=SOATimers, cache=list_to_binary(Cache), wildcards=list_to_binary(Wildcards), action=ZAction, akeys=AKeysB, ioc_type=list_to_binary(IOCType), axfr_time=AXFR_Time, ixfr_time=IXFR_Time, sources=Sources, notifylist=NotifyList, whitelist=Whitelist, serial=Serial, status=Status, update_time=Update_time, ixfr_update_time=IXFR_Update_time, serial_ixfr=Serial_IXFR, key_groups=KeyGroups}|RPZ]);
 
-read_config3([],startup,Srv,Keys,WhiteLists,Sources,RPZ)  ->
-  [ ets:insert_new(cfg_table, {[key,X#key.name_bin],X#key.name,X#key.alg,X#key.key}) || X <- [ validateCFGKeys(Y) || Y <- Keys ] ],
-  SrvV = validateCFGSrv(Srv), ets:insert_new(cfg_table, {srv,SrvV#srv.server,SrvV#srv.email,SrvV#srv.mkeys,SrvV#srv.acl,SrvV#srv.cert}),
+read_config3([],startup,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)  ->
+	Keys_V = [ validateCFGKeys(Y) || Y <- Keys ],
+  [ ets:insert_new(cfg_table, {[key,X#key.name_bin],X#key.name,X#key.alg,X#key.key}) || X <- Keys_V ],
+	[ ets:insert_new(cfg_table, {[key_group,Y,Z],Z}) || {Y,Z} <- lists:flatten([ gen_group_array(Y#key.name_bin,Y#key.key_groups) || Y <- Keys_V ]) ],
+
+  SrvV = validateCFGSrv(Srv), ets:insert_new(cfg_table, {srv,SrvV#srv.server,SrvV#srv.email,SrvV#srv.mkeys,SrvV#srv.acl,SrvV#srv.cert,SrvV}),
   
 %  WhiteLists_V=[ X || X <- [ validateCFGWL(Y) || Y <- WhiteLists ] ],
   WhiteLists_Used=lists:merge([ X#rpz.whitelist || X <- RPZ]),
@@ -227,21 +245,25 @@ read_config3([],startup,Srv,Keys,WhiteLists,Sources,RPZ)  ->
   {ok,RPZ,Keys,Srv};
 
 % Update TSIG Keys w/o refreshing zones.
-read_config3([],updTkeys,Srv,Keys,WhiteLists,Sources,RPZ)  ->
+read_config3([],updTkeys,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)  -> %Simplify key management with key_groups
 % update TKEYs
   Keys_C=ets:match(cfg_table, {[key,'$1'],'$2','$3','$4'}),
   Keys_V=[ validateCFGKeys(Y) || Y <- Keys ],
   [ ets:delete(cfg_table, [key,X]) || [X,Y,_,_] <- Keys_C, not lists:member(Y, [ Z#key.name || Z <- Keys_V ]) ],
   [ ets:insert(cfg_table, {[key,X#key.name_bin],X#key.name,X#key.alg,X#key.key}) || X <- Keys_V ],
+
+	ets:match_delete(cfg_table,{[key_group,'_','_'],'_'}),
+	[ ets:insert_new(cfg_table, {[key_group,Y,Z],Z}) || {Y,Z} <- lists:flatten([ gen_group_array(Y#key.name_bin,Y#key.key_groups) || Y <- Keys_V ]) ],
+
 % Update SRV Management TSIG Keys
-  SrvV = validateCFGSrv(Srv), ets:update_element(cfg_table, srv, [{4, SrvV#srv.mkeys}]),
+  SrvV = validateCFGSrv(Srv), ets:update_element(cfg_table, srv, [{4, SrvV#srv.mkeys}]), ets:update_element(cfg_table, srv, [{7, SrvV}]),
 % Update RPZs TSIG Keys
 % TODO validate is a key is exists
   RPZ_C=[ X || [X] <- ets:match(cfg_table, {[rpz,'_'],'_','$3'})],
   [ ets:update_element(cfg_table, [rpz,X#rpz.zone], [{3, X#rpz{akeys=(lists:keyfind(X#rpz.zone,3,RPZ))#rpz.akeys}}]) || X <- RPZ_C ],
   ok;
 
-read_config3([],reload,Srv,Keys,WhiteLists,Sources,RPZ)  ->
+read_config3([],reload,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)  ->
   RPZ_C=[ X || [X] <- ets:match(cfg_table, {[rpz,'_'],'_','$3'})],
   [ ets:update_element(cfg_table, [rpz,X#rpz.zone], [{3, X#rpz{serial_new=-1, status=updating, update_time=-1}}]) || X <- RPZ_C ],
 
@@ -250,7 +272,10 @@ read_config3([],reload,Srv,Keys,WhiteLists,Sources,RPZ)  ->
   [ ets:delete(cfg_table, [key,X]) || [X,Y,_,_] <- Keys_C, not lists:member(Y, [ Z#key.name || Z <- Keys_V ]) ],
   [ ets:insert(cfg_table, {[key,X#key.name_bin],X#key.name,X#key.alg,X#key.key}) || X <- Keys_V ],
 
-  SrvV = validateCFGSrv(Srv), ets:insert(cfg_table, {srv,SrvV#srv.server,SrvV#srv.email,SrvV#srv.mkeys,SrvV#srv.acl, SrvV#srv.cert}),
+	ets:match_delete(cfg_table,{[key_group,'_','_'],'_'}),
+	[ ets:insert_new(cfg_table, {[key_group,Y,Z],Z}) || {Y,Z} <- lists:flatten([ gen_group_array(Y#key.name_bin,Y#key.key_groups) || Y <- Keys_V ]) ],
+
+  SrvV = validateCFGSrv(Srv), ets:insert(cfg_table, {srv,SrvV#srv.server,SrvV#srv.email,SrvV#srv.mkeys,SrvV#srv.acl, SrvV#srv.cert,SrvV}),
 
   SW=ets:match(cfg_table, {[source,'_'],'$2'}),
   WhiteLists_C=[X||[X] <- SW,X#source.ixfr_url == undefined ],
@@ -284,7 +309,7 @@ read_config3([],reload,Srv,Keys,WhiteLists,Sources,RPZ)  ->
   RPZ_D = [ X || X <- RPZ_C, not lists:member(X#rpz.zone, [ Z#rpz.zone || Z <- RPZ_V ]) ],
   RPZ_N = [ X || X <- RPZ_V, not lists:member(X#rpz.zone, [ Z#rpz.zone || Z <- RPZ_C ]) ],
 
-%TODO TKEYS should be checked
+%TODO TKEYS and Groups should be checked
   RPZ_UPD = [ X || X <- RPZ_V, not checkRPZEq(X,lists:keyfind(X#rpz.zone,3,RPZ_C)),lists:member(X#rpz.zone, [ Z#rpz.zone || Z <- RPZ_C ]) ] ++ 
             [ X || X <- RPZ_V, ioc2rpz_fun:intersection(X#rpz.whitelist,[Z#source.name || Z <- WhiteLists_UPD]) /= [] ] ++
             [ X || X <- RPZ_V, ioc2rpz_fun:intersection(X#rpz.sources,[Z#source.name || Z <- Sources_UPD]) /= [] ],
@@ -311,9 +336,12 @@ read_config3([],reload,Srv,Keys,WhiteLists,Sources,RPZ)  ->
   update_all_zones(false),
   ok;
 
-read_config3([UTerm|REST],RType,Srv,Keys,WhiteLists,Sources,RPZ) ->
+read_config3([],include,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)  ->
+	{ok,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ};
+
+read_config3([UTerm|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
   ioc2rpz_fun:logMessage("Unknown configuration term ~p~n", [UTerm]),
-  read_config3(REST,RType,Srv,Keys,WhiteLists,Sources,RPZ).
+  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ).
 
 
 checkRPZEq(R1,R2) when R1#rpz.zone == R2#rpz.zone,R1#rpz.soa_timers == R2#rpz.soa_timers,R1#rpz.cache == R2#rpz.cache,R1#rpz.wildcards == R2#rpz.wildcards,R1#rpz.action == R2#rpz.action,R1#rpz.ioc_type == R2#rpz.ioc_type,R1#rpz.sources == R2#rpz.sources,R1#rpz.whitelist == R2#rpz.whitelist ->
@@ -348,6 +376,8 @@ validateCFGRPZ(RPZ,S,W) -> %Check: Sources, Whitelists
     true -> RPZ
   end.
 
+gen_group_array(Value, Groups) ->
+	[{X, Value} || X <- Groups].
 
 parse_ixfr_url(AXFR,IXFR) ->
   [ if X == "[:AXFR:]" -> AXFR; true -> X end || X <- re:split(IXFR,"(\\[:[^:]+:\\])",[{return,list},trim]), X /=[]].
@@ -415,7 +445,7 @@ update_zone_full(Zone) ->
   Pid=self(),
   CTime=ioc2rpz_fun:curr_serial_60(),%CTime=erlang:system_time(seconds),
   ioc2rpz_fun:logMessage("Zone ~p serial ~p, refresh time ~p current status ~p ~n",[Zone#rpz.zone_str,Zone#rpz.serial, Zone#rpz.axfr_time, Zone#rpz.status]),
-  [[NSServ,MailAddr|_Rest]] = ets:match(cfg_table,{srv,'$2','$3','$4','$5','$6'}),
+  [[NSServ,MailAddr|_Rest]] = ets:match(cfg_table,{srv,'$2','$3','$4','$5','$6','$7'}),
   SOA = <<NSServ/binary,MailAddr/binary,(ioc2rpz_fun:curr_serial()):32,(Zone#rpz.soa_timers)/binary>>,
   SOAREC = <<?ZNameZip, ?T_SOA:16, ?C_IN:16, 604800:32, (byte_size(SOA)):16, SOA/binary>>, % 16#c00c:16 - Zone name/request is always at this location (10 bytes from DNSID)
   NSRec = <<?ZNameZip, ?T_NS:16, ?C_IN:16, 604800:32, (byte_size(NSServ)):16, NSServ/binary>>,
@@ -474,7 +504,7 @@ update_zone_inc(Zone) ->
 rebuild_axfr_zone(Zone) ->
   IOCs = ioc2rpz_db:read_db_record(Zone,0,active),
   IOC = [{X,Exp} || [X,_,Exp] <- IOCs],
-  [[NSServ,MailAddr|_Rest]] = ets:match(cfg_table,{srv,'$2','$3','$4','$5','$6'}),
+  [[NSServ,MailAddr|_Rest]] = ets:match(cfg_table,{srv,'$2','$3','$4','$5','$6','$7'}),
   SOA = <<NSServ/binary,MailAddr/binary,(ioc2rpz_fun:curr_serial()):32,(Zone#rpz.soa_timers)/binary>>,
   SOAREC = <<?ZNameZip, ?T_SOA:16, ?C_IN:16, 604800:32, (byte_size(SOA)):16, SOA/binary>>, % 16#c00c:16 - Zone name/request is always at this location (10 bytes from DNSID)
   NSRec = <<?ZNameZip, ?T_NS:16, ?C_IN:16, 604800:32, (byte_size(NSServ)):16, NSServ/binary>>,

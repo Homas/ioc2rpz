@@ -23,8 +23,11 @@ content_types_provided(Req, State) ->
 
 is_authorized(Req, State) ->
 	#{peer := {IP, Port}} = Req,
-	[[MKeys,ACL]] = ets:match(cfg_table,{srv,'_','_','$4','$5','_'}),
+	[[MKeysT,ACL,Srv]] = ets:match(cfg_table,{srv,'_','_','$4','$5','_','$7'}),
+	MKeys=lists:flatten([ MKeysT,[ ets:match(cfg_table,{[key_group,X,'_'],'$3'}) || X <- Srv#srv.key_groups ] ]),
+
 	MGMTIP=ioc2rpz_fun:ip_in_list(ioc2rpz:ip_to_str(IP),ACL),	
+
 	case {cowboy_req:parse_header(<<"authorization">>, Req),MGMTIP} of
 		{{basic, User, Password}, true} ->
 			{UserB, TKey}= case ets:select(cfg_table,[{{[key,'$1'],'$2','_','$4'},[{'==','$2',User}],[['$1','$4']]}]) of

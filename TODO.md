@@ -1,5 +1,17 @@
-#TODO
- 
+#TODO for Black Hat & DefCon
+- [ ] Document "include" and key groups
+- [ ] Start EUnit Tests
+- [ ] Release 1.0
+## Sources
+- [ ] Add a script for RPZ via "shell:"
+- [ ] Retry if source was not available
+- [ ] Simultanious source downloads
+## Configuration
+- [.] Validate: Configuration file name pass as a variable to the container
+## UI
+- [ ] Custom configuration (e.g. "include")
+- [ ] Groups support on RPZ, SRV level
+
 ## Core / DNS
 - [ ] Redo AXFR logs
 - [ ] Access to the hotcache and the cfg_table via FUNs
@@ -20,15 +32,11 @@
 - [ ] EUnit Tests
 
 ## Sources
-- [ ] Add script for RPZ via "shell:"
 - [ ] Add source PostreSQL, MySQL via "shell:"
 - [ ] RPZ action per source
 - [ ] (2) Source based on files check by mod.date and size -> read by chunks
-- [ ] Retry if source is not available
-- [ ] Simultanious source downloads
 
 - [ ] ioc type in config
-- [x] max # of IOCs
 - [ ] max file size
 - [ ] RPZ action
 - [ ] NS type
@@ -66,7 +74,6 @@
 - [ ] Bug in cowboy. Can not send 501 in "catch all"
 
 ## Configuration
-- [.] Validate: Configuration file name pass as a variable to the container
 
 ## Management
 - [ ] DNS health check requests
@@ -89,4 +96,3 @@
 ## Other/optimization TODO
 - [ ] (1) Do not cache expired IOCs if ExpDateTime<Serial_IXFR / update ExpDateTime if exists
 - [ ] (1) Check zones IXFR update from multiple sources
-- [x] (2) UDP & TableMGMT under supervisors
