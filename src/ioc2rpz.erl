@@ -163,7 +163,9 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
   {RRRes,DNSRR,TSIG,SOA,RAWN} = parse_rr(NSCOUNT, ARCOUNT, Other_REC),
   ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(202),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name)]),
 
-  [[NSServ,MailAddr,MKeys,ACL,_Cert]] = ets:match(cfg_table,{srv,'$2','$3','$4','$5','$6'}),
+  [[NSServ,MailAddr,MKeysT,ACL,_Cert,Srv]] = ets:match(cfg_table,{srv,'$2','$3','$4','$5','$6','$7'}),
+	MKeys=lists:flatten([ MKeysT,[ ets:match(cfg_table,{[key_group,X,'_'],'$3'}) || X <- Srv#srv.key_groups ] ]),
+
   MGMTIP=ioc2rpz_fun:ip_in_list(ip_to_str(Proto#proto.rip),ACL),
 %%%%in response AA flag should be 1 if there no error
   case {QName, QType, QClass,RRRes} of
@@ -261,7 +263,9 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
       ZoneName = <<QName/binary,0:8>>,
       case ets:select(cfg_table, [{{[rpz,ZoneName],'$1','$2'},[],['$2']}]) of
         [Zone]  ->
-            {TSIGV,TSIG1} = validate_REQ(PH,QDCOUNT,ANCOUNT,NSCOUNT,ARCOUNT-1,Question,RAWN,TSIG,Zone#rpz.akeys),
+						%TODO pull all keys from key groups
+						ZKeys=lists:flatten([ Zone#rpz.akeys,[ ets:match(cfg_table,{[key_group,X,'_'],'$3'}) || X <- Zone#rpz.key_groups ] ]),
+            {TSIGV,TSIG1} = validate_REQ(PH,QDCOUNT,ANCOUNT,NSCOUNT,ARCOUNT-1,Question,RAWN,TSIG,ZKeys),
             case {QType,TSIGV} of
               {QType,noauth} when QType == ?T_SOA;QType == ?T_IXFR,Proto#proto.proto == udp -> send_SOA(Socket, Zone, DNSId, OptB, OptE, Question, MailAddr, NSServ, [], Proto);
               {QType,valid} when QType == ?T_SOA;QType == ?T_IXFR,Proto#proto.proto == udp -> send_SOA(Socket, Zone, DNSId, OptB, OptE, Question, MailAddr, NSServ, TSIG1, Proto);
@@ -463,35 +467,37 @@ send_sample_zone(Socket, DNSId, OptB, OptE, Questions, MailAddr, NSServ, TSIG, P
   SOAREC = <<?ZNameZip, ?T_SOA:16, ?C_IN:16, 604800:32, (byte_size(SOA)):16, SOA/binary>>,
   NSRec = <<?ZNameZip, ?T_NS:16, ?C_IN:16, 604800:32, (byte_size(NSServ)):16, NSServ/binary>>,
 
-  T_ZIP_L=ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]),
+%  T_ZIP_L=ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]),
+	Zone=#rpz{zone_str=?ioc2rpzSampleRPZ},
+	T_ZIP_L=init_T_ZIP_L(Zone),
   NXLoc=byte_size(list_to_binary([Questions,SOAREC, NSRec]))+12,
-  {ok, _, NXRules,_} = gen_rpzrule(<<"nxdomain.net">>,<<?ZNameZip>>,?TTL,<<"true">>,<<"nxdomain">>,[],NXLoc,T_ZIP_L),
+  {ok, _, NXRules,_} = gen_rpzrule(<<"nxdomain.net.",?ioc2rpzSampleRPZ,".">>,Zone,?TTL,<<"true">>,<<"nxdomain">>,[],NXLoc,T_ZIP_L),
   NDLoc=byte_size(list_to_binary(NXRules))+NXLoc,
-  {ok, _, NDRules,_} = gen_rpzrule(<<"nodata.net">>,<<?ZNameZip>>,?TTL,<<"true">>,<<"nodata">>,[],NDLoc,T_ZIP_L),
+  {ok, _, NDRules,_} = gen_rpzrule(<<"nodata.net.",?ioc2rpzSampleRPZ,".">>,Zone,?TTL,<<"true">>,<<"nodata">>,[],NDLoc,T_ZIP_L),
   PSSLoc=byte_size(list_to_binary(NDRules))+NDLoc,
-  {ok, _, PSSRules,_} = gen_rpzrule(<<"passthru.net">>,<<?ZNameZip>>,?TTL,<<"true">>,<<"passthru">>,[],PSSLoc,T_ZIP_L),
+  {ok, _, PSSRules,_} = gen_rpzrule(<<"passthru.net.",?ioc2rpzSampleRPZ,".">>,Zone,?TTL,<<"true">>,<<"passthru">>,[],PSSLoc,T_ZIP_L),
   DrDLoc=byte_size(list_to_binary(PSSRules))+PSSLoc,
-  {ok, _, DrDRules,_} = gen_rpzrule(<<"drop.net">>,<<?ZNameZip>>,?TTL,<<"true">>,<<"drop">>,[],DrDLoc,T_ZIP_L),
+  {ok, _, DrDRules,_} = gen_rpzrule(<<"drop.net.",?ioc2rpzSampleRPZ,".">>,Zone,?TTL,<<"true">>,<<"drop">>,[],DrDLoc,T_ZIP_L),
   TCPLoc=byte_size(list_to_binary(DrDRules))+DrDLoc,
-  {ok, _, TCPRules,_} = gen_rpzrule(<<"tcp-only.net">>,<<?ZNameZip>>,?TTL,<<"true">>,<<"tcp-only">>,[],TCPLoc,T_ZIP_L),
+  {ok, _, TCPRules,_} = gen_rpzrule(<<"tcp-only.net.",?ioc2rpzSampleRPZ,".">>,Zone,?TTL,<<"true">>,<<"tcp-only">>,[],TCPLoc,T_ZIP_L),
   RedirDLoc=byte_size(list_to_binary(TCPRules))+TCPLoc,
-  {ok, _, RedirDRules,_} = gen_rpzrule(<<"redirect_domain_to_com_from.net">>,<<?ZNameZip>>,?TTL,<<"true">>,{<<"redirect_domain">>,<<"redirect_domain_from_net_to.com">>},[],RedirDLoc,T_ZIP_L),
+  {ok, _, RedirDRules,_} = gen_rpzrule(<<"redirect_domain_to_com_from.net.",?ioc2rpzSampleRPZ,".">>,Zone,?TTL,<<"true">>,{<<"redirect_domain">>,<<"redirect_domain_from_net_to.com">>},[],RedirDLoc,T_ZIP_L),
   RedirIPLoc=byte_size(list_to_binary(RedirDRules))+RedirDLoc,
-  {ok, _, RedirIPRules,_} = gen_rpzrule(<<"redirect_domain_to.ip">>,<<?ZNameZip>>,?TTL,<<"true">>,{<<"redirect_ip">>,<<10,42,42,42>>},[],RedirIPLoc,T_ZIP_L),
+  {ok, _, RedirIPRules,_} = gen_rpzrule(<<"redirect_domain_to.ip.",?ioc2rpzSampleRPZ,".">>,Zone,?TTL,<<"true">>,{<<"redirect_ip">>,<<10,42,42,42>>},[],RedirIPLoc,T_ZIP_L),
   RedirIP6Loc=byte_size(list_to_binary(RedirIPRules))+RedirIPLoc,
-  {ok, _, RedirIP6Rules,_} = gen_rpzrule(<<"redirect_domain_to.ip6">>,<<?ZNameZip>>,?TTL,<<"true">>,{<<"redirect_ip">>,<<10,42,0,0,0,0,0,0,0,0,0,0,0,0,10,42>>},[],RedirIP6Loc,T_ZIP_L),
+  {ok, _, RedirIP6Rules,_} = gen_rpzrule(<<"redirect_domain_to.ip6.",?ioc2rpzSampleRPZ,".">>,Zone,?TTL,<<"true">>,{<<"redirect_ip">>,<<10,42,0,0,0,0,0,0,0,0,0,0,0,0,10,42>>},[],RedirIP6Loc,T_ZIP_L),
 
   NDIPLoc=byte_size(list_to_binary(RedirIP6Rules))+RedirIP6Loc,
-  {ok, _, NDIPv,_} = gen_rpzrule(reverse_IP(<<"10.42.42.42">>),<<?ZNameZip>>,?TTL,<<"false">>,<<"ip">>,[<<"nxdomain">>,[]],NDIPLoc,T_ZIP_L),
+  {ok, _, NDIPv,_} = gen_rpzrule(reverse_IP(<<"10.42.42.42">>),Zone,?TTL,<<"false">>,<<"ip">>,[<<"nxdomain">>,[]],NDIPLoc,T_ZIP_L),
   PSSIPv6Loc=byte_size(list_to_binary(NDIPv))+NDIPLoc,
-  {ok, _, PSSIPv6,_} = gen_rpzrule(reverse_IP(<<"fc00::/64">>),<<?ZNameZip>>,?TTL,<<"false">>,<<"ip">>,[<<"passthru">>,[]],PSSIPv6Loc,T_ZIP_L),
+  {ok, _, PSSIPv6,_} = gen_rpzrule(reverse_IP(<<"fc00::/64">>),Zone,?TTL,<<"false">>,<<"ip">>,[<<"passthru">>,[]],PSSIPv6Loc,T_ZIP_L),
 
   NSDLoc=byte_size(list_to_binary(PSSIPv6))+PSSIPv6Loc,
-  {ok, _, NSDRules,_} = gen_rpzrule(<<"nsdname.com">>,<<?ZNameZip>>,?TTL,<<"false">>,<<"nsdname">>,[<<"nxdomain">>,[]],NSDLoc,T_ZIP_L),
+  {ok, _, NSDRules,_} = gen_rpzrule("nsdname.com",Zone,?TTL,<<"false">>,<<"nsdname">>,[<<"nxdomain">>,[]],NSDLoc,T_ZIP_L),
   NSIPvLoc=byte_size(list_to_binary(NSDRules))+NSDLoc,
-  {ok, _, NSIPv,_} = gen_rpzrule(reverse_IP(<<"10.42.42.42">>),<<?ZNameZip>>,?TTL,<<"false">>,<<"nsip">>,[<<"nxdomain">>,[]],NSIPvLoc,T_ZIP_L),
+  {ok, _, NSIPv,_} = gen_rpzrule(reverse_IP(<<"10.42.42.42">>),Zone,?TTL,<<"false">>,<<"nsip">>,[<<"nxdomain">>,[]],NSIPvLoc,T_ZIP_L),
   NSIPv6Loc=byte_size(list_to_binary(NSIPv))+NSIPvLoc,
-  {ok, _, NSIPv6,_} = gen_rpzrule(reverse_IP(<<"fc00::/64">>),<<?ZNameZip>>,?TTL,<<"false">>,<<"nsip">>,[<<"nxdomain">>,[]],NSIPv6Loc,T_ZIP_L),
+  {ok, _, NSIPv6,_} = gen_rpzrule(reverse_IP(<<"fc00::/64">>),Zone,?TTL,<<"false">>,<<"nsip">>,[<<"nxdomain">>,[]],NSIPv6Loc,T_ZIP_L),
 
 %  SmRPZ = #rpz{axfr_url = ["http://data.netlab.360.com/feeds/dga/blackhole.txt"], wildcards = <<"true">>, action = <<"nxdomain">>, cl_rex = ""},
 %  IOC = mrpz_from_ioc(SmRPZ#rpz.axfr_url,SmRPZ,?TTL,[]),
@@ -644,7 +650,8 @@ send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,RH,Rest,Zone,?T_IXFR,NSSe
 
   {ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3})$"), %
   PktHLen = 12+byte_size(Questions),
-  T_ZIP_L=ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), % нужны ли {read_concurrency, true}, {write_concurrency, true} ???
+%  T_ZIP_L=ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), % нужны ли {read_concurrency, true}, {write_concurrency, true} ???
+	T_ZIP_L=init_T_ZIP_L(Zone),
   %В момент переключения на добавления - SOARECCL обнуляем, таким образом отслеживаем, что мы добавили новую SOA
   send_packets(Socket,IOCexp ++ IOCnew, [], 0, 0, true, [DNSId, <<1:1, OptB:7, 1:1, OptE:3, ?NOERROR:4, 1:16>>], Questions, SOAREC,SOARECCL,Zone,MP,PktHLen,T_ZIP_L,TSIG,0,ixfr,0,false,Proto),
   ets:delete(T_ZIP_L),
@@ -684,7 +691,8 @@ send_zone_live(Socket,Op,Zone,PktH,Questions, SOAREC,NSRec,TSIG,Proto) ->
       PktHLen = 12+byte_size(Questions),
       ioc2rpz_db:write_db_record(Zone,IOC,axfr),
       ioc2rpz_db:delete_old_db_record(Zone),
-      T_ZIP_L=ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), % нужны ли {read_concurrency, true}, {write_concurrency, true} ???
+%      T_ZIP_L=ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), % нужны ли {read_concurrency, true}, {write_concurrency, true} ???
+			T_ZIP_L=init_T_ZIP_L(Zone),
       send_packets(Socket,IOC, [], 0, 0, true, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,0,Op,0,true,Proto),
       ets:delete(T_ZIP_L),
 % # of IoC in live zones
@@ -708,7 +716,7 @@ send_packets(Socket,[], [], 0, _ACount, _Zip, PktH, Questions, SOAREC,NSRec,Zone
     if (DBOp == ixfr) -> EndSOA=SOAREC, Cnt=1; true->EndSOA = <<>>,Cnt=0 end,
     if TSIG /= [] ->
       {ok,TSIGRR,_}=add_TSIG(list_to_binary([PktH, <<(3+Cnt):16,0:16,0:16>>, Questions, SOAREC, NSRec, SOAREC,EndSOA]),TSIG),
-      Pkt1 = list_to_binary([PktH, <<(3+Cnt):16,0:16,1:16>>, Questions, SOAREC, NSRec, SOAREC,EndSOA, TSIGRR]);
+      Pkt1 = list_to_binary([PktH, <<(3+Cnt):16,0:16,1:16>>, Questions, SOAREC, NSRec, SOAREC,EndSOA, TSIGRR]); 
       true -> Pkt1 = list_to_binary([PktH,<<(3+Cnt):16,0:16,0:16>>, Questions, SOAREC, NSRec,EndSOA, SOAREC])
     end,
     %PktLen = byte_size(Pkt1),
@@ -742,8 +750,9 @@ send_packets(Socket,IOC, [], _ACount, _PSize, Zip, PktH, Questions, SOAREC,NSRec
       [IOC1,IOC2]=ioc2rpz_fun:split(IOC,?IOCperProc),
       ParentPID = self(),
 %      spawn_opt(ioc2rpz,send_packets,[Socket,IOC1, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC, NSRec, Zone, MP, PktHLen, 0, TSIG, PktN, DBOp, SOANSSize, IXFRNewR,Proto],[{fullsweep_after,0}]),
+%  ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]) ---> init_T_ZIP_L(Zone) 
       PID=spawn_opt(fun() ->
-        ParentPID ! {ok, self(), ioc2rpz:send_packets(Socket,IOC1, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC, NSRec, Zone, MP, PktHLen, ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), TSIG, PktN, DBOp, SOANSSize, IXFRNewR, Proto) }
+        ParentPID ! {ok, self(), ioc2rpz:send_packets(Socket,IOC1, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC, NSRec, Zone, MP, PktHLen, init_T_ZIP_L(Zone), TSIG, PktN, DBOp, SOANSSize, IXFRNewR, Proto) }
         end
         ,[{fullsweep_after,0}]),
       %ioc2rpz_fun:logMessage("Zone ~p started ~p ~n",[Zone#rpz.zone_str, PID]),
@@ -784,7 +793,7 @@ send_packets(Socket,[], Pkt, ACount, _PSize, _Zip, PktH, Questions, SOAREC,NSREC
   end,
   if DBOp == sendNhotcache ->
     CTime=ioc2rpz_fun:curr_serial_60(),
-    ets:insert(rpz_hotcache_table, {{pkthotcache,Zone#rpz.zone,PktN},CTime, term_to_binary({PktN,ACount+Cnt,0,0, Pkt},[{compressed,?Compression}])});
+    ets:insert(rpz_hotcache_table, {{pkthotcache,Zone#rpz.zone,PktN},CTime, term_to_binary({PktN,ACount,0,0, Pkt},[{compressed,?Compression}])}); %2019-06-13 BUG in live zones # of records ACount+Cnt
     true -> ok
   end;
 
@@ -821,7 +830,7 @@ send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Question
 send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto) when Zone#rpz.ioc_type  == <<"ip">> ->
   if ((IOCExp>Zone#rpz.serial) or (IOCExp==0)) and (DBOp == ixfr) and (IXFRNewR /= true) -> SOASize=byte_size(SOAREC); true -> SOASize=0 end,
   if (IOCExp>Zone#rpz.serial) or (IOCExp==0) or (DBOp == ixfr) ->
-      {ok, Cnt, Rules,_} = gen_rpzrule(reverse_IP(IOC),<<?ZNameZip>>,?TTL,<<"false">>,<<"ip">>,Zone#rpz.action,PktHLen+PSize+SOASize,T_ZIP_L);
+      {ok, Cnt, Rules,_} = gen_rpzrule(reverse_IP(IOC),Zone,?TTL,<<"false">>,<<"ip">>,Zone#rpz.action,PktHLen+PSize+SOASize,T_ZIP_L); % Zone#rpz.zone_str - need t
       true -> Cnt=0, Rules=[]
   end,
   if ((IOCExp>Zone#rpz.serial) or (IOCExp==0)) and (DBOp == ixfr) and (IXFRNewR /= true) -> Rules1 = [SOAREC | Rules], Cnt1=Cnt+1, IXFRNewR1 = true; true -> Rules1=Rules, Cnt1=Cnt, IXFRNewR1 = IXFRNewR end,
@@ -834,7 +843,7 @@ send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Question
 
   if (IOCExp>Zone#rpz.serial) or (IOCExp==0) or (DBOp == ixfr) ->
 %      ioc2rpz_fun:logMessage("Domain ~p, Action ~p ~n",[IOC,Zone#rpz.action]), %TODO debug
-      {ok, _, Rules, WRules} = gen_rpzrule(IOC,<<?ZNameZip>>,?TTL,<<"false">>,Zone#rpz.action,[],PktHLen+PSize+SOASize,T_ZIP_L), %LocData=последний[]
+      {ok, _, Rules, WRules} = gen_rpzrule(list_to_binary([IOC,".",Zone#rpz.zone_str]),Zone,?TTL,<<"false">>,Zone#rpz.action,[],PktHLen+PSize+SOASize,T_ZIP_L), %LocData=последний[] % Zone#rpz.zone_str
       {ok,Rules2,Cnt}=gen_wildcard(Zone#rpz.wildcards,Rules, WRules,PSize+PktHLen+SOASize);
       true -> Cnt=0, Rules=[], Rules2=[]
   end,
@@ -849,8 +858,8 @@ send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Question
   %ioc2rpz_fun:logMessage("Check ~p ~p ~p ~p ~p ~n",[Zone#rpz.zone_str, IOC,IOCExp,Zone#rpz.serial,DBOp]),
   if (IOCExp>Zone#rpz.serial) or (IOCExp==0) or (DBOp == ixfr)  ->
       case re:run(IOC,MP,[global,notempty,{capture,[1],binary}]) of
-        {match,_} -> {ok, Cnt, Rules, WRules} = gen_rpzrule(reverse_IP(IOC),<<?ZNameZip>>,?TTL,<<"false">>,<<"ip">>,Zone#rpz.action,PktHLen+PSize+SOASize,T_ZIP_L), Rules2=[];% Cnt=1;
-        _ -> {ok, _, Rules, WRules} = gen_rpzrule(IOC,<<?ZNameZip>>,?TTL,<<"false">>,Zone#rpz.action,[],PktHLen+PSize+SOASize,T_ZIP_L), {ok,Rules2,Cnt}=gen_wildcard(Zone#rpz.wildcards,Rules, WRules,PSize+PktHLen)
+        {match,_} -> {ok, Cnt, Rules, WRules} = gen_rpzrule(reverse_IP(IOC),Zone,?TTL,<<"false">>,<<"ip">>,Zone#rpz.action,PktHLen+PSize+SOASize,T_ZIP_L), Rules2=[];% Cnt=1;
+        _ -> {ok, _, Rules, WRules} = gen_rpzrule(list_to_binary([IOC,".",Zone#rpz.zone_str]),Zone,?TTL,<<"false">>,Zone#rpz.action,[],PktHLen+PSize+SOASize,T_ZIP_L), {ok,Rules2,Cnt}=gen_wildcard(Zone#rpz.wildcards,Rules, WRules,PSize+PktHLen) % Zone#rpz.zone_str
       end;
       true -> Cnt=0, Rules=[], Rules2=[]
   end,
@@ -935,21 +944,24 @@ mrpz_from_ioc([SRC|REST], RPZ,UType, IOC) -> %List of the sources, RPZ zone, UTy
 mrpz_from_ioc([],RPZ,_UType,IOC) ->
   IOC.
 
-%Используется только для sample zone
+%Данная ветка спользуется только для sample zone
 gen_rpzrule(Domain,RPZ,TTL,<<"true">>,Action, LocData,PktHLen,T_ZIP_L) -> %wildcard = true
   {ok,Cnt1,Pkt1,WPkt1} = gen_rpzrule(Domain,RPZ,TTL,<<"false">>,Action, LocData,PktHLen,T_ZIP_L),
   {ok,Cnt2,Pkt2,WPkt2} = gen_rpzrule(<<"*.",Domain/binary>>,RPZ,TTL,<<"false">>,Action, LocData,PktHLen+byte_size(list_to_binary(Pkt1)),T_ZIP_L),
-  {ok,Cnt1+Cnt2,[Pkt1,Pkt2],[WPkt1,WPkt2]};
+
+%TODO switchto wildcards
+%	{ok, Cnt1, Pkt1, WPkt1} = gen_rpzrule(Domain,RPZ,?TTL,<<"false">>,Action,[],PktHLen,T_ZIP_L), %LocData=последний[] % Zone#rpz.zone_str
+%	{ok,Pkt2,Cnt2}=gen_wildcard(<<"true">>,Pkt1, WPkt1,PktHLen),
+
+  {ok,Cnt1+Cnt2,[Pkt1,Pkt2],[]};
 
 
 gen_rpzrule(Domain,RPZ,TTL,<<"false">>,<<"nxdomain">>,[],PktHLen,T_ZIP_L) -> %wildcard = false
   case domstr_to_bin_zip(Domain,PktHLen,T_ZIP_L) of
-    {ok,BDomain} ->
-      {ok,1,[list_to_binary([BDomain,RPZ,<<?T_CNAME:16,?C_IN:16, TTL:32,1:16,0>>])],[<<?T_CNAME:16,?C_IN:16, TTL:32,1:16,0>>]};
-    {zip,BDomain} ->
-      {ok,1,[list_to_binary([BDomain,<<?T_CNAME:16,?C_IN:16, TTL:32,1:16,0>>])],[<<?T_CNAME:16,?C_IN:16, TTL:32,1:16,0>>]};
     {error, _} ->
-      {ok,0,[],[]}
+      {ok,0,[],[]};
+    {_,BDomain} -> %ok, zip
+      {ok,1,[list_to_binary([BDomain,<<?T_CNAME:16,?C_IN:16, TTL:32,1:16,0>>])],[<<?T_CNAME:16,?C_IN:16, TTL:32,1:16,0>>]}
   end;
 
 gen_rpzrule(Domain,RPZ,TTL,<<"false">>,Action,_,PktHLen,T_ZIP_L) when Action==<<"nodata">>;Action==<<"passthru">>;Action==<<"drop">>;Action==<<"tcp-only">> -> %wildcard = false
@@ -961,33 +973,24 @@ gen_rpzrule(Domain,RPZ,TTL,<<"false">>,Action,_,PktHLen,T_ZIP_L) when Action==<<
     <<"tcp-only">> -> <<"rpz-tcp-only">>
   end,
   case domstr_to_bin_zip(Domain,PktHLen,T_ZIP_L) of
-    {ok,BDomain} ->
-      {_,LocDataZ} = domstr_to_bin_zip(LocData,0,PktHLen+10+byte_size(list_to_binary([BDomain,RPZ])),T_ZIP_L),
-      ELDS=byte_size(LocDataZ),
-      {ok,1,[list_to_binary([BDomain,RPZ,<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])],[list_to_binary([<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])]};
-    {zip,BDomain} ->
-      {_,LocDataZ} = domstr_to_bin_zip(LocData,0,PktHLen+10+byte_size(BDomain),T_ZIP_L),
-      ELDS=byte_size(LocDataZ),
-      {ok,1,[list_to_binary([BDomain,<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])],[list_to_binary([<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])]};
     {error, _} ->
-      {ok,0,[],[]}
+      {ok,0,[],[]};
+    {_,BDomain} -> %ok, zip
+      {_,LocDataZ} = domstr_to_bin_zip(LocData,0,PktHLen+10+byte_size(BDomain),T_ZIP_L), % what is 10??
+%			{_,LocDataZ} = domstr_to_bin(LocData,0),
+      ELDS=byte_size(LocDataZ),
+      {ok,1,[list_to_binary([BDomain,<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])],[list_to_binary([<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])]}
   end;
 
 gen_rpzrule(Domain,RPZ,TTL,<<"false">>,{Action,LocData},_,PktHLen,T_ZIP_L) when Action==<<"redirect_domain">>;Action==<<"local_cname">> ->
   case domstr_to_bin_zip(Domain,PktHLen,T_ZIP_L) of
-    {ok,BDomain} ->
-%     {_,LocDataZ} = domstr_to_bin_zip(LocData,0,PktHLen+10+byte_size(list_to_binary([BDomain,RPZ])),T_ZIP_L), %bug in rule name because of that
-     {_,LocDataZ} = domstr_to_bin(LocData,0),
-      ELDS=byte_size(LocDataZ),
-      {ok,1,[list_to_binary([BDomain,RPZ,<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])],[list_to_binary([<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])]};
-    {zip,BDomain} ->
-		  %ioc2rpz_fun:logMessage("ZIP Domain ~p, Action ~p ~n",[Domain,Action]), %TODO debug
-%      {_,LocDataZ} = domstr_to_bin_zip(LocData,0,PktHLen+10+byte_size(BDomain),T_ZIP_L),
-      {_,LocDataZ} = domstr_to_bin(LocData,0),
-      ELDS=byte_size(LocDataZ),
-      {ok,1,[list_to_binary([BDomain,<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])],[list_to_binary([<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])]};
     {error, _} ->
-      {ok,0,[],[]}
+      {ok,0,[],[]};
+    {_,BDomain} -> %ok, zip
+     {_,LocDataZ} = domstr_to_bin_zip(LocData,0,PktHLen+10+byte_size(BDomain),T_ZIP_L),
+%     {_,LocDataZ} = domstr_to_bin(LocData,0),
+      ELDS=byte_size(LocDataZ),
+      {ok,1,[list_to_binary([BDomain,<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])],[list_to_binary([<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])]}
   end;
 
 
@@ -996,12 +999,10 @@ gen_rpzrule(Domain,RPZ,TTL,<<"false">>,{Action,LocData},_,PktHLen,T_ZIP_L) when 
   RType = if Len == 16 -> ?T_AAAA; true -> ?T_A end,
   %ioc2rpz_fun:logMessage("Domain ~p, Action ~p, LocData ~p ~n",[Domain,Action,LocData]), %TODO debug
   case domstr_to_bin_zip(Domain,PktHLen,T_ZIP_L) of
-    {ok,BDomain} ->
-      {ok,1,[list_to_binary([BDomain,RPZ,<<RType:16,?C_IN:16, TTL:32,Len:16>>,LocData])],[list_to_binary([<<RType:16,?C_IN:16, TTL:32,Len:16>>,LocData])]};
-    {zip,BDomain} ->
-      {ok,1,[list_to_binary([BDomain,<<RType:16,?C_IN:16, TTL:32,Len:16>>,LocData])],[list_to_binary([<<RType:16,?C_IN:16, TTL:32,Len:16>>,LocData])]};
     {error, _} ->
-      {ok,0,[],[]}
+      {ok,0,[],[]};
+    {_,BDomain} -> %ok, zip
+      {ok,1,[list_to_binary([BDomain,<<RType:16,?C_IN:16, TTL:32,Len:16>>,LocData])],[list_to_binary([<<RType:16,?C_IN:16, TTL:32,Len:16>>,LocData])]}
   end;
 
 gen_rpzrule(Domain,RPZ,TTL,<<"false">>,{Action,LocData},_,PktHLen,T_ZIP_L) when Action==<<"local_txt">> ->
@@ -1011,12 +1012,10 @@ gen_rpzrule(Domain,RPZ,TTL,<<"false">>,{Action,LocData},_,PktHLen,T_ZIP_L) when 
   Len = byte_size(LocData),
   %ioc2rpz_fun:logMessage("Domain ~p, Action ~p, LocData ~p ~n",[Domain,Action,LocData]), %TODO debug
   case domstr_to_bin_zip(Domain,PktHLen,T_ZIP_L) of
-    {ok,BDomain} ->
-      {ok,1,[list_to_binary([BDomain,RPZ,<<RType:16,?C_IN:16, TTL:32,Len:16>>,LocData])],[list_to_binary([<<RType:16,?C_IN:16, TTL:32,Len:16>>,LocData])]};
-    {zip,BDomain} ->
-      {ok,1,[list_to_binary([BDomain,<<RType:16,?C_IN:16, TTL:32,Len:16>>,LocData])],[list_to_binary([<<RType:16,?C_IN:16, TTL:32,Len:16>>,LocData])]};
     {error, _} ->
-      {ok,0,[],[]}
+      {ok,0,[],[]};
+    {_,BDomain} -> %ok, zip
+      {ok,1,[list_to_binary([BDomain,<<RType:16,?C_IN:16, TTL:32,Len:16>>,LocData])],[list_to_binary([<<RType:16,?C_IN:16, TTL:32,Len:16>>,LocData])]}
   end;
 %gen_rpzrule(Domain,RPZ,TTL,<<"false">>,{Action,LocData},_,PktHLen,T_ZIP_L) when Action==<<"local_srv">> -> %TODO
 %gen_rpzrule(Domain,RPZ,TTL,<<"false">>,{Action,LocData},_,PktHLen,T_ZIP_L) when Action==<<"local_mx">> -> %TODO
@@ -1024,6 +1023,7 @@ gen_rpzrule(Domain,RPZ,TTL,<<"false">>,{Action,LocData},_,PktHLen,T_ZIP_L) when 
 %gen_rpzrule(Domain,RPZ,TTL,<<"false">>,{Action,LocData},_,PktHLen,T_ZIP_L) when Action==<<"local_naptr">> -> %TODO
 
 
+%Generate multiple rules per action
 gen_rpzrule(Domain,RPZ,TTL,<<"false">>,[Action|REST],_,PktHLen,T_ZIP_L) ->
   {ok,Cnt1,Pkt1,WPkt1} = gen_rpzrule(Domain,RPZ,TTL,<<"false">>,Action,[],PktHLen,T_ZIP_L),
   {ok,Cnt2,Pkt2,WPkt2} = gen_rpzrule(Domain,RPZ,TTL,<<"false">>,REST,[],(PktHLen+byte_size(list_to_binary(Pkt1))),T_ZIP_L),
@@ -1037,11 +1037,11 @@ gen_rpzrule(Domain,RPZ,TTL,<<"false">>,[],_,PktHLen,T_ZIP_L) ->
 gen_rpzrule(Domain,RPZ,TTL,<<"false">>,RType,Action,PktHLen,T_ZIP_L) when RType==<<"ip">>;RType==<<"nsdname">>;RType==<<"nsip">> -> %wildcard = false
   BDomain=list_to_binary([Domain,
     case RType of
-      <<"ip">> -> <<".rpz-ip">>;
-      <<"nsdname">> -> <<".rpz-nsdname">>;
-      <<"nsip">> -> <<".rpz-nsip">>
+      <<"ip">> -> ".rpz-ip.";
+      <<"nsdname">> -> ".rpz-nsdname.";
+      <<"nsip">> -> ".rpz-nsip."
     end
-  ]),
+  ,RPZ#rpz.zone_str]),
   %LAction = case Action of
   %  Action when is_binary(Action) -> Action;
   %  _Else -> <<"nxdomain">>
@@ -1105,7 +1105,7 @@ domstr_to_bin([],_,Bin) ->
 domstr_to_bin_zip(Str,Pos,T_ZIP_L) when byte_size(Str) > 2->
   domstr_to_bin_zip(Str,1,Pos,T_ZIP_L);
 domstr_to_bin_zip(Str,_Pos,_T_ZIP_L) ->
-  domstr_to_bin(Str).
+  domstr_to_bin(Str,0).
 
 domstr_to_bin_zip(Str,Zero,Pos,T_ZIP_L) ->
   Labels = ioc2rpz_fun:split_tail(Str, <<".">>),
@@ -1175,3 +1175,11 @@ ip_to_str({0,0,0,0,0,65535,IP1,IP2}) ->
 ip_to_str(IP) ->
   %?logDebugMSG("~p~n",[IP]),
   inet_parse:ntoa(IP).
+
+
+init_T_ZIP_L(Zone) ->
+	T_ZIP_L=ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]),
+	Labels = ioc2rpz_fun:split_tail(list_to_binary(Zone#rpz.zone_str), <<".">>),
+	ets:insert(T_ZIP_L, {Labels, ?ZNameZipN}),
+	T_ZIP_L.
+
