@@ -821,8 +821,10 @@ send_packets(Socket,Tail, Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec
     ets:insert(rpz_hotcache_table, {{pkthotcache,Zone#rpz.zone,PktN},CTime, term_to_binary({PktN,ACount,0,0, Pkt},[{compressed,?Compression}])});
     true -> ok
   end,
-  ets:delete_all_objects(T_ZIP_L),
-  send_packets(Socket,Tail, <<>> , 0, 0, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG1,PktN+1,DBOp,SOANSSize0,IXFRNewR,Proto);
+  %ets:delete_all_objects(T_ZIP_L),
+  ets:delete(T_ZIP_L),
+	T_ZIP_L1=init_T_ZIP_L(Zone),
+  send_packets(Socket,Tail, <<>> , 0, 0, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L1,TSIG1,PktN+1,DBOp,SOANSSize0,IXFRNewR,Proto);
 
 send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto) when ((byte_size(IOC)+byte_size(Zone#rpz.zone))>=253) ->
   send_packets(Socket,Tail, Pkt , ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto);
