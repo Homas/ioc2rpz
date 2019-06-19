@@ -511,8 +511,8 @@ rebuild_axfr_zone(Zone) ->
   {ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3})$"),
   Questions = <<(Zone#rpz.zone)/binary,0:32>>,
   PktHLen = 12+byte_size(Questions),
-  %T_ZIP_L=ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), % нужны ли {read_concurrency, true}, {write_concurrency, true} ???
-	T_ZIP_L=init_T_ZIP_L(Zone),
-  ioc2rpz:send_packets(<<>>,IOC, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,[],0,cache,0,false,no),
+  T_ZIP_L=ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), % нужны ли {read_concurrency, true}, {write_concurrency, true} ???
+	%T_ZIP_L=init_T_ZIP_L(Zone),
+  %ioc2rpz:send_packets(<<>>,IOC, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,[],0,cache,0,false,no),
   ets:delete(T_ZIP_L),
   ok.
