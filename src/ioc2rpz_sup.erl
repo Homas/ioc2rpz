@@ -163,7 +163,10 @@ read_config3(Filename,Action)  ->
 
 read_config3([{include,Filename}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
   ioc2rpz_fun:logMessage("ioc2rpz including configuration from ~p~n", [Filename]),
-	{ok,_SrvI,KeysI,Key_GroupsI,WhiteListsI,SourcesI,RPZI}=read_config3(Filename,include),
+	case read_config3(Filename,include) of
+		{ok,_SrvI,KeysI,Key_GroupsI,WhiteListsI,SourcesI,RPZI} -> ok;
+		_ -> KeysI=[],Key_GroupsI=[],WhiteListsI=[],SourcesI=[],RPZI=[]
+	end,
   read_config3(REST,RType, Srv, KeysI ++ Keys,Key_GroupsI ++ Key_Groups, WhiteListsI ++ WhiteLists, SourcesI ++ Sources, RPZI ++ RPZ);
 	
 

@@ -1,7 +1,9 @@
 #TODO for Black Hat & DefCon
 - [ ] Document "include" and key groups
+- [ ] Add links to the wiki's How-To install
 - [ ] Start EUnit Tests
 - [ ] Release 1.0
+- [ ] Update dockerhub images with 1.0 release
 ## Sources
 - [ ] Add a script for RPZ via "shell:"
 - [ ] Retry if source was not available
@@ -9,8 +11,8 @@
 ## Configuration
 - [.] Validate: Configuration file name pass as a variable to the container
 ## UI
-- [ ] Custom configuration (e.g. "include")
-- [ ] Groups support on RPZ, SRV level
+- [x] Custom configuration (e.g. "include")
+- [x] Groups support on RPZ, SRV level
 
 ## Core / DNS
 - [ ] Redo AXFR logs
