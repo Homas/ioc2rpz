@@ -821,10 +821,10 @@ send_packets(Socket,Tail, Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec
     ets:insert(rpz_hotcache_table, {{pkthotcache,Zone#rpz.zone,PktN},CTime, term_to_binary({PktN,ACount,0,0, Pkt},[{compressed,?Compression}])});
     true -> ok
   end,
-  %ets:delete_all_objects(T_ZIP_L),
-  ets:delete(T_ZIP_L),
-	T_ZIP_L1=init_T_ZIP_L(Zone),
-  send_packets(Socket,Tail, <<>> , 0, 0, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L1,TSIG1,PktN+1,DBOp,SOANSSize0,IXFRNewR,Proto);
+  ets:delete_all_objects(T_ZIP_L),
+  %ets:delete(T_ZIP_L),
+	%T_ZIP_L1=init_T_ZIP_L(Zone),
+  send_packets(Socket,Tail, <<>> , 0, 0, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG1,PktN+1,DBOp,SOANSSize0,IXFRNewR,Proto);
 
 send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto) when ((byte_size(IOC)+byte_size(Zone#rpz.zone))>=253) ->
   send_packets(Socket,Tail, Pkt , ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto);
@@ -845,7 +845,7 @@ send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Question
 
   if (IOCExp>Zone#rpz.serial) or (IOCExp==0) or (DBOp == ixfr) ->
 %      ioc2rpz_fun:logMessage("Domain ~p, Action ~p ~n",[IOC,Zone#rpz.action]), %TODO debug
-      {ok, _, Rules, WRules} = gen_rpzrule(list_to_binary([IOC,".",Zone#rpz.zone_str]),Zone,?TTL,<<"false">>,Zone#rpz.action,[],PktHLen+PSize+SOASize,T_ZIP_L), %LocData=последний[] % Zone#rpz.zone_str
+      {ok, _, Rules, WRules} = gen_rpzrule(list_to_binary([IOC,".",Zone#rpz.zone_str,"."]),Zone,?TTL,<<"false">>,Zone#rpz.action,[],PktHLen+PSize+SOASize,T_ZIP_L), %LocData=последний[] % Zone#rpz.zone_str
       {ok,Rules2,Cnt}=gen_wildcard(Zone#rpz.wildcards,Rules, WRules,PSize+PktHLen+SOASize);
       true -> Cnt=0, Rules=[], Rules2=[]
   end,
@@ -861,7 +861,7 @@ send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Question
   if (IOCExp>Zone#rpz.serial) or (IOCExp==0) or (DBOp == ixfr)  ->
       case re:run(IOC,MP,[global,notempty,{capture,[1],binary}]) of
         {match,_} -> {ok, Cnt, Rules, WRules} = gen_rpzrule(reverse_IP(IOC),Zone,?TTL,<<"false">>,<<"ip">>,Zone#rpz.action,PktHLen+PSize+SOASize,T_ZIP_L), Rules2=[];% Cnt=1;
-        _ -> {ok, _, Rules, WRules} = gen_rpzrule(list_to_binary([IOC,".",Zone#rpz.zone_str]),Zone,?TTL,<<"false">>,Zone#rpz.action,[],PktHLen+PSize+SOASize,T_ZIP_L), {ok,Rules2,Cnt}=gen_wildcard(Zone#rpz.wildcards,Rules, WRules,PSize+PktHLen) % Zone#rpz.zone_str
+        _ -> {ok, _, Rules, WRules} = gen_rpzrule(list_to_binary([IOC,".",Zone#rpz.zone_str,"."]),Zone,?TTL,<<"false">>,Zone#rpz.action,[],PktHLen+PSize+SOASize,T_ZIP_L), {ok,Rules2,Cnt}=gen_wildcard(Zone#rpz.wildcards,Rules, WRules,PSize+PktHLen) % Zone#rpz.zone_str
       end;
       true -> Cnt=0, Rules=[], Rules2=[]
   end,
