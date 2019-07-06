@@ -1,9 +1,6 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
 
-## 2019-07-05 v0.9.4.1
-- CVE-2004-0789
-
 ## 2019-06-13 v0.9.4.0
 - Fixed bugs:
 	- #10
