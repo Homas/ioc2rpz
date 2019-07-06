@@ -1,5 +1,6 @@
 #TODO for Black Hat & DefCon
 - [ ] Document "include" and key groups
+- [ ] Add "reload_cert" API call (restart/reload cowboy)
 - [ ] Add links to the wiki's How-To install
 - [ ] Start EUnit Tests
 - [ ] Release 1.0

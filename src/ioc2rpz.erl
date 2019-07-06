@@ -144,6 +144,11 @@ send_dns_udp(Socket, Dst, Port, Pkt, _Args) ->
 parse_dns_request(Socket, Data, Proto) when byte_size(Data) =< 12 ->
 %%% Bad DNS packet
   ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(101),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto]);
+
+parse_dns_request(Socket, Data, Proto) when Proto#proto.rport == 53; Proto#proto.tls == yes,Proto#proto.rport == 853 ->
+%%% DDoS attemt
+  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(501),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto]);
+
   
 parse_dns_request(Socket, <<DNSId:2/binary, _:1, OptB:7, _:1, OptE:3, _:4, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/big-unsigned-unit:8,NSCOUNT:2/binary,ARCOUNT:2/binary, Rest/binary>> = _Data, Proto) when QDCOUNT /= 1 -> %_:2/binary, ;ANCOUNT /= 0
 %%% Bad DNS request. QDCount != 1

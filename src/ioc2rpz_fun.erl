@@ -46,7 +46,6 @@ msg_CEF(106)    -> "|000106|TSIG Bad time|5|src=~s spt=~p proto=~p qname=~p qtyp
 msg_CEF(107)    -> "|000107|Other TSIG error|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p msg2=~p~n";
 msg_CEF(108)    -> "|000108|Wrong TSIG position|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
 
-
 msg_CEF(120)    -> "|000120|RPZ not found|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
 msg_CEF(121)    -> "|000121|RPZ not ready|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
 
@@ -66,6 +65,8 @@ msg_CEF(221)    -> "|000221|DNS Notify|3|dst=~s dpt=~s proto=~p zone=~p~n";
 msg_CEF(222)    -> "|000222|DNS Notify error|5|dst=~s dpt=~s proto=~s zone=~p msg=~p~n";
 
 msg_CEF(301)    -> "|000301|MGMT request denied|7|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
+
+msg_CEF(501)    -> "|000501|Possible DDoS CVE-2004-0789|3|src=~s spt=~p proto=~p~n";
 
 msg_CEF(999)    -> "Not defined~n".
 
