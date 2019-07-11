@@ -138,7 +138,7 @@ Sample **cert** record:
 {cert,{"cfg/cert.pem", "cfg/key.pem",	"cfg/cacerts.pem"}}.
 ```
 ### **include** record
-**include** record allows you to split your configuration into multiple files.
+**include** record allows to split ioc2rpz configuration into multiple files.
 
 Sample **include** record:  
 ```
