@@ -1,12 +1,11 @@
 #TODO for Black Hat & DefCon
 - [x] Document "include" and key groups
-- [ ] Add "reload_cert" API call (restart/reload cowboy)
-- [ ] Add links to the wiki's How-To install
+- [x] Add "reload_cert" API call (restart/reload cowboy) -- not needed. Erlang automatically reloads certificates. By default they are cached for 2 minutes.
 - [x] Add links to ioc2rpz.net
+- [ ] Add links to the wiki's How-To install
 - [ ] Start EUnit Tests
 - [ ] Release 1.0
 - [ ] Update dockerhub images with 1.0 release
-
 ## Sources
 - [ ] Add a script for RPZ via "shell:"
 - [ ] Retry if source was not available

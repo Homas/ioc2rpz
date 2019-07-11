@@ -29,8 +29,11 @@ ioc2rpz transforms IOC feeds into response policy zones (RPZ). You can mix feeds
 The current release supports: local files, files/requests via http/https/ftp and shell scripts to access other resource types. You can use any file format if you can write a REGEX to extract indicators and indicators are separated by newline or/and return carriage chars (/n, /r, /r/n).
 
 ## How to use ioc2rpz
-You can use ioc2rpz with any DNS server which supports Response Policy Zones e.g. recent versions of ISC BIND. A sample bind's configuration file (named.conf) is provided in the cfg folder.
+You can use ioc2rpz with any DNS server which supports Response Policy Zones e.g. recent versions of ISC BIND, PowerDNS and any commertial DNS server based on these products (e.g. Infoblox, Blue Cat, Efficient IP). A sample bind's configuration file (named.conf) is provided in the cfg folder.
 <p align="center"><a href="http://www.youtube.com/watch?feature=player_embedded&v=bvhyMFa_mBM" target="_blank"><img src="https://github.com/Homas/ioc2rpz/blob/master/ioc2rpz_demo.png"></a></p>
+
+## ioc2rpz web interface
+[ioc2rpz.gui](https://github.com/Homas/ioc2rpz.gui) is a Management Web interface which is developed as a separate project. It is not required to run ioc2rpz.
 
 ## DNS over TLS (DoT)
 ioc2rpz supports RPZ distribution over DoT. The SSL listener service is automatically started on port 853 (PortTLS) if a certificate is provided in the configuration (``cert``). Current implementation has following limitations:
@@ -49,6 +52,9 @@ ioc2rpz supports RPZ distribution over DoT. The SSL listener service is automati
 - IOC expiration time is used to remove expired indicators in a timely manner;
 - Performance and zone transfer time/size/packets optimizations.
 
+## Installation
+The easiest way to deploy the service is using docker containers on the docker hub. [Deployment on Docker How-To](https://github.com/Homas/ioc2rpz/wiki/Deployment-on-Docker) you can find in ioc2rpz wiki.
+
 ## Docker container
 ioc2rpz is available on the Docker Hub. Just look for ioc2rpz.
 Prerequisites:
@@ -66,9 +72,6 @@ where /home/ioc2rpz/cfg, /home/ioc2rpz/db directories on a host system.
 You can run ioc2rpz and ioc2rpz.gui on AWS. For relatively small deployments (several hundreds thousands indicators) even free tier is enough.
 The video below shows how to setup ioc2rpz and ioc2rpz.gui on AWS using ECS.
 <p align="center"><a href="http://www.youtube.com/watch?feature=player_embedded&v=C-y4p5TXt8s" target="_blank"><img src="https://github.com/Homas/ioc2rpz/blob/master/ioc2rpz_aws_setup.png"></a></p>
-
-## ioc2rpz web interface
-[ioc2rpz.gui](https://github.com/Homas/ioc2rpz.gui) is a Management Web interface which is developed as a separate project. It is not required to run ioc2rpz.
 
 ## How to start ioc2rpz service (w/o docker)
 ioc2rpz by default reads configuration from ./cfg/ioc2rpz.conf, listens on all network interfaces and saves DB backup in ./db directory. You can change the default values in ``include/ioc2rpz.hrl``.  
