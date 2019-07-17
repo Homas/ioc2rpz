@@ -696,12 +696,9 @@ send_zone_live(Socket,Op,Zone,PktH,Questions, SOAREC,NSRec,TSIG,Proto) ->
       PktHLen = 12+byte_size(Questions),
       ioc2rpz_db:write_db_record(Zone,IOC,axfr),
       ioc2rpz_db:delete_old_db_record(Zone),
-%      T_ZIP_L=ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), % нужны ли {read_concurrency, true}, {write_concurrency, true} ???
 			T_ZIP_L=init_T_ZIP_L(Zone),
       send_packets(Socket,IOC, [], 0, 0, true, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,0,Op,0,true,Proto),
       ets:delete(T_ZIP_L),
-% # of IoC in live zones
-%      ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{ioc_count=length(IOC)}}]),
       {ok,MD5,length(IOC)}
   end.
 

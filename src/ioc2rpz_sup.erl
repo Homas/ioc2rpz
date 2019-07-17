@@ -496,7 +496,7 @@ update_zone_inc(Zone) ->
       ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, ixfr_update_time=CTime, pid=undefined}}]); %, ixfr_update_time=CTime
     {IOC,_} ->  %TODO double check that we really have an update. It looks like We have full file and TIDE send the same response.
 %%%
-%%% remove next 2 lines
+%%% remove next 2 lines if works good
 %%%
 %      ioc2rpz_db:write_db_record(Zone#rpz{serial=CTime},IOC,ixfr),
 %      case ioc2rpz_db:read_db_record(Zone,CTime,updated) of % New IOC were added or expired

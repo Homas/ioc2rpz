@@ -124,7 +124,7 @@ write_db_record(ets,Zone,IOCs,axfr) ->
   %добавить Serial в ключ?  AXFR время обновления - полностью удаляет IXFR таблицу?
   %Типа AXFR - полная ресинхронизация, которая делается редко, IXFR делается часто
   [ets:insert_new(rpz_ixfr_table, {{ioc,Zone#rpz.zone,IOC,Zone#rpz.serial},IOCExp}) || {IOC,IOCExp} <- IOCs],
-	{ok,length(IOCs)};
+	{ok,0}; %length(IOCs)
 
 write_db_record(mnesia,Zone,{IOC,IOCExp},axfr) ->
 	{ok,0};
