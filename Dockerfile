@@ -40,4 +40,6 @@ EXPOSE 53/tcp 53/udp 853/tcp 8443/tcp
 
 ENV CD=/opt/ioc2rpz
 ENV DB=/opt/ioc2rpz/db
+ENV IO2Cookie=ioc2rpz
+ENV NODE_NAME=ioc2rpz
 ENTRYPOINT ["/opt/ioc2rpz/_build/default/rel/ioc2rpz/bin/ioc2rpz", "foreground"]
