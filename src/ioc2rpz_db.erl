@@ -115,7 +115,7 @@ read_db_record(mnesia,Zone,Serial,active) -> ok.
 write_db_record(Zone,IOC,XFR) when Zone#rpz.cache == <<"true">> -> %, Zone#rpz.ixfr_update_time/=0 -> %TODO check why was checked here?
   write_db_record(?DBStorage,Zone,IOC,XFR);
 write_db_record(Zone,IOC,XFR) ->
-  ok.
+  {ok,0}.
 
 write_db_record(ets,Zone,IOCs,axfr) ->
   %TODO интеллектуальное обновление записи:
@@ -123,34 +123,29 @@ write_db_record(ets,Zone,IOCs,axfr) ->
   %запись ежё действует - обновить expiration time
   %добавить Serial в ключ?  AXFR время обновления - полностью удаляет IXFR таблицу?
   %Типа AXFR - полная ресинхронизация, которая делается редко, IXFR делается часто
-  [ets:insert_new(rpz_ixfr_table, {{ioc,Zone#rpz.zone,IOC,Zone#rpz.serial},IOCExp}) || {IOC,IOCExp} <- IOCs];
+  [ets:insert_new(rpz_ixfr_table, {{ioc,Zone#rpz.zone,IOC,Zone#rpz.serial},IOCExp}) || {IOC,IOCExp} <- IOCs],
+	{ok,length(IOCs)};
 
-write_db_record(mnesia,Zone,{IOC,IOCExp},axfr) -> ok;
+write_db_record(mnesia,Zone,{IOC,IOCExp},axfr) ->
+	{ok,0};
 
 write_db_record(ets,Zone,IOCs,ixfr) ->
   CTime=erlang:system_time(seconds),
-%%%
-%%% match_spec_compile
-%%% match_spec_run
-%%%
-%%% AA=ets:select(rpz_ixfr_table,[{{{ioc,<<5,108,111,99,97,108,7,105,111,99,50,114,112,122,0>>,'$1','$2'},'$3'},[],[{{'$1','$3'}}]}]).
-%%% BB=[{<<"zzzzzz.com">>,0},{<<"whitelist.com">>,0},{<<"whitelist.org">>,0},{<<"zzzzzzzw.com">>,1}].
-%%% CI=ordsets:subtract(BB,AA) -- new AND updated
-%%%
-%%%
 	?logDebugMSG("Fetching zone ~p from ets~n",[Zone#rpz.zone_str]),
 	IOCDB=ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[],[{{'$1','$3'}}]}]),
 	?logDebugMSG("Finding new or updated records~n",[]),
-%	IOCNEW=lists:subtract(IOCs,IOCDB),
 	IOCNEW=ordsets:subtract(ordsets:from_list(IOCs),ordsets:from_list(IOCDB)),
 	
 %	?logDebugMSG("Update ets. New ~p, DB ~p, Delta ~p~n IOCs ~p~n IOCDB ~p~n IOCNEW ~p~n",[ordsets:size(IOCs),ordsets:size(IOCDB),ordsets:size(IOCNEW),IOCs,IOCDB,IOCNEW]),
 	?logDebugMSG("Update ets. New ~p, DB ~p, Delta ~p~n",[length(IOCs),length(IOCDB),ordsets:size(IOCNEW)]),
-  [update_db_record(?DBStorage,Zone#rpz.zone,Zone#rpz.serial,IOC,IOCExp,CTime) || {IOC,IOCExp} <- IOCNEW];
+  [update_db_record(?DBStorage,Zone#rpz.zone,Zone#rpz.serial,IOC,IOCExp,CTime) || {IOC,IOCExp} <- IOCNEW],
+	{ok,ordsets:size(IOCNEW)};
 
-write_db_record(mnesia,Zone,IOCs,ixfr) -> ok;
+write_db_record(mnesia,Zone,IOCs,ixfr) ->
+	{ok,0};
 
-write_db_record(_DBStorage,_Zone,_IOCs,_XFR) -> ok. %non cached zones
+write_db_record(_DBStorage,_Zone,_IOCs,_XFR) ->
+	{ok,0}. %non cached zones
 
 update_db_record(ets, Zone, Serial, IOC, IOCExp, CTime) ->
   case ets:match(rpz_ixfr_table, {{ioc,Zone,IOC,'$1'},'$2'}) of

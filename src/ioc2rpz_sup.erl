@@ -495,17 +495,27 @@ update_zone_inc(Zone) ->
     {[],[]} -> % No new records, no expired records
       ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, ixfr_update_time=CTime, pid=undefined}}]); %, ixfr_update_time=CTime
     {IOC,_} ->  %TODO double check that we really have an update. It looks like We have full file and TIDE send the same response.
-      ioc2rpz_db:write_db_record(Zone#rpz{serial=CTime},IOC,ixfr),
-      case ioc2rpz_db:read_db_record(Zone,CTime,updated) of % New IOC were added or expired
-        [] -> ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, ixfr_update_time=CTime, pid=undefined}}]); %, ixfr_update_time=CTime
-        _NewIOC ->
+%%%
+%%% remove next 2 lines
+%%%
+%      ioc2rpz_db:write_db_record(Zone#rpz{serial=CTime},IOC,ixfr),
+%      case ioc2rpz_db:read_db_record(Zone,CTime,updated) of % New IOC were added or expired
+      case ioc2rpz_db:write_db_record(Zone#rpz{serial=CTime},IOC,ixfr) of % New IOC were added or update
+        {ok,0} ->
+					?logDebugMSG("Zone ~p was not updated.  State: Ready~n",[Zone#rpz.zone_str]),
+					ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, ixfr_update_time=CTime, pid=undefined}}]); %, ixfr_update_time=CTime
+        {ok,NewIOCs} ->
+					?logDebugMSG("Rebuilding AXFR zone ~p. New IOCs ~p~n",[Zone#rpz.zone_str,NewIOCs]),
           rebuild_axfr_zone(Zone#rpz{serial=CTime}),
+					?logDebugMSG("AXFR zone ~p was rebuilded~n",[Zone#rpz.zone_str]),
           NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[],['true']}]),
           ioc2rpz_fun:logMessage("Zone ~p records before ~p after ~p. ~n",[Zone#rpz.zone_str, NRbefore, NRafter]),
           ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, serial=CTime, ixfr_update_time=CTime, pid=undefined, ioc_count=length(IOC)}}]),
           ioc2rpz_db:delete_db_pkt(Zone),
           ioc2rpz_db:saveZones(),
-          ioc2rpz:send_notify(Zone)
+          ioc2rpz:send_notify(Zone);
+        {Error,Msg} ->
+          ioc2rpz_fun:logMessage("Error ~p while updating ~p. Message: ~p~n",[Error,Zone#rpz.zone_str,Msg])
       end
   end,
 	ioc2rpz_fun:logMessage("Process PID ~p incremental update ~p finished in ~p seconds ~n",[Pid, Zone#rpz.zone_str, (ioc2rpz_fun:curr_serial_60()-CTime)]),
@@ -523,6 +533,6 @@ rebuild_axfr_zone(Zone) ->
   PktHLen = 12+byte_size(Questions),
   T_ZIP_L=ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), % нужны ли {read_concurrency, true}, {write_concurrency, true} ???
 	%T_ZIP_L=init_T_ZIP_L(Zone),
-  %ioc2rpz:send_packets(<<>>,IOC, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,[],0,cache,0,false,no),
+  ioc2rpz:send_packets(<<>>,IOC, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,[],0,cache,0,false,no),
   ets:delete(T_ZIP_L),
   ok.
