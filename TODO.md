@@ -17,6 +17,7 @@
 - [x] Groups support on RPZ, SRV level
 
 ## Core / DNS
+- [ ] RPZ storage type: ets, mnesia
 - [ ] Redo AXFR logs
 - [ ] Access to the hotcache and the cfg_table via FUNs
 - [ ] (1) Terminate updating zones during config reload
