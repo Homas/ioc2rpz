@@ -141,9 +141,11 @@ write_db_record(ets,Zone,IOCs,ixfr) ->
 	?logDebugMSG("Fetching zone ~p from ets~n",[Zone#rpz.zone_str]),
 	IOCDB=ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[],[{{'$1','$3'}}]}]),
 	?logDebugMSG("Finding new or updated records~n",[]),
-	IOCNEW=lists:subtract(IOCs,IOCDB),
+%	IOCNEW=lists:subtract(IOCs,IOCDB),
+	IOCNEW=ordsets:subtract(ordsets:from_list(IOCs),ordsets:from_list(IOCDB)),
+	
 %	?logDebugMSG("Update ets. New ~p, DB ~p, Delta ~p~n IOCs ~p~n IOCDB ~p~n IOCNEW ~p~n",[ordsets:size(IOCs),ordsets:size(IOCDB),ordsets:size(IOCNEW),IOCs,IOCDB,IOCNEW]),
-	?logDebugMSG("Update ets. New ~p, DB ~p, Delta ~p~n",[lists:size(IOCs),lists:size(IOCDB),lists:size(IOCNEW)]),
+	?logDebugMSG("Update ets. New ~p, DB ~p, Delta ~p~n",[length(IOCs),length(IOCDB),ordsets:size(IOCNEW)]),
   [update_db_record(?DBStorage,Zone#rpz.zone,Zone#rpz.serial,IOC,IOCExp,CTime) || {IOC,IOCExp} <- IOCNEW];
 
 write_db_record(mnesia,Zone,IOCs,ixfr) -> ok;
