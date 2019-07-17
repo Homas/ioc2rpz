@@ -91,7 +91,7 @@ get_ioc(<<Proto:5/bytes,_/binary>> = URL) when Proto == <<"http:">>;Proto == <<"
     ioc2rpz_fun:logMessage("Unexpected response code ~p, headers ~p ~n",[Code, Headers]), 
 		{ok,<<>>};
   {error,Reason} ->
-    ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p ~n",[URL, Reason]), %TODO debug
+    ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p ~n",[URL, Reason]), %TODO timeout and add retry
     {error,Reason}
   end. 
 

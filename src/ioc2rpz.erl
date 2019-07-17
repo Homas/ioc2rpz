@@ -920,9 +920,10 @@ mrpz_from_ioc([SRC|REST], RPZ,UType, IOC) -> %List of the sources, RPZ zone, UTy
       ets:delete(rpz_hotcache_table,{SRC,UType}),
       IOC1=ioc2rpz_conn:get_ioc(list_to_binary(Source#source.axfr_url),Source#source.regex,Source),
 
-      ioc2rpz_fun:logMessage("Memory total ~p before garbage collector. processes ~p binary ~p ~n",[erlang:memory(total)/1024/1024,erlang:memory(processes)/1024/1024,erlang:memory(binary)/1024/1024]), %TODO debug
-      erlang:garbage_collect(),
-      ioc2rpz_fun:logMessage("Memory total ~p after garbage collector. processes ~p binary ~p ~n",[erlang:memory(total)/1024/1024,erlang:memory(processes),erlang:memory(binary)]), %TODO debug
+%%%TODO check garbage_collect
+%      ioc2rpz_fun:logMessage("Memory total ~p before garbage collector. processes ~p binary ~p ~n",[erlang:memory(total)/1024/1024,erlang:memory(processes)/1024/1024,erlang:memory(binary)/1024/1024]), %TODO debug
+%      erlang:garbage_collect(),
+%      ioc2rpz_fun:logMessage("Memory total ~p after garbage collector. processes ~p binary ~p ~n",[erlang:memory(total)/1024/1024,erlang:memory(processes),erlang:memory(binary)]), %TODO debug
 
       ets:insert(rpz_hotcache_table, {{SRC,UType},CTime, term_to_binary(IOC1,[{compressed,?Compression}])});
     {[],axfr} ->

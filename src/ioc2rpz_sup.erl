@@ -434,14 +434,16 @@ load_ixfr_zone_info(mnesia,_Zone) ->
 
 update_all_zones(true) -> %force update all zones
   AllRPZ = ets:match(cfg_table,{[rpz,'_'],'_','$4'}),
-  [ spawn_opt(ioc2rpz_sup,update_zone_full,[X],[{fullsweep_after,0}]) || [X] <- AllRPZ,  X#rpz.cache == <<"true">>];
+  [ spawn_opt(ioc2rpz_sup,update_zone_full,[X],[{fullsweep_after,0}]) || [X] <- AllRPZ,  X#rpz.cache == <<"true">>],
+	ok;
 update_all_zones(false) -> %update expired zones
   CTime=ioc2rpz_fun:curr_serial(),%erlang:system_time(seconds),
   AllRPZ = ets:match(cfg_table,{[rpz,'_'],'_','$4'}),
 %  [io:fwrite(group_leader(),"Zone ~p serial ~p full refresh time ~p cache ~p status ~p ~n",[X#rpz.zone_str,X#rpz.update_time, X#rpz.axfr_time, X#rpz.cache, X#rpz.status]) || [X] <- AllRPZ, X#rpz.cache == <<"true">>],
   [ spawn_opt(ioc2rpz_sup,update_zone_full,[X],[{fullsweep_after,0}]) || [X] <- AllRPZ,(X#rpz.update_time + X#rpz.axfr_time) < CTime,  X#rpz.cache == <<"true">>, X#rpz.status /= updating ],
   [ioc2rpz_fun:logMessage("Start from full update Zone ~p serial ~p full refresh time ~p, Ctime ~p cache ~p status ~p ~n",[X#rpz.zone_str,X#rpz.ixfr_update_time, X#rpz.ixfr_time,CTime, X#rpz.cache, X#rpz.status]) || [X] <- AllRPZ, (X#rpz.update_time + X#rpz.axfr_time) > CTime, (X#rpz.ixfr_update_time + X#rpz.ixfr_time) < CTime,  X#rpz.cache == <<"true">>, X#rpz.status /= updating, X#rpz.ixfr_time /= 0],
-  [ spawn_opt(ioc2rpz_sup,update_zone_inc,[X],[{fullsweep_after,0}]) || [X] <- AllRPZ,(X#rpz.update_time + X#rpz.axfr_time) > CTime, (X#rpz.ixfr_update_time + X#rpz.ixfr_time) < CTime,  X#rpz.cache == <<"true">>, X#rpz.status /= updating, X#rpz.ixfr_time /= 0 ].
+  [ spawn_opt(ioc2rpz_sup,update_zone_inc,[X],[{fullsweep_after,0}]) || [X] <- AllRPZ,(X#rpz.update_time + X#rpz.axfr_time) > CTime, (X#rpz.ixfr_update_time + X#rpz.ixfr_time) < CTime,  X#rpz.cache == <<"true">>, X#rpz.status /= updating, X#rpz.ixfr_time /= 0 ],
+	ok.
 
 
 update_zone_full(Zone) ->
@@ -472,16 +474,19 @@ update_zone_full(Zone) ->
 
 update_all_zones_inc(true) -> %force inc update all zones
   AllRPZ = ets:match(cfg_table,{[rpz,'_'],'_','$4'}),
-  [ spawn(ioc2rpz_sup,update_zone_inc,[X]) || [X] <- AllRPZ,  X#rpz.cache == <<"true">>];
+  [ spawn(ioc2rpz_sup,update_zone_inc,[X]) || [X] <- AllRPZ,  X#rpz.cache == <<"true">>],
+	ok;
 update_all_zones_inc(false) -> %update inc expired zones
   CTime=ioc2rpz_fun:curr_serial(),%erlang:system_time(seconds),
   AllRPZ = ets:match(cfg_table,{[rpz,'_'],'_','$4'}),
   [io:fwrite(group_leader(),"Zone ~p serial ~p full refresh time ~p cache ~p status ~p ~n",[X#rpz.zone_str,X#rpz.ixfr_update_time, X#rpz.ixfr_time, X#rpz.cache, X#rpz.status]) || [X] <- AllRPZ, (X#rpz.ixfr_update_time + X#rpz.ixfr_time) < CTime,  X#rpz.cache == <<"true">>, X#rpz.status /= updating, X#rpz.ixfr_time /= 0],
-  [ spawn(ioc2rpz_sup,update_zone_inc,[X]) || [X] <- AllRPZ,(X#rpz.ixfr_update_time + X#rpz.ixfr_time) < CTime,  X#rpz.cache == <<"true">>, X#rpz.status /= updating, X#rpz.ixfr_time /= 0 ].
+  [ spawn(ioc2rpz_sup,update_zone_inc,[X]) || [X] <- AllRPZ,(X#rpz.ixfr_update_time + X#rpz.ixfr_time) < CTime,  X#rpz.cache == <<"true">>, X#rpz.status /= updating, X#rpz.ixfr_time /= 0 ],
+	ok.
 
 update_zone_inc(Zone) ->
   %io:fwrite(group_leader(),"Zone ~p IOC  ~p ~n",[Zone#rpz.zone_str,IOC]),
   Pid=self(),
+	ioc2rpz_fun:logMessage("Process PID ~p incremental update ~p started ~n",[Pid, Zone#rpz.zone_str]),
   NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[],['true']}]),
   CTime=ioc2rpz_fun:curr_serial_60(), %erlang:system_time(seconds),
   ioc2rpz_fun:logMessage("Updating zone ~p inc. Last IXFR update ~p seconds ago ~n",[Zone#rpz.zone_str,(CTime - Zone#rpz.ixfr_update_time)]),
@@ -502,7 +507,9 @@ update_zone_inc(Zone) ->
           ioc2rpz_db:saveZones(),
           ioc2rpz:send_notify(Zone)
       end
-  end.
+  end,
+	ioc2rpz_fun:logMessage("Process PID ~p incremental update ~p finished in ~p seconds ~n",[Pid, Zone#rpz.zone_str, (ioc2rpz_fun:curr_serial_60()-CTime)]),
+	ok.
 
 rebuild_axfr_zone(Zone) ->
   IOCs = ioc2rpz_db:read_db_record(Zone,0,active),

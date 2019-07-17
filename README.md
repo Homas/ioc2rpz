@@ -41,6 +41,7 @@ ioc2rpz supports RPZ distribution over DoT. The SSL listener service is automati
 - single request per session;
 - TLS PIN is not supported;
 - DNS Notify messages are unencrypted.
+When a certificate is expired or is going to expire soon there is no need to restart service if new certificates were saved in the same file. Erlang automatically updates certificates if files were replaced. The delay may be up to 2 minutes because of caching. It is recommended do not let the certificate to expire for service continuity.
 
 ## ioc2rpz vs ISC BIND vs other DNS:
 - ioc2rpz was built to handle RPZ distribution only;

@@ -127,9 +127,22 @@ write_db_record(ets,Zone,IOCs,axfr) ->
 
 write_db_record(mnesia,Zone,{IOC,IOCExp},axfr) -> ok;
 
-write_db_record(?DBStorage,Zone,IOCs,ixfr) ->
+write_db_record(ets,Zone,IOCs,ixfr) ->
   CTime=erlang:system_time(seconds),
-  [update_db_record(?DBStorage,Zone#rpz.zone,Zone#rpz.serial,IOC,IOCExp,CTime) || {IOC,IOCExp} <- IOCs];
+%%%
+%%% match_spec_compile
+%%% match_spec_run
+%%%
+%%% AA=ets:select(rpz_ixfr_table,[{{{ioc,<<5,108,111,99,97,108,7,105,111,99,50,114,112,122,0>>,'$1','$2'},'$3'},[],[{{'$1','$3'}}]}]).
+%%% BB=[{<<"zzzzzz.com">>,0},{<<"whitelist.com">>,0},{<<"whitelist.org">>,0},{<<"zzzzzzzw.com">>,1}].
+%%% CI=ordsets:subtract(BB,AA) -- new AND updated
+%%%
+%%%
+	IOCDB=ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[],[{{'$1','$3'}}]}]),
+	IOCNEW=ordsets:subtract(IOCs,IOCDB),
+  [update_db_record(?DBStorage,Zone#rpz.zone,Zone#rpz.serial,IOC,IOCExp,CTime) || {IOC,IOCExp} <- IOCNEW];
+
+write_db_record(mnesia,Zone,IOCs,ixfr) -> ok;
 
 write_db_record(_DBStorage,_Zone,_IOCs,_XFR) -> ok. %non cached zones
 
