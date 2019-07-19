@@ -439,6 +439,7 @@ update_all_zones(true) -> %force update all zones
 update_all_zones(false) -> %update expired zones
   CTime=ioc2rpz_fun:curr_serial(),%erlang:system_time(seconds),
   AllRPZ = ets:match(cfg_table,{[rpz,'_'],'_','$4'}),
+  [ioc2rpz_fun:logMessage("All RPZ ~p ~p ~n",[X#rpz.zone_str, X#rpz.status]) || [X] <- AllRPZ],
 %  [io:fwrite(group_leader(),"Zone ~p serial ~p full refresh time ~p cache ~p status ~p ~n",[X#rpz.zone_str,X#rpz.update_time, X#rpz.axfr_time, X#rpz.cache, X#rpz.status]) || [X] <- AllRPZ, X#rpz.cache == <<"true">>],
   [ spawn_opt(ioc2rpz_sup,update_zone_full,[X],[{fullsweep_after,0}]) || [X] <- AllRPZ,(X#rpz.update_time + X#rpz.axfr_time) < CTime,  X#rpz.cache == <<"true">>, X#rpz.status /= updating ],
   [ioc2rpz_fun:logMessage("Start from full update Zone ~p serial ~p full refresh time ~p, Ctime ~p cache ~p status ~p ~n",[X#rpz.zone_str,X#rpz.ixfr_update_time, X#rpz.ixfr_time,CTime, X#rpz.cache, X#rpz.status]) || [X] <- AllRPZ, (X#rpz.update_time + X#rpz.axfr_time) > CTime, (X#rpz.ixfr_update_time + X#rpz.ixfr_time) < CTime,  X#rpz.cache == <<"true">>, X#rpz.status /= updating, X#rpz.ixfr_time /= 0],
