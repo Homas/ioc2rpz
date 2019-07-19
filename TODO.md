@@ -8,7 +8,7 @@
 - [ ] Update dockerhub images with 1.0 release
 ## Sources
 - [ ] Add a script for RPZ via "shell:"
-- [ ] Retry if source was not available
+- [ ] Retry if source was not available and handle the behaviour
 - [ ] Simultanious source downloads
 ## Configuration
 - [.] Validate: Configuration file name pass as a variable to the container

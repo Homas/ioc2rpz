@@ -123,7 +123,8 @@ write_db_record(ets,Zone,IOCs,axfr) ->
   %запись ежё действует - обновить expiration time
   %добавить Serial в ключ?  AXFR время обновления - полностью удаляет IXFR таблицу?
   %Типа AXFR - полная ресинхронизация, которая делается редко, IXFR делается часто
-  [ets:insert_new(rpz_ixfr_table, {{ioc,Zone#rpz.zone,IOC,Zone#rpz.serial},IOCExp}) || {IOC,IOCExp} <- IOCs],
+  CTime=erlang:system_time(seconds),
+  [ets:insert_new(rpz_ixfr_table, {{ioc,Zone#rpz.zone,IOC,Zone#rpz.serial},IOCExp}) || {IOC,IOCExp} <- IOCs, (IOCExp > CTime) or (IOCExp == 0)],
 	{ok,0}; %length(IOCs)
 
 write_db_record(mnesia,Zone,{IOC,IOCExp},axfr) ->
@@ -138,7 +139,7 @@ write_db_record(ets,Zone,IOCs,ixfr) ->
 	
 %	?logDebugMSG("Update ets. New ~p, DB ~p, Delta ~p~n IOCs ~p~n IOCDB ~p~n IOCNEW ~p~n",[ordsets:size(IOCs),ordsets:size(IOCDB),ordsets:size(IOCNEW),IOCs,IOCDB,IOCNEW]),
 	?logDebugMSG("Update ets. New ~p, DB ~p, Delta ~p~n",[length(IOCs),length(IOCDB),ordsets:size(IOCNEW)]),
-  [update_db_record(?DBStorage,Zone#rpz.zone,Zone#rpz.serial,IOC,IOCExp,CTime) || {IOC,IOCExp} <- IOCNEW],
+  [update_db_record(?DBStorage,Zone#rpz.zone,Zone#rpz.serial,IOC,IOCExp,lists:keyfind(IOC,1,IOCDB),CTime) || {IOC,IOCExp} <- IOCNEW],
 	{ok,ordsets:size(IOCNEW)};
 
 write_db_record(mnesia,Zone,IOCs,ixfr) ->
@@ -147,15 +148,23 @@ write_db_record(mnesia,Zone,IOCs,ixfr) ->
 write_db_record(_DBStorage,_Zone,_IOCs,_XFR) ->
 	{ok,0}. %non cached zones
 
-update_db_record(ets, Zone, Serial, IOC, IOCExp, CTime) ->
-  case ets:match(rpz_ixfr_table, {{ioc,Zone,IOC,'$1'},'$2'}) of
-   [[OSerial,ExpTime]] when ExpTime == IOCExp -> ok; %Do not update the record
-   [[OSerial,ExpTime]] when ExpTime < IOCExp, IOCExp >= CTime  -> ets:update_element(rpz_ixfr_table,{ioc,Zone,IOC,OSerial},{2,IOCExp}); %update expiration
-   [[OSerial,ExpTime]] -> ets:delete(rpz_ixfr_table,{ioc,Zone,IOC,OSerial}),ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC,Serial},IOCExp}); %update serial and expiration
-    _Else -> ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC,Serial},IOCExp})
+update_db_record(ets, Zone, Serial, IOC, IOCExp, false, CTime) when IOCExp > CTime ->
+	%?logDebugMSG("Update ~p ~p ~p ~p ~p ~n",[Serial, IOC, IOCExp, false, CTime]),
+	ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC,Serial},IOCExp});
+
+update_db_record(ets, Zone, Serial, IOC, IOCExp, false, CTime) when IOCExp =< CTime -> ok; % do not add new but expired indicators
+	
+update_db_record(ets, Zone, Serial, IOC, IOCExp, {_,ExpTime}, CTime) ->
+	%?logDebugMSG("Update ~p ~p ~p ~p ~p ~n",[Serial, IOC, IOCExp, ExpTime, CTime]),
+  case ExpTime of
+    ExpTime when ExpTime < IOCExp, IOCExp >= CTime  ->
+		case ets:select(rpz_ixfr_table,[{{{ioc,Zone,IOC,'$3'},'_'},[],['$3']}]) of
+			[OSerial] -> ets:update_element(rpz_ixfr_table,{ioc,Zone,IOC,OSerial},{2,IOCExp}) %update expiration if expiration date was increased
+		end;
+   ExpTime when IOCExp > 0, ExpTime == 0 -> ets:select_delete(rpz_ixfr_table,[{{{ioc,Zone,IOC,'_'},'_'},[],[true]}]),ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC,Serial},IOCExp}) %update serial and expiration if expired already
   end,
   ok;
-update_db_record(mnesia, Zone, Serial, IOC, IOCExp, CTime) -> ok.
+update_db_record(mnesia, Zone, Serial, IOC, IOCExp, Update, CTime) -> ok.
 
 delete_old_db_record(Zone) ->
   delete_old_db_record(?DBStorage,Zone).

@@ -900,7 +900,7 @@ remove_WL(IOC,WL) ->
 %  ordsets:to_list(ordsets:subtract(ordsets:from_list(IOC), ordsets:from_list(WL))).
 %медлеенее в 2 раза
   WLSet = gb_sets:from_list(WL),
-  [X || {E,Exp} = X <- IOC, not gb_sets:is_element(E, WLSet)]. % TODO duplicates gb_sets vs ordsets
+  [X || {E,Exp} = X <- ordsets:to_list(ordsets:from_list(IOC)), not gb_sets:is_element(E, WLSet)]. % TODO duplicates gb_sets vs ordsets
 
 mrpz_from_ioc(Zone,UType) -> %Zone - RPZ zone
   remove_WL(mrpz_from_ioc(Zone#rpz.sources,Zone,UType,[]),mrpz_from_ioc(Zone#rpz.whitelist,Zone,axfr,[])).% -- WL.
