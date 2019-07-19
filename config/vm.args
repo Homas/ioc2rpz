@@ -2,7 +2,13 @@
 #-name {{release_name}}@127.0.0.1
 #-sname {{release_name}}
 -sname ${NODE_NAME}
--proto_dist inet_tls
+
+# Enable SSL
+#-proto_dist inet_tls
+#-ssl_dist_optfile "ssl_file@ioc2rpz.conf"
+# or
+#-certfile, -keyfile
+#http://erlang.org/doc/apps/ssl/ssl_distribution.html
 
 ## Cookie for distributed erlang
 -setcookie ${IO2Cookie}
