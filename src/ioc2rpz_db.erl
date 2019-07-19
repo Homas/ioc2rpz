@@ -161,7 +161,8 @@ update_db_record(ets, Zone, Serial, IOC, IOCExp, {_,ExpTime}, CTime) ->
 		case ets:select(rpz_ixfr_table,[{{{ioc,Zone,IOC,'$3'},'_'},[],['$3']}]) of
 			[OSerial] -> ets:update_element(rpz_ixfr_table,{ioc,Zone,IOC,OSerial},{2,IOCExp}) %update expiration if expiration date was increased
 		end;
-   ExpTime when IOCExp > 0, ExpTime == 0 -> ets:select_delete(rpz_ixfr_table,[{{{ioc,Zone,IOC,'_'},'_'},[],[true]}]),ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC,Serial},IOCExp}) %update serial and expiration if expired already
+   ExpTime when IOCExp > 0, ExpTime == 0 -> ets:select_delete(rpz_ixfr_table,[{{{ioc,Zone,IOC,'_'},'_'},[],[true]}]),ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC,Serial},IOCExp}); %update serial and expiration if expired already
+	 _ -> ?logDebugMSG("Bug in update ~p ~p ~p ~p ~p ~p ~n",[Zone, Serial, IOC, IOCExp, ExpTime, CTime])
   end,
   ok;
 update_db_record(mnesia, Zone, Serial, IOC, IOCExp, Update, CTime) -> ok.

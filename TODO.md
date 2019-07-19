@@ -39,6 +39,7 @@
 
 ## Sources
 - [ ] Add source PostreSQL, MySQL via "shell:"
+- [ ] Dedup IoC from different sources with different expiration dates
 - [ ] RPZ action per source
 - [ ] (2) Source based on files check by mod.date and size -> read by chunks
 
