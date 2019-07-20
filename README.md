@@ -67,7 +67,8 @@ You can start ioc2rpz with the following command:
 sudo docker run -d --name ioc2rpz --log-driver=syslog --restart always --mount type=bind,source=/home/ioc2rpz/cfg,target=/opt/ioc2rpz/cfg --mount type=bind,source=/home/ioc2rpz/db,target=/opt/ioc2rpz/db -p53:53 -p53:53/udp -p853:853 -p8443:8443 pvmdel/ioc2rpz
 
 ```
-where /home/ioc2rpz/cfg, /home/ioc2rpz/db directories on a host system.
+where /home/ioc2rpz/cfg, /home/ioc2rpz/db directories on a host system.  
+You can pass a custom configuration file name via``-e`` parameter. E.g. ``./cfg/ioc2rpz2.conf`` 
 
 ## ioc2rpz on AWS
 You can run ioc2rpz and ioc2rpz.gui on AWS. For relatively small deployments (several hundreds thousands indicators) even free tier is enough.

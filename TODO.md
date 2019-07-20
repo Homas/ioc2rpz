@@ -12,7 +12,7 @@
 - [x] Retry if source was not available and handle the behaviour
 - [ ] Simultanious source downloads
 ## Configuration
-- [.] Validate: Configuration file name pass as a variable to the container
+- [x] Validate: Configuration file name pass as a variable to the container
 ## UI
 - [x] Custom configuration (e.g. "include")
 - [x] Groups support on RPZ, SRV level
