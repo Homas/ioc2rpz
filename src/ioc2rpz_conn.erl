@@ -19,7 +19,7 @@
 -export([get_ioc/3,clean_feed_bin/2,clean_feed/2]).
 
 get_ioc(URL,REGEX,Source) ->
-  case get_ioc(URL) of
+  case get_ioc(URL,?Src_Retry) of
     {ok, Bin} ->
       ioc2rpz_fun:logMessage("Source: ~p, size: ~s (~p), MD5: ~p ~n",[Source#source.name, ioc2rpz_fun:conv_to_Mb(byte_size(Bin)),byte_size(Bin), ioc2rpz_fun:bin_to_hexstr(crypto:hash(md5,Bin))]), %TODO debug
       %Uncomment next 2 lines in case of limited memory. REGEX must be prepared for lowcase sources
@@ -68,21 +68,25 @@ p_clean_feed(IOC,REGEX,Max,Count)  ->
   
 
 %reads IOCs from a local file
-get_ioc(<<"file:",Filename/binary>> = _URL) ->
+get_ioc(<<"file:",Filename/binary>> = URL, Retry) ->
   case file:read_file(Filename) of
     {ok, Bin} ->
       {ok, Bin};
-    {error, Reason} ->
+	  {error,Reason} when Retry > 0 ->
+	    ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p. Try ~n",[URL, Reason, (?Src_Retry-Retry)]), %TODO timeout and add retry
+			timer:sleep(?Src_Retry_TimeOut*1000),
+			get_ioc(URL, Retry-1);
+    {error, Reason}  when Retry == 0->
       ioc2rpz_fun:logMessage("Error reading file ~p reason ~p ~n",[Filename, Reason]), 
       {error, Reason}
   end;
 
 %IOCs are provided by a local script
-get_ioc(<<"shell:",CMD/binary>> = _URL) ->
+get_ioc(<<"shell:",CMD/binary>> = _URL, Retry) ->
   {ok, list_to_binary(os:cmd(binary_to_list(CMD)))};
 
 %download IOCs from http/https/ftp
-get_ioc(<<Proto:5/bytes,_/binary>> = URL) when Proto == <<"http:">>;Proto == <<"https">>;Proto == <<"ftp:/">> ->
+get_ioc(<<Proto:5/bytes,_/binary>> = URL, Retry) when Proto == <<"http:">>;Proto == <<"https">>;Proto == <<"ftp:/">> ->
 	httpc:set_options([{cookies,enabled}]),
   case httpc:request(get,{binary_to_list(URL),[{"User-Agent", "Mozilla"}]},[],[{body_format,binary},{sync,true}]) of %,{socket_opts,[{cookies,enabled}]}
   {ok,{{_,200,_},_,Response}} ->
@@ -90,7 +94,11 @@ get_ioc(<<Proto:5/bytes,_/binary>> = URL) when Proto == <<"http:">>;Proto == <<"
   {ok,{{_,Code,_},Headers,Response}} ->
     ioc2rpz_fun:logMessage("Unexpected response code ~p, headers ~p ~n",[Code, Headers]), 
 		{ok,<<>>};
-  {error,Reason} ->
+  {error,Reason} when Retry > 0 ->
+    ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p. Try ~n",[URL, Reason, (?Src_Retry-Retry)]), %TODO timeout and add retry
+		timer:sleep(?Src_Retry_TimeOut*1000),
+		get_ioc(URL, Retry-1);
+  {error,Reason} when Retry == 0 ->
     ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p ~n",[URL, Reason]), %TODO timeout and add retry
     {error,Reason}
   end. 

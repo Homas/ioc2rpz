@@ -3,6 +3,7 @@
 ## 2019-07-19 v0.9.5.0
 - Bug fixes related to IXFR zone update and transfer
 - [CB] Source IXFR update "from" time will be keept the same until we get "non zero" update.
+- Retry for unavailable sources (see ioc2rpz.hrl)
 
 ## 2019-06-13 v0.9.4.0
 - Fixed bugs:
