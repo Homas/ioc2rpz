@@ -73,7 +73,7 @@ get_ioc(<<"file:",Filename/binary>> = URL, Retry) ->
     {ok, Bin} ->
       {ok, Bin};
 	  {error,Reason} when Retry > 0 ->
-	    ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p. Try ~n",[URL, Reason, (?Src_Retry-Retry)]), %TODO timeout and add retry
+	    ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p. Try ~p ~n",[URL, Reason, (?Src_Retry-Retry)]), %TODO timeout and add retry
 			timer:sleep(?Src_Retry_TimeOut*1000),
 			get_ioc(URL, Retry-1);
     {error, Reason}  when Retry == 0->
@@ -95,7 +95,7 @@ get_ioc(<<Proto:5/bytes,_/binary>> = URL, Retry) when Proto == <<"http:">>;Proto
     ioc2rpz_fun:logMessage("Unexpected response code ~p, headers ~p ~n",[Code, Headers]), 
 		{ok,<<>>};
   {error,Reason} when Retry > 0 ->
-    ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p. Try ~n",[URL, Reason, (?Src_Retry-Retry)]), %TODO timeout and add retry
+    ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p. Try ~p ~n",[URL, Reason, (?Src_Retry-Retry)]), %TODO timeout and add retry
 		timer:sleep(?Src_Retry_TimeOut*1000),
 		get_ioc(URL, Retry-1);
   {error,Reason} when Retry == 0 ->
