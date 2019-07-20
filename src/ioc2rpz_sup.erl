@@ -226,7 +226,7 @@ read_config3([{rpz,{Zone, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards,
    [{LAction,LData}] when LAction=="redirect_ip" -> {list_to_binary(LAction),ioc2rpz_fun:ip_to_bin(LData)};
    _ -> ioc2rpz_fun:read_local_actions(Action)
   end,
-  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,[#rpz{zone=ZoneB, zone_str=Zone, soa_timers=SOATimers, cache=list_to_binary(Cache), wildcards=list_to_binary(Wildcards), action=ZAction, akeys=AKeysB, ioc_type=list_to_binary(IOCType), axfr_time=AXFR_Time, ixfr_time=IXFR_Time, sources=Sources, notifylist=NotifyList, whitelist=Whitelist, serial=Serial, status=Status, update_time=Update_time, ixfr_update_time=IXFR_Update_time, serial_ixfr=Serial_IXFR, key_groups=KeyGroups}|RPZ]);
+  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,[#rpz{zone=ZoneB, zone_str=Zone, soa_timers=SOATimers, cache=list_to_binary(Cache), wildcards=list_to_binary(Wildcards), action=ZAction, akeys=AKeysB, ioc_type=list_to_binary(IOCType), axfr_time=AXFR_Time, ixfr_time=IXFR_Time, sources=Sources, notifylist=NotifyList, whitelist=Whitelist, serial=Serial, status=Status, update_time=Update_time, ixfr_update_time=IXFR_Update_time, ixfr_nz_update_time=IXFR_Update_time, serial_ixfr=Serial_IXFR, key_groups=KeyGroups}|RPZ]);
 
 read_config3([],startup,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)  ->
 	Keys_V = [ validateCFGKeys(Y) || Y <- Keys ],
@@ -464,11 +464,11 @@ update_zone_full(Zone) ->
   ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{serial_new=CTime, status=updating, update_time=CTime, pid=Pid}}]),
   {Status,MD5,IOC_Cnt} = ioc2rpz:send_zone_live(<<>>,cache,Zone#rpz{serial=CTime},<<>>,<<(Zone#rpz.zone)/binary,0:32>>, SOAREC,NSRec,[],[]),
   if Status == updateSOA ->
-      ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, serial_new=0, ioc_md5=MD5, update_time=CTime, ixfr_update_time=CTime, pid=undefined, ioc_count=IOC_Cnt}}]),
+      ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, serial_new=0, ioc_md5=MD5, update_time=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, pid=undefined, ioc_count=IOC_Cnt}}]),
       ioc2rpz_fun:logMessage("Zone ~p is the same. Checked in ~p seconds, check timestamp ~p ~n",[Zone#rpz.zone_str, (ioc2rpz_fun:curr_serial()- CTime), CTime]);
     true ->
       %if Zone#rpz.serial_ixfr == 0 -> Serial_IXFR=CTime; true -> Serial_IXFR=Zone#rpz.serial_ixfr end,
-      ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{serial=CTime, status=ready, serial_new=0, ioc_md5=MD5, update_time=CTime, ixfr_update_time=CTime, serial_ixfr=CTime, pid=undefined, ioc_count=IOC_Cnt}}]),
+      ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{serial=CTime, status=ready, serial_new=0, ioc_md5=MD5, update_time=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, serial_ixfr=CTime, pid=undefined, ioc_count=IOC_Cnt}}]),
       ioc2rpz_db:delete_db_pkt(Zone),
       %erlang:garbage_collect(), %TODO check if need
       ioc2rpz:send_notify(Zone),
@@ -495,7 +495,7 @@ update_zone_inc(Zone) ->
 	ioc2rpz_fun:logMessage("Process PID ~p incremental update ~p started ~n",[Pid, Zone#rpz.zone_str]),
   NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[],['true']}]),
   CTime=ioc2rpz_fun:curr_serial_60(), %erlang:system_time(seconds),
-  ioc2rpz_fun:logMessage("Updating zone ~p inc. Last IXFR update ~p seconds ago ~n",[Zone#rpz.zone_str,(CTime - Zone#rpz.ixfr_update_time)]),
+  ioc2rpz_fun:logMessage("Updating zone ~p inc. Last IXFR update ~p seconds ago, last non-zero update ~p seconds ago~n",[Zone#rpz.zone_str,(CTime - Zone#rpz.ixfr_update_time),(CTime-ixfr_nz_update_time)]),
   ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=updating, ixfr_update_time=CTime, pid=Pid}}]),
   case {ioc2rpz:mrpz_from_ioc(Zone#rpz{serial=CTime},ixfr),ioc2rpz_db:read_db_record(Zone,CTime,updated)} of
     {[],[]} -> % No new records, no expired records
@@ -516,7 +516,7 @@ update_zone_inc(Zone) ->
 					?logDebugMSG("AXFR zone ~p was rebuilded~n",[Zone#rpz.zone_str]),
           NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[],['true']}]),
           ioc2rpz_fun:logMessage("Zone ~p records before ~p after ~p. ~n",[Zone#rpz.zone_str, NRbefore, NRafter]),
-          ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, serial=CTime, ixfr_update_time=CTime, pid=undefined, ioc_count=length(IOC)}}]),
+          ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, serial=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, pid=undefined, ioc_count=length(IOC)}}]),
           ioc2rpz_db:delete_db_pkt(Zone),
           ioc2rpz_db:saveZones(),
           ioc2rpz:send_notify(Zone);

@@ -936,7 +936,7 @@ mrpz_from_ioc([SRC|REST], RPZ,UType, IOC) -> %List of the sources, RPZ zone, UTy
       ioc2rpz_fun:logMessage("Got source ~p IXFR from cache ~n",[SRC]); %TODO debug
     {_,ixfr} ->
       %ioc2rpz_fun:logMessage("IXFR request for ~p is not cached by the design~n",[SRC]), %TODO debug
-      IOC1=ioc2rpz_conn:get_ioc(list_to_binary(ioc2rpz_fun:constr_ixfr_url(Source#source.ixfr_url,RPZ#rpz.ixfr_update_time,CTime)),Source#source.regex,Source),
+      IOC1=ioc2rpz_conn:get_ioc(list_to_binary(ioc2rpz_fun:constr_ixfr_url(Source#source.ixfr_url,RPZ#rpz.ixfr_nz_update_time,CTime)),Source#source.regex,Source),
 
       ioc2rpz_fun:logMessage("Memory total ~p before garbage collector. processes ~p binary ~p ~n",[erlang:memory(total)/1024/1024,erlang:memory(processes)/1024/1024,erlang:memory(binary)/1024/1024]), %TODO debug
       erlang:garbage_collect(),

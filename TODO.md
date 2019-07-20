@@ -5,6 +5,7 @@
 - [x] Add links to the wiki's How-To install
 - [ ] Start EUnit Tests
 - [ ] Release 1.0
+- [ ] Create development branch
 - [ ] Update dockerhub images with 1.0 release
 ## Sources
 - [ ] Add a script for RPZ via "shell:"
