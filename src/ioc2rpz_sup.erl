@@ -495,7 +495,7 @@ update_zone_inc(Zone) ->
 	ioc2rpz_fun:logMessage("Process PID ~p incremental update ~p started ~n",[Pid, Zone#rpz.zone_str]),
   NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[],['true']}]),
   CTime=ioc2rpz_fun:curr_serial_60(), %erlang:system_time(seconds),
-  ioc2rpz_fun:logMessage("Updating zone ~p inc. Last IXFR update ~p seconds ago, last non-zero update ~p seconds ago~n",[Zone#rpz.zone_str,(CTime - Zone#rpz.ixfr_update_time),(CTime-ixfr_nz_update_time)]),
+  ioc2rpz_fun:logMessage("Updating zone ~p inc. Last IXFR update ~p seconds ago, last non-zero update ~p seconds ago~n",[Zone#rpz.zone_str,(CTime - Zone#rpz.ixfr_update_time),(CTime-Zone#rpz.ixfr_nz_update_time)]),
   ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=updating, ixfr_update_time=CTime, pid=Pid}}]),
   case {ioc2rpz:mrpz_from_ioc(Zone#rpz{serial=CTime},ixfr),ioc2rpz_db:read_db_record(Zone,CTime,updated)} of
     {[],[]} -> % No new records, no expired records
