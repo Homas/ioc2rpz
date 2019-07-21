@@ -306,7 +306,6 @@ read_config3([],reload,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)  ->
   [ ets:delete(cfg_table, [source,X#source.name]) || X <- WhiteLists_D ++ Sources_D ],
   [ ets:delete(rpz_hotcache_table, {X#source.name,Y}) || X <- WhiteLists_UPD ++ Sources_UPD ++ WhiteLists_D ++ Sources_D, Y <- [axfr,ixfr] ],
 
-  RPZ_C_UPD=[ X || X <- RPZ_C, X#rpz.status == updating], %TODO stop update processes
   
   RPZ_V= [ Z || Z <- [ validateCFGRPZ(Y,Sources_V,WhiteLists_V) || Y <- RPZ ], Z /= [] ],
   RPZ_D = [ X || X <- RPZ_C, not lists:member(X#rpz.zone, [ Z#rpz.zone || Z <- RPZ_V ]) ],
@@ -316,13 +315,18 @@ read_config3([],reload,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)  ->
   RPZ_UPD = [ X || X <- RPZ_V, not checkRPZEq(X,lists:keyfind(X#rpz.zone,3,RPZ_C)),lists:member(X#rpz.zone, [ Z#rpz.zone || Z <- RPZ_C ]) ] ++ 
             [ X || X <- RPZ_V, ioc2rpz_fun:intersection(X#rpz.whitelist,[Z#source.name || Z <- WhiteLists_UPD]) /= [] ] ++
             [ X || X <- RPZ_V, ioc2rpz_fun:intersection(X#rpz.sources,[Z#source.name || Z <- Sources_UPD]) /= [] ],
+
+
+  RPZ_C_UPD=[ exit(X#rpz.pid,rpzRemoved) || X <- RPZ_D, X#rpz.status == updating],
+  RPZ_C_UPD=[ exit(X#rpz.pid,rpzUpdated) || X <- RPZ_UPD, X#rpz.status == updating],
+
   [ ets:delete(cfg_table, [rpz,X#rpz.zone]) || X <- RPZ_D ],
   [ ets:insert(cfg_table, {[rpz,X#rpz.zone],X#rpz.zone,X}) || X <- RPZ_V ],
   [ ets:match_delete(rpz_hotcache_table,{{pkthotcache,X#rpz.zone,'_'},'_','_'}) || X <- RPZ_D ++ RPZ_UPD ],
 
   ioc2rpz_db:clean_DB(RPZ_D), %TODO check  % ++ RPZ_UPD - should be updated via standard AXFR update.
 
-  [ ets:update_element(cfg_table, [rpz,X#rpz.zone], [{3, X#rpz{status=notready}}]) || X <- RPZ_UPD ],
+  [ ets:update_element(cfg_table, [rpz,X#rpz.zone], [{3, X#rpz{status=forceAXFR}}]) || X <- RPZ_UPD ], %forceaxfr
 
   [ ioc2rpz_fun:logMessage("Whitelist ~p was added.~n",[X#source.name]) || X <- WhiteLists_N ],
   [ ioc2rpz_fun:logMessage("Whitelist ~p was updated.~n",[X#source.name]) || X <- WhiteLists_UPD ],
@@ -439,9 +443,9 @@ update_all_zones(true) -> %force update all zones
 update_all_zones(false) -> %update expired zones
   CTime=ioc2rpz_fun:curr_serial(),%erlang:system_time(seconds),
   AllRPZ = ets:match(cfg_table,{[rpz,'_'],'_','$4'}),
-  [ spawn_opt(ioc2rpz_sup,update_zone_full,[X],[{fullsweep_after,0}]) || [X] <- AllRPZ,((X#rpz.update_time + X#rpz.axfr_time) < CTime) and (X#rpz.cache == <<"true">>) and (X#rpz.status /= updating) ],
-  [ioc2rpz_fun:logMessage("Start from full update Zone ~p serial ~p full refresh time ~p, Ctime ~p cache ~p status ~p ~n",[X#rpz.zone_str,X#rpz.ixfr_update_time, X#rpz.ixfr_time,CTime, X#rpz.cache, X#rpz.status]) || [X] <- AllRPZ, ((X#rpz.update_time + X#rpz.axfr_time) > CTime) and ((X#rpz.ixfr_update_time + X#rpz.ixfr_time) < CTime) and (X#rpz.cache == <<"true">>) and (X#rpz.status /= updating) and (X#rpz.ixfr_time /= 0)],
-  [ spawn_opt(ioc2rpz_sup,update_zone_inc,[X],[{fullsweep_after,0}]) || [X] <- AllRPZ, ((X#rpz.update_time + X#rpz.axfr_time) > CTime)and((X#rpz.ixfr_update_time + X#rpz.ixfr_time) < CTime) and (X#rpz.cache == <<"true">>) and (X#rpz.status /= updating) and (X#rpz.ixfr_time /= 0) ],
+  [ spawn_opt(ioc2rpz_sup,update_zone_full,[X],[{fullsweep_after,0}]) || [X] <- AllRPZ,((((X#rpz.update_time + X#rpz.axfr_time) < CTime) and (X#rpz.status /= updating)) or (X#rpz.status == forceAXFR)) and (X#rpz.cache == <<"true">>) ],
+  [ioc2rpz_fun:logMessage("Start incremental update Zone ~p serial ~p full refresh time ~p, Ctime ~p cache ~p status ~p ~n",[X#rpz.zone_str,X#rpz.ixfr_update_time, X#rpz.ixfr_time,CTime, X#rpz.cache, X#rpz.status]) || [X] <- AllRPZ, ((X#rpz.update_time + X#rpz.axfr_time) > CTime) and ((X#rpz.ixfr_update_time + X#rpz.ixfr_time) < CTime) and (X#rpz.cache == <<"true">>) and (X#rpz.status /= updating) and (X#rpz.ixfr_time /= 0)],
+  [ spawn_opt(ioc2rpz_sup,update_zone_inc,[X],[{fullsweep_after,0}]) || [X] <- AllRPZ, ((X#rpz.update_time + X#rpz.axfr_time) > CTime) and ((X#rpz.ixfr_update_time + X#rpz.ixfr_time) < CTime) and (X#rpz.cache == <<"true">>) and (X#rpz.status /= updating) and (X#rpz.ixfr_time /= 0) ],
 
 %  TODO remove
 %  [ioc2rpz_fun:logMessage("All RPZ ~p ~p ~p ",[X#rpz.zone_str, X#rpz.status, self()]) || [X] <- AllRPZ],
@@ -501,11 +505,6 @@ update_zone_inc(Zone) ->
     {[],[]} -> % No new records, no expired records
       ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, ixfr_update_time=CTime, pid=undefined}}]); %, ixfr_update_time=CTime
     {IOC,_} ->  %TODO double check that we really have an update. It looks like We have full file and TIDE send the same response.
-%%%
-%%% remove next 2 lines if works good
-%%%
-%      ioc2rpz_db:write_db_record(Zone#rpz{serial=CTime},IOC,ixfr),
-%      case ioc2rpz_db:read_db_record(Zone,CTime,updated) of % New IOC were added or expired
       case ioc2rpz_db:write_db_record(Zone#rpz{serial=CTime},IOC,ixfr) of % New IOC were added or update
         {ok,0} ->
 					?logDebugMSG("Zone ~p was not updated.  State: Ready~n",[Zone#rpz.zone_str]),
