@@ -153,11 +153,14 @@ update_db_record(ets, Zone, Serial, IOC, IOCExp, [], CTime) when IOCExp > CTime 
 
 update_db_record(ets, Zone, Serial, IOC, IOCExp, [], CTime) when IOCExp =< CTime -> ok; % do not add new but expired indicators
 
-update_db_record(ets, Zone, Serial, IOC, IOCExp, [{ioc,_,_,OSerial,ExpTime}], CTime) when ExpTime < IOCExp, IOCExp >= CTime ->
+update_db_record(ets, Zone, Serial, IOC, IOCExp, [{{ioc,_,_},OSerial,ExpTime}], CTime) when ExpTime < IOCExp, IOCExp >= CTime ->
 	ets:delete_object(rpz_ixfr_table,{{ioc,Zone,IOC},OSerial,ExpTime}),ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC},OSerial,IOCExp});
 
-update_db_record(ets, Zone, Serial, IOC, IOCExp, [{ioc,_,_,OSerial,ExpTime}], CTime) when IOCExp > 0, ExpTime == 0 ->
+update_db_record(ets, Zone, Serial, IOC, IOCExp, [{{ioc,_,_},OSerial,ExpTime}], CTime) when IOCExp > 0, ExpTime == 0 ->
 	ets:select_delete(rpz_ixfr_table,[{{{ioc,Zone,IOC},'_','_'},[],[true]}]),ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC},Serial,IOCExp});
+
+update_db_record(ets, Zone, Serial, IOC, IOCExp, Update, CTime) ->
+	?logDebugMSG("Not expected update ~p ~p ~p ~p ~p ~p ~n",[Zone, Serial, IOC, IOCExp, Update, CTime]);
 	
 update_db_record(mnesia, Zone, Serial, IOC, IOCExp, Update, CTime) -> ok.
 
