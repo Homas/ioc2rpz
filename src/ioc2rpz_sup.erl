@@ -317,8 +317,10 @@ read_config3([],reload,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)  ->
             [ X || X <- RPZ_V, ioc2rpz_fun:intersection(X#rpz.sources,[Z#source.name || Z <- Sources_UPD]) /= [] ],
 
 
-  RPZ_C_UPD=[ exit(X#rpz.pid,rpzRemoved) || X <- RPZ_D, X#rpz.status == updating],
-  RPZ_C_UPD=[ exit(X#rpz.pid,rpzUpdated) || X <- RPZ_UPD, X#rpz.status == updating],
+  [ ioc2rpz_fun:logMessage("Zone ~p was updated. Terminating ~p.~n",[X#rpz.zone_str,X#rpz.pid]) || X <- RPZ_UPD, X#rpz.status == updating ],
+  [ ioc2rpz_fun:logMessage("Zone ~p was removed. Terminating ~p.~n",[X#rpz.zone_str,X#rpz.pid]) || X <- RPZ_D, X#rpz.status == updating ],
+  [ exit(X#rpz.pid,rpzRemoved) || X <- RPZ_D, X#rpz.status == updating],
+  [ exit(X#rpz.pid,rpzUpdated) || X <- RPZ_UPD, X#rpz.status == updating],
 
   [ ets:delete(cfg_table, [rpz,X#rpz.zone]) || X <- RPZ_D ],
   [ ets:insert(cfg_table, {[rpz,X#rpz.zone],X#rpz.zone,X}) || X <- RPZ_V ],
