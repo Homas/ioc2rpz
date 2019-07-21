@@ -299,7 +299,7 @@ read_config3([],reload,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)  ->
 
   WhiteLists_UPD = [ X || X <- WhiteLists_V, X#source.axfr_url /= (checkSrcRec(lists:keyfind(X#source.name,2,WhiteLists_C)))#source.axfr_url,lists:member(X#source.name, [ Z#source.name || Z <- WhiteLists_C ]) ],
 
-  Sources_UPD = [ X || X <- Sources_V, ((X#source.axfr_url /= (checkSrcRec(lists:keyfind(X#source.name,2,Sources_C)))#source.axfr_url) or (X#source.ixfr_url /= (checkSrcRec(lists:keyfind(X#source.name,2,Sources_C)))#source.ixfr_url)),lists:member(X#source.name, [ Z#source.name || Z <- Sources_C ]) ],
+  Sources_UPD = [ X || X <- Sources_V, ((X#source.axfr_url /= (checkSrcRec(lists:keyfind(X#source.name,2,Sources_C)))#source.axfr_url) or (X#source.ixfr_url /= (checkSrcRec(lists:keyfind(X#source.name,2,Sources_C)))#source.ixfr_url)) and (lists:member(X#source.name, [ Z#source.name || Z <- Sources_C ])) ],
 
   [ ets:insert(cfg_table, {[source,X#source.name],X}) || X <- WhiteLists_N ++ Sources_N ++ WhiteLists_UPD ++ Sources_UPD ],
 
@@ -320,7 +320,7 @@ read_config3([],reload,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)  ->
   [ ets:insert(cfg_table, {[rpz,X#rpz.zone],X#rpz.zone,X}) || X <- RPZ_V ],
   [ ets:match_delete(rpz_hotcache_table,{{pkthotcache,X#rpz.zone,'_'},'_','_'}) || X <- RPZ_D ++ RPZ_UPD ],
 
-  ioc2rpz_db:clean_DB(RPZ_D ++ RPZ_UPD), %TODO check
+  ioc2rpz_db:clean_DB(RPZ_D), %TODO check  % ++ RPZ_UPD - should be updated via standard AXFR update.
 
   [ ets:update_element(cfg_table, [rpz,X#rpz.zone], [{3, X#rpz{status=notready}}]) || X <- RPZ_UPD ],
 
@@ -415,7 +415,7 @@ load_ixfr_zone_info(Zone) ->
 
 load_ixfr_zone_info(ets,Zone) ->
   CTime=ioc2rpz_fun:curr_serial(), %erlang:system_time(seconds),
-  case ioc2rpz_db:get_zone_info(Zone,ixfr) of %ets:match(rpz_ixfr_table,{{ixfr_rpz_cfg,Zone#rpz.zone},'$1','$2','$3'})
+  case ioc2rpz_db:get_zone_info(Zone,ixfr) of 
     [[_,Serial,Serial_IXFR,IXFR_Update_time]] when (IXFR_Update_time+Zone#rpz.ixfr_time)>CTime ->
       ioc2rpz_fun:logMessage("Get IXFR zone ~p serial ~p status ready ~n",[Zone#rpz.zone_str,Serial_IXFR]),
       [ready,Serial,Serial_IXFR,IXFR_Update_time];
@@ -493,7 +493,7 @@ update_zone_inc(Zone) ->
   %io:fwrite(group_leader(),"Zone ~p IOC  ~p ~n",[Zone#rpz.zone_str,IOC]),
   Pid=self(),
 	ioc2rpz_fun:logMessage("Process PID ~p incremental update ~p started ~n",[Pid, Zone#rpz.zone_str]),
-  NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[],['true']}]),
+  NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[],['true']}]),
   CTime=ioc2rpz_fun:curr_serial_60(), %erlang:system_time(seconds),
   ioc2rpz_fun:logMessage("Updating zone ~p inc. Last IXFR update ~p seconds ago, last non-zero update ~p seconds ago~n",[Zone#rpz.zone_str,(CTime - Zone#rpz.ixfr_update_time),(CTime-Zone#rpz.ixfr_nz_update_time)]),
   ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=updating, ixfr_update_time=CTime, pid=Pid}}]),
@@ -514,7 +514,7 @@ update_zone_inc(Zone) ->
 					?logDebugMSG("Rebuilding AXFR zone ~p. New IOCs ~p~n",[Zone#rpz.zone_str,NewIOCs]),
           rebuild_axfr_zone(Zone#rpz{serial=CTime}),
 					?logDebugMSG("AXFR zone ~p was rebuilded~n",[Zone#rpz.zone_str]),
-          NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[],['true']}]),
+          NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[],['true']}]),
           ioc2rpz_fun:logMessage("Zone ~p records before ~p after ~p. ~n",[Zone#rpz.zone_str, NRbefore, NRafter]),
           ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, serial=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, pid=undefined, ioc_count=length(IOC)}}]),
           ioc2rpz_db:delete_db_pkt(Zone),

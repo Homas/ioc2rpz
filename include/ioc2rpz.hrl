@@ -28,7 +28,7 @@
 -define(Src_Retry,3). %# of retries if a source is not available
 -define(Src_Retry_TimeOut,3). %timeout between retries in seconds
 
-%-define(logTS, true). % Log timestamps (comment or uncomment)
+-define(logTS, true). % Log timestamps 
 -define(debug, true). % Log debug messages
 -define(ioc2rpzSampleRPZ,"sample-zone.ioc2rpz"). %Default DB location
 

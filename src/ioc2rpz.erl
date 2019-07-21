@@ -15,6 +15,7 @@
 %IOC2RPZ TCP Worker
 
 -module(ioc2rpz).
+-include_lib("eunit/include/eunit.hrl").
 -behaviour(gen_server).
 
 -include_lib("ioc2rpz.hrl").
@@ -1188,3 +1189,13 @@ init_T_ZIP_L(Zone) ->
 	ets:insert(T_ZIP_L, {Labels, ?ZNameZipN}),
 	T_ZIP_L.
 
+%%%%
+%%%% EUnit tests
+%%%%
+
+reverse_IP_test() ->[
+	?assert(reverse_IP(<<"10.20.30.40">>) =:= <<"32.40.30.20.10">>),
+	?assert(reverse_IP(<<"10.20.30.40/24">>) =:= <<"24.40.30.20.10">>),
+	?assert(reverse_IP(<<"fc00:01::01">>) =:= <<"128.01.zz.01.fc00">>),
+	?assert(reverse_IP(<<"fc00::01/64">>) =:= <<"64.01.zz.fc00">>)
+].

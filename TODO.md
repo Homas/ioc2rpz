@@ -3,14 +3,12 @@
 - [x] Add "reload_cert" API call (restart/reload cowboy) -- not needed. Erlang automatically reloads certificates. By default they are cached for 2 minutes.
 - [x] Add links to ioc2rpz.net
 - [x] Add links to the wiki's How-To install
-- [ ] Start EUnit Tests
+- [x] Start EUnit Tests
 - [ ] Release 1.0
-- [ ] Create development branch
+- [ ] Create a development branch
 - [ ] Update dockerhub images with 1.0 release
 ## Sources
-- [ ] Add a script for RPZ via "shell:"
 - [x] Retry if source was not available and handle the behaviour
-- [ ] Simultanious source downloads
 ## Configuration
 - [x] Validate: Configuration file name pass as a variable to the container
 ## UI
@@ -19,16 +17,15 @@
 
 ## Core / DNS
 - [ ] RPZ storage type: ets, mnesia
+- [ ] Mnesia for storage (and auto creation)
 - [ ] Force AXRF for a RPZ if a source doesn't have an IXFR url
 - [ ] Redo AXFR logs
 - [ ] Access to the hotcache and the cfg_table via FUNs
 - [ ] (1) Terminate updating zones during config reload
 - [ ] (1) Clean up the code & add comments
-- [ ] (*) saveZones - doesn't correctly save zones if there a lot of updates. Save strategy based on update size and time and currently running updates.
 - [ ] Logs level startup config
 - [ ] Check delete in ioc2rpz: rpz_hotcache_table/pkthotcache
 
-- [ ] Mnesia for storage (and auto creation)
 - [ ] Distributed configuration
 - [ ] Wait while a remote server confirms receiving a notification
 - [ ] (2) EDNS0 Support: DNS Cookie, edns-tcp-keepalive, NSID
@@ -36,9 +33,11 @@
 - [ ] DoH https://tools.ietf.org/html/rfc8484
 - [ ] DoD https://tools.ietf.org/html/draft-ietf-dprive-dnsodtls-06
 
-- [ ] EUnit Tests
+- [ ] EUnit Tests for main funs.
 
 ## Sources
+- [ ] Add a script for RPZ via "shell:"
+- [ ] Simultanious source downloads
 - [ ] Add source PostreSQL, MySQL via "shell:"
 - [ ] Dedup IoC from different sources with different expiration dates
 - [ ] RPZ action per source

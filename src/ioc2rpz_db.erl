@@ -27,7 +27,7 @@ init_db(ets,DBDir,PID) ->
     true -> ets:give_away(rpz_axfr_table, PID, [])
   end,
   if STI /= ok ->
-    ets:new(rpz_ixfr_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, set, public, named_table]);
+    ets:new(rpz_ixfr_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, duplicate_bag, public, named_table]); %set
     true -> ets:give_away(rpz_ixfr_table, PID, [])
   end,
   ets:new(cfg_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, ordered_set, public, named_table]),
@@ -86,24 +86,24 @@ delete_db_pkt(mnesia,Zone) ->
 read_db_record(Zone,Serial,Type) -> %ixfr
   read_db_record(?DBStorage,Zone,Serial,Type).
 read_db_record(ets,Zone,Serial,all) ->
-  ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[{'>','$3',Serial},{'=<','$3',Zone#rpz.serial}],['$$']},{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[{'>','$2',Serial},{'=<','$2',Zone#rpz.serial}],['$$']}]);
+  ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[{'>','$3',Serial},{'=<','$3',Zone#rpz.serial}],['$$']},{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[{'>','$2',Serial},{'=<','$2',Zone#rpz.serial}],['$$']}]);
 
 read_db_record(ets,Zone,Serial,updated) ->
 %  io:fwrite(group_leader(),"Read updated records. Zone ~p Serial ~p ~n",[Zone,Serial]),
-  ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[{'=<','$3',Serial},{'>=','$3',Zone#rpz.serial}],['$$']},{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[{'=<','$2',Serial},{'>','$2',Zone#rpz.serial}],['$$']}]);
+  ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[{'=<','$3',Serial},{'>=','$3',Zone#rpz.serial}],['$$']},{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[{'=<','$2',Serial},{'>','$2',Zone#rpz.serial}],['$$']}]);
 
 
 read_db_record(ets,Zone,Serial,new) ->
 %  io:fwrite(group_leader(),"Read expired records. Zone ~p Serial ~p ~n",[Zone,Serial]),
-  ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[{'>','$2',Serial},{'>','$3',Zone#rpz.serial}],['$$']},{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[{'==','$3',0},{'>','$2',Serial}],['$$']}]);
+  ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[{'>','$2',Serial},{'>','$3',Zone#rpz.serial}],['$$']},{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[{'==','$3',0},{'>','$2',Serial}],['$$']}]);
 
 read_db_record(ets,Zone,Serial,expired) ->
 %  io:fwrite(group_leader(),"Read expired records. Zone ~p Serial ~p ~n",[Zone,Serial]),
-  ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[{'=<','$2',Serial},{'>=','$3',Serial},{'=<','$3',Zone#rpz.serial}],['$$']}]);
+  ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[{'=<','$2',Serial},{'>=','$3',Serial},{'=<','$3',Zone#rpz.serial}],['$$']}]);
 
 
 read_db_record(ets,Zone,_Serial,active) -> %All not expired
-  ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[{'>','$3',Zone#rpz.serial},{'>=','$2',Zone#rpz.serial_ixfr}],['$$']},{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[{'==','$3',0},{'>=','$2',Zone#rpz.serial_ixfr}],['$$']}]);
+  ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[{'>','$3',Zone#rpz.serial},{'>=','$2',Zone#rpz.serial_ixfr}],['$$']},{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[{'==','$3',0},{'>=','$2',Zone#rpz.serial_ixfr}],['$$']}]);
 
 read_db_record(mnesia,Zone,Serial,all) -> ok;
 read_db_record(mnesia,Zone,Serial,updated) -> ok;
@@ -118,29 +118,28 @@ write_db_record(Zone,IOC,XFR) ->
   {ok,0}.
 
 write_db_record(ets,Zone,IOCs,axfr) ->
-  %TODO интеллектуальное обновление записи:
-  %запись уже заэкспайрилась - обновить serial и expiration time (потому что могли уже кому-то передать удаление записи) возможно в ключ нужно будет добавить версионность
-  %запись ежё действует - обновить expiration time
-  %добавить Serial в ключ?  AXFR время обновления - полностью удаляет IXFR таблицу?
-  %Типа AXFR - полная ресинхронизация, которая делается редко, IXFR делается часто
   CTime=erlang:system_time(seconds),
-  [ets:insert_new(rpz_ixfr_table, {{ioc,Zone#rpz.zone,IOC,Zone#rpz.serial},IOCExp}) || {IOC,IOCExp} <- IOCs, (IOCExp > CTime) or (IOCExp == 0)],
+  [ets:insert_new(rpz_ixfr_table, {{ioc,Zone#rpz.zone,IOC},Zone#rpz.serial,IOCExp}) || {IOC,IOCExp} <- IOCs, (IOCExp > CTime) or (IOCExp == 0)],
 	{ok,0}; %length(IOCs)
 
 write_db_record(mnesia,Zone,{IOC,IOCExp},axfr) ->
 	{ok,0};
 
-write_db_record(ets,Zone,IOCs,ixfr) ->
+write_db_record(ets,Zone,IOCs,ixfr) when IOCs /= [] ->
   CTime=erlang:system_time(seconds),
 	?logDebugMSG("Fetching zone ~p from ets~n",[Zone#rpz.zone_str]),
-	IOCDB=ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[],[{{'$1','$3'}}]}]),
+	IOCDB=ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[],[{{'$1','$3'}}]}]),
 	?logDebugMSG("Finding new or updated records~n",[]),
 	IOCNEW=ordsets:subtract(ordsets:from_list(IOCs),ordsets:from_list(IOCDB)),
 	
 %	?logDebugMSG("Update ets. New ~p, DB ~p, Delta ~p~n IOCs ~p~n IOCDB ~p~n IOCNEW ~p~n",[ordsets:size(IOCs),ordsets:size(IOCDB),ordsets:size(IOCNEW),IOCs,IOCDB,IOCNEW]),
 	?logDebugMSG("Update ets. New ~p, DB ~p, Delta ~p~n",[length(IOCs),length(IOCDB),ordsets:size(IOCNEW)]),
-  [update_db_record(?DBStorage,Zone#rpz.zone,Zone#rpz.serial,IOC,IOCExp,lists:keyfind(IOC,1,IOCDB),CTime) || {IOC,IOCExp} <- IOCNEW],
+  [update_db_record(?DBStorage,Zone#rpz.zone,Zone#rpz.serial,IOC,IOCExp,ets:lookup(rpz_ixfr_table, {ioc,Zone#rpz.zone,IOC}),CTime) || {IOC,IOCExp} <- IOCNEW],
 	{ok,ordsets:size(IOCNEW)};
+
+write_db_record(ets,Zone,IOCs,ixfr) when IOCs == [] ->
+	?logDebugMSG("Zone ~p incremental request returned no new indicators~n",[Zone#rpz.zone_str]),
+	{ok,0};
 
 write_db_record(mnesia,Zone,IOCs,ixfr) ->
 	{ok,0};
@@ -148,23 +147,18 @@ write_db_record(mnesia,Zone,IOCs,ixfr) ->
 write_db_record(_DBStorage,_Zone,_IOCs,_XFR) ->
 	{ok,0}. %non cached zones
 
-update_db_record(ets, Zone, Serial, IOC, IOCExp, false, CTime) when IOCExp > CTime ->
+update_db_record(ets, Zone, Serial, IOC, IOCExp, [], CTime) when IOCExp > CTime ->
 	%?logDebugMSG("Update ~p ~p ~p ~p ~p ~n",[Serial, IOC, IOCExp, false, CTime]),
-	ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC,Serial},IOCExp});
+	ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC},Serial,IOCExp}); %insert for duplicate_bag
 
-update_db_record(ets, Zone, Serial, IOC, IOCExp, false, CTime) when IOCExp =< CTime -> ok; % do not add new but expired indicators
+update_db_record(ets, Zone, Serial, IOC, IOCExp, [], CTime) when IOCExp =< CTime -> ok; % do not add new but expired indicators
+
+update_db_record(ets, Zone, Serial, IOC, IOCExp, [{ioc,_,_,OSerial,ExpTime}], CTime) when ExpTime < IOCExp, IOCExp >= CTime ->
+	ets:delete_object(rpz_ixfr_table,{{ioc,Zone,IOC},OSerial,ExpTime}),ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC},OSerial,IOCExp});
+
+update_db_record(ets, Zone, Serial, IOC, IOCExp, [{ioc,_,_,OSerial,ExpTime}], CTime) when IOCExp > 0, ExpTime == 0 ->
+	ets:select_delete(rpz_ixfr_table,[{{{ioc,Zone,IOC},'_','_'},[],[true]}]),ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC},Serial,IOCExp});
 	
-update_db_record(ets, Zone, Serial, IOC, IOCExp, {_,ExpTime}, CTime) ->
-	%?logDebugMSG("Update ~p ~p ~p ~p ~p ~n",[Serial, IOC, IOCExp, ExpTime, CTime]),
-  case ExpTime of
-    ExpTime when ExpTime < IOCExp, IOCExp >= CTime  ->
-		case ets:select(rpz_ixfr_table,[{{{ioc,Zone,IOC,'$3'},'_'},[],['$3']}]) of
-			[OSerial] -> ets:update_element(rpz_ixfr_table,{ioc,Zone,IOC,OSerial},{2,IOCExp}) %update expiration if expiration date was increased
-		end;
-   ExpTime when IOCExp > 0, ExpTime == 0 -> ets:select_delete(rpz_ixfr_table,[{{{ioc,Zone,IOC,'_'},'_'},[],[true]}]),ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC,Serial},IOCExp}); %update serial and expiration if expired already
-	 _ -> ok % Got 0 ExpTime but we have a record with a real Exp time. ?logDebugMSG("Bug in update ~p ~p ~p ~p ~p ~p ~n",[Zone, Serial, IOC, IOCExp, ExpTime, CTime])
-  end,
-  ok;
 update_db_record(mnesia, Zone, Serial, IOC, IOCExp, Update, CTime) -> ok.
 
 delete_old_db_record(Zone) ->
@@ -173,13 +167,13 @@ delete_old_db_record(Zone) ->
 
 delete_old_db_record(ets, Zone) when Zone#rpz.serial == 42 ->
   %?logDebugMSG("Removing IXFR zone ~p ~n",[Zone#rpz.zone_str]),
-  ets:match_delete(rpz_ixfr_table,{{ioc,Zone#rpz.zone,'_','_'},'_'}),
+  ets:match_delete(rpz_ixfr_table,{{ioc,Zone#rpz.zone,'_'},'_','_'}),
   ets:match_delete(rpz_ixfr_table,{{ixfr_rpz_cfg,Zone#rpz.zone},'_','_','_','_'});
 
 delete_old_db_record(ets, Zone) ->
-  NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[],['true']}]),
-  ets:select_delete(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'_','$1'},'_'},[{'<','$1',Zone#rpz.serial}],[true]}]),
-  NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3'},[],['true']}]),
+  NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[],['true']}]),
+  ets:select_delete(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'_'},'$1','_'},[{'<','$1',Zone#rpz.serial}],[true]}]),
+  NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[],['true']}]),
   if NRbefore /= NRafter -> ?logDebugMSG("Delete old records from zone ~p.  before ~p after ~p ~n",[Zone#rpz.zone_str, NRbefore, NRafter]); true -> ok end;
 delete_old_db_record(mnesia, Zone) ->
 ok.

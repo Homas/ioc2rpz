@@ -69,7 +69,7 @@ msg_CEF(301)    -> "|000301|MGMT request denied|7|src=~s spt=~p proto=~p qname=~
 
 msg_CEF(501)    -> "|000501|Possible DDoS CVE-2004-0789|3|src=~s spt=~p proto=~p~n";
 
-msg_CEF(999)    -> "Not defined~n".
+msg_CEF(_)    -> "Not defined~n".
 
 strs_to_binary(Strs) ->
   strs_to_binary(Strs,[]).
@@ -238,9 +238,31 @@ split([H|T],Index)->
     [[H|RH],RT].
 
 %%%%
-%%%% Unit tests
+%%%% EUnit tests
 %%%%
 q_class_test() -> [
 	?assert(q_class(?C_IN) =:= "IN"),
 	?assert(q_class(42) =:= "42")
-	].
+].
+	
+q_type_test() -> [
+	?assert(q_type(?T_CNAME) =:= "CNAME"),
+	?assert(q_type(42) =:= "42")
+].
+	
+conv_to_Mb_test() -> [
+	?assert(conv_to_Mb(42) =:= <<"42/bytes">>),
+	?assert(conv_to_Mb(1536) =:= <<"1.50/KB">>),
+	?assert(conv_to_Mb(3221225472) =:= <<"3.00/GB">>)
+].
+	
+msg_CEF_test() -> [
+	?assert(msg_CEF(138) =:= "|000138|Zone not found|7|src=~s spt=~p path=~p msg=~p~n"),
+	?assert(msg_CEF(424242) =:= "Not defined~n")	
+].
+
+
+ip_to_bin_test() ->[
+	?assert(ip_to_bin("10.10.10.10") =:= <<10,10,10,10>>),
+	?assert(ip_to_bin("fc00::01") =:= <<16#fc00:16,0:16,0:16,0:16,0:16,0:16,0:16,1:16>>)
+].

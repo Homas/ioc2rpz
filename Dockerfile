@@ -32,7 +32,7 @@ ADD include/* /opt/ioc2rpz/include/
 ADD config/* /opt/ioc2rpz/config/
 ADD rebar.config /opt/ioc2rpz/
 
-RUN rebar3 release -d false
+RUN rebar3 eunit && rebar3 release -d false
 
 VOLUME ["/opt/ioc2rpz/cfg", "/opt/ioc2rpz/db"]
 
