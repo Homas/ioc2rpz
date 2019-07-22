@@ -4,9 +4,9 @@
 - [x] Add links to ioc2rpz.net
 - [x] Add links to the wiki's How-To install
 - [x] Start EUnit Tests
-- [ ] Release 1.0
-- [ ] Create a development branch
-- [ ] Update dockerhub images with 1.0 release
+- [x] Release 1.0
+- [x] Create a dev branch
+- [x] Update dockerhub images with 1.0 release
 ## Sources
 - [x] Retry if source was not available and handle the behaviour
 ## Configuration

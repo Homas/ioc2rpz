@@ -1,5 +1,8 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## 2019-07-21 v1.0.0.0
+- Released v1.0.0.0
+
 ## 2019-07-20 v0.9.5.0
 - Bug fixes related to IXFR zone update and transfer
 - [CB] Source IXFR update "from" time will be keept the same until we get "non zero" update.
