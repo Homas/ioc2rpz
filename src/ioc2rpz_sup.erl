@@ -461,17 +461,17 @@ update_zone_full(Zone) ->
   NSRec = <<?ZNameZip, ?T_NS:16, ?C_IN:16, 604800:32, (byte_size(NSServ)):16, NSServ/binary>>,
   ioc2rpz_fun:logMessage("Updating zone ~p full ~n",[Zone#rpz.zone_str]),
   ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{serial_new=CTime, status=updating, update_time=CTime, pid=Pid}}]),
-  {Status,MD5,IOC_Cnt} = ioc2rpz:send_zone_live(<<>>,cache,Zone#rpz{serial=CTime},<<>>,<<(Zone#rpz.zone)/binary,0:32>>, SOAREC,NSRec,[],[]),
+  {Status,MD5, NRules, NIOCs} = ioc2rpz:send_zone_live(<<>>,cache,Zone#rpz{serial=CTime},<<>>,<<(Zone#rpz.zone)/binary,0:32>>, SOAREC,NSRec,[],[]),
   if Status == updateSOA ->
-      ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, serial_new=0, ioc_md5=MD5, update_time=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, pid=undefined, ioc_count=IOC_Cnt}}]),
+      ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, serial_new=0, ioc_md5=MD5, update_time=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, pid=undefined}}]),
       ioc2rpz_fun:logMessage("Zone ~p is the same. Checked in ~p seconds, check timestamp ~p ~n",[Zone#rpz.zone_str, (ioc2rpz_fun:curr_serial()- CTime), CTime]);
     true ->
       %if Zone#rpz.serial_ixfr == 0 -> Serial_IXFR=CTime; true -> Serial_IXFR=Zone#rpz.serial_ixfr end,
-      ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{serial=CTime, status=ready, serial_new=0, ioc_md5=MD5, update_time=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, serial_ixfr=CTime, pid=undefined, ioc_count=IOC_Cnt}}]),
+      ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{serial=CTime, status=ready, serial_new=0, ioc_md5=MD5, update_time=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, serial_ixfr=CTime, pid=undefined,ioc_count=NIOCs, rule_count=NRules}}]),
       ioc2rpz_db:delete_db_pkt(Zone),
       %erlang:garbage_collect(), %TODO check if need
       ioc2rpz:send_notify(Zone),
-      ioc2rpz_fun:logMessage("Zone ~p updated in ~p seconds, new serial ~p ~n",[Zone#rpz.zone_str, (ioc2rpz_fun:curr_serial_60() - CTime), CTime])
+      ioc2rpz_fun:logMessage("Zone ~p updated in ~p seconds, new serial ~p, ~p rules, ~p indicators.~n",[Zone#rpz.zone_str, (ioc2rpz_fun:curr_serial_60() - CTime), CTime, NRules, NIOCs])
   end,
   ioc2rpz_db:saveZones(),
   ok.
@@ -506,11 +506,11 @@ update_zone_inc(Zone) ->
 					ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, ixfr_update_time=CTime, pid=undefined}}]); %, ixfr_update_time=CTime
         {ok,NewIOCs} ->
 					?logDebugMSG("Rebuilding AXFR zone ~p. New IOCs ~p~n",[Zone#rpz.zone_str,NewIOCs]),
-          rebuild_axfr_zone(Zone#rpz{serial=CTime}),
-					?logDebugMSG("AXFR zone ~p was rebuilded~n",[Zone#rpz.zone_str]),
+          {ok, NRules, NIOCs} = rebuild_axfr_zone(Zone#rpz{serial=CTime}),
+					?logDebugMSG("AXFR zone ~p was rebuilded. ~p rules ~p indicators. Parsed ~p indicators.~n",[Zone#rpz.zone_str, NRules, NIOCs,length(IOC)]),
           NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[],['true']}]),
           ioc2rpz_fun:logMessage("Zone ~p records before ~p after ~p. ~n",[Zone#rpz.zone_str, NRbefore, NRafter]),
-          ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, serial=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, pid=undefined, ioc_count=length(IOC)}}]),
+          ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, serial=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, pid=undefined, ioc_count=NIOCs, rule_count=NRules}}]),
           ioc2rpz_db:delete_db_pkt(Zone),
           ioc2rpz_db:saveZones(),
           ioc2rpz:send_notify(Zone);
@@ -533,6 +533,7 @@ rebuild_axfr_zone(Zone) ->
   PktHLen = 12+byte_size(Questions),
   T_ZIP_L=ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), % нужны ли {read_concurrency, true}, {write_concurrency, true} ???
 	%T_ZIP_L=init_T_ZIP_L(Zone),
-  ioc2rpz:send_packets(<<>>,IOC, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,[],0,cache,0,false,no),
+  {ok, NRules, NIOCs} = ioc2rpz:send_packets(<<>>,IOC, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,[],0,cache,0,false,no),
+  ioc2rpz_fun:logMessage("Zone ~p, # of rules ~p, # of IOCs ~p ~n", [Zone#rpz.zone_str, NRules, NIOCs]), 
   ets:delete(T_ZIP_L),
-  ok.
+  {ok, NRules, NIOCs}.

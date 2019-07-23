@@ -659,7 +659,8 @@ send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,RH,Rest,Zone,?T_IXFR,NSSe
 %  T_ZIP_L=ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), % нужны ли {read_concurrency, true}, {write_concurrency, true} ???
 	T_ZIP_L=init_T_ZIP_L(Zone),
   %В момент переключения на добавления - SOARECCL обнуляем, таким образом отслеживаем, что мы добавили новую SOA
-  send_packets(Socket,IOCexp ++ IOCnew, [], 0, 0, true, [DNSId, <<1:1, OptB:7, 1:1, OptE:3, ?NOERROR:4, 1:16>>], Questions, SOAREC,SOARECCL,Zone,MP,PktHLen,T_ZIP_L,TSIG,0,ixfr,0,false,Proto),
+  {ok, NRules, NIOCs}=send_packets(Socket,IOCexp ++ IOCnew, [], 0, 0, true, [DNSId, <<1:1, OptB:7, 1:1, OptE:3, ?NOERROR:4, 1:16>>], Questions, SOAREC,SOARECCL,Zone,MP,PktHLen,T_ZIP_L,TSIG,0,ixfr,0,false,Proto),
+  ioc2rpz_fun:logMessage("Zone ~p, # of rules ~p, # of IOCs ~p ~n", [Zone#rpz.zone_str, NRules, NIOCs]), 
   ets:delete(T_ZIP_L),
   ok;
 
@@ -679,10 +680,8 @@ send_zone(_,Socket,{Questions,DNSId,OptB,OptE,_RH,_Rest,Zone,_QType,NSServ,MailA
     [[Timestamp,Pkt1]|REST] when CTime=<(Timestamp+?HotCacheTime) ->
       ioc2rpz_fun:logMessage("Found the zone in the hot cache~n",[]), %TODO remove debug
       Pkt = [binary_to_term(Pkt1) | [binary_to_term(X) || [_,X] <- REST]],
-      %io:fwrite(group_leader(),"Zone ~p send cached ~n",[Zone#rpz.zone_str]),
       send_cached_zone(Socket, NSRec, SOAREC, TSIG, <<DNSId:2/binary ,1:1, OptB:7, 1:1, OptE:3, ?NOERROR:4, 1:16>>, Questions, Pkt, Proto);
     _Else ->
-      %io:fwrite(group_leader(),"Zone ~p send life ~n",[Zone#rpz.zone_str]),
       send_zone_live(Socket,sendNhotcache,Zone#rpz{serial=CTime},[DNSId, <<1:1, OptB:7, 1:1, OptE:3, ?NOERROR:4, 1:16>>],Questions, SOAREC,NSRec,TSIG,Proto)
   end,
   ok.
@@ -691,29 +690,30 @@ send_zone_live(Socket,Op,Zone,PktH,Questions, SOAREC,NSRec,TSIG,Proto) ->
   IOC = mrpz_from_ioc(Zone,axfr),
   MD5=crypto:hash(md5,term_to_binary(IOC)),
   case {Op, Zone#rpz.ioc_md5} of
-    {cache, MD5} -> {updateSOA, MD5,length(IOC)};
+    {cache, MD5} -> {updateSOA, MD5, Zone#rpz.rule_count, Zone#rpz.max_ioc};
     _Else ->
       {ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3})$"), %
       PktHLen = 12+byte_size(Questions),
       ioc2rpz_db:write_db_record(Zone,IOC,axfr),
       ioc2rpz_db:delete_old_db_record(Zone),
 			T_ZIP_L=init_T_ZIP_L(Zone),
-      send_packets(Socket,IOC, [], 0, 0, true, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,0,Op,0,true,Proto),
+      {ok, NRules, NIOCs}=send_packets(Socket,IOC, [], 0, 0, true, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,0,Op,0,true,Proto),
+		  ioc2rpz_fun:logMessage("Live zone ~p, # of rules ~p, # of IOCs ~p ~n", [Zone#rpz.zone_str, NRules, NIOCs]), 
       ets:delete(T_ZIP_L),
-      {ok,MD5,length(IOC)}
+      {ok,MD5, NRules, NIOCs}
   end.
 
 w_send_packets(PID, Zone) ->      
   receive 
-    { ok, PID, ok } -> ok
-      %ioc2rpz_fun:logMessage("Zone ~p Got message from ~p ~n",[Zone, PID])
+    { ok, PID, {ok, NRules, NIOCs} } -> 
+      %ioc2rpz_fun:logMessage("Zone ~p. Got message from ~p # of rules ~p # of IOCs ~p~n",[Zone, PID, NRules, NIOCs]),
+			{ok, NRules, NIOCs}
   end.
 
 
 % пустая зона
 send_packets(Socket,[], [], 0, _ACount, _Zip, PktH, Questions, SOAREC,NSRec,Zone,_MP,_PktHLen,_T_ZIP_L,TSIG,PktN,DBOp,_SOANSSize,_IXFRNewR,Proto) -> %NSRec = Client SOA for IXFR
-% Socket, IOCs, Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC, NSREC
-  %Pkt1 = list_to_binary([PktH,<<2:16,0:16,0:16>>, Questions, SOAREC, SOAREC]),
+%%%TODO save # of rules set to 0 for AXRF
    if (DBOp == send) or (DBOp == sendNcache) or (DBOp == sendNhotcache) or (DBOp == ixfr) ->
     %we do not expect empty IXFR response but just to be on the safe side will send to a client SOA, SOACL, SOA, SOA => empty zone update
     if (DBOp == ixfr) -> EndSOA=SOAREC, Cnt=1; true->EndSOA = <<>>,Cnt=0 end,
@@ -736,7 +736,8 @@ send_packets(Socket,[], [], 0, _ACount, _Zip, PktH, Questions, SOAREC,NSRec,Zone
     CTime=ioc2rpz_fun:curr_serial_60(),%erlang:system_time(seconds),
     ets:insert(rpz_hotcache_table, {{pkthotcache,Zone#rpz.zone,PktN},CTime, term_to_binary({0,3,0,0, []},[{compressed,?Compression}])});
     true -> ok
-  end;
+  end,
+	{ok, 0, 0};
 
 
 send_packets(Socket,IOC, [], _ACount, _PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,0,IXFRNewR,Proto) when T_ZIP_L /= 0 -> % первый пакет
@@ -747,7 +748,7 @@ send_packets(Socket,IOC, [], _ACount, _PSize, Zip, PktH, Questions, SOAREC,NSRec
   %TODO split IOC by # cores and spawn for DBOp == cache
   %sequential
   %send_packets(Socket,IOC, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto);
-
+	%	{ok, Zone#rpz.rule_count, Zone#rpz.ioc_count}; 
   %concurrent
   if DBOp == cache ->
       [IOC1,IOC2]=ioc2rpz_fun:split(IOC,?IOCperProc),
@@ -755,18 +756,20 @@ send_packets(Socket,IOC, [], _ACount, _PSize, Zip, PktH, Questions, SOAREC,NSRec
 %      spawn_opt(ioc2rpz,send_packets,[Socket,IOC1, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC, NSRec, Zone, MP, PktHLen, 0, TSIG, PktN, DBOp, SOANSSize, IXFRNewR,Proto],[{fullsweep_after,0}]),
 %  ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]) ---> init_T_ZIP_L(Zone) 
       PID=spawn_opt(fun() ->
-        ParentPID ! {ok, self(), ioc2rpz:send_packets(Socket,IOC1, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC, NSRec, Zone, MP, PktHLen, init_T_ZIP_L(Zone), TSIG, PktN, DBOp, SOANSSize, IXFRNewR, Proto) }
+        ParentPID ! {ok, self(), ioc2rpz:send_packets(Socket,IOC1, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC, NSRec, Zone#rpz{rule_count=0, ioc_count=0}, MP, PktHLen, init_T_ZIP_L(Zone), TSIG, PktN, DBOp, SOANSSize, IXFRNewR, Proto) }
         end
         ,[{fullsweep_after,0}]),
       %ioc2rpz_fun:logMessage("Zone ~p started ~p ~n",[Zone#rpz.zone_str, PID]),
       if IOC2 /= [] ->
-        ioc2rpz:send_packets(<<>>,IOC2, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,[],PktN+100,cache,0,false,Proto);
-        true -> ok
+        {ok, NRules1, NIOCs1}=ioc2rpz:send_packets(<<>>,IOC2, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone#rpz{rule_count=0, ioc_count=0},MP,PktHLen,T_ZIP_L,[],PktN+100,cache,0,false,Proto);
+        true -> NRules1=0, NIOCs1=0
       end,
-      w_send_packets(PID, Zone#rpz.zone_str);
+      {ok, NRules, NIOCs}=w_send_packets(PID, Zone#rpz.zone_str);
     true ->
-      send_packets(Socket,IOC, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto)
-  end;
+      {ok, NRules, NIOCs}=send_packets(Socket,IOC, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC,NSRec,Zone#rpz{rule_count=0, ioc_count=0},MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto),
+			NRules1=0, NIOCs1=0
+  end,
+	{ok, NRules+NRules1, NIOCs+NIOCs1};
 
 %send_packets(Socket,IOC, [], _ACount, _PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,0,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto) ->
 %  %ioc2rpz_fun:logMessage("Zone ~p zip ~n",[Zone#rpz.zone_str]),
@@ -775,6 +778,7 @@ send_packets(Socket,IOC, [], _ACount, _PSize, Zip, PktH, Questions, SOAREC,NSRec
 
 % последний пакет, нужно отсылать
 send_packets(Socket,[], Pkt, ACount, _PSize, _Zip, PktH, Questions, SOAREC,NSREC,Zone,_,_,_,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto) ->
+%%%TODO save # of rules for AXRF
   case {PktN, IXFRNewR} of
     {0, false} -> PktF=[SOAREC,NSREC,Pkt,SOAREC], Cnt=4;
     {0, true} -> PktF=[SOAREC,NSREC,Pkt], Cnt=3;
@@ -798,7 +802,8 @@ send_packets(Socket,[], Pkt, ACount, _PSize, _Zip, PktH, Questions, SOAREC,NSREC
     CTime=ioc2rpz_fun:curr_serial_60(),
     ets:insert(rpz_hotcache_table, {{pkthotcache,Zone#rpz.zone,PktN},CTime, term_to_binary({PktN,ACount,0,0, Pkt},[{compressed,?Compression}])}); %2019-06-13 BUG in live zones # of records ACount+Cnt
     true -> ok
-  end;
+  end,
+	{ok, Zone#rpz.rule_count, Zone#rpz.ioc_count}; 
 
 % превышен размер пакета, нужно отсылать
 send_packets(Socket,Tail, Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto) when PSize > ?DNSPktMax ->
@@ -811,7 +816,6 @@ send_packets(Socket,Tail, Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec
   PktLen = byte_size(Pkt1),
   Pkt2 = [<<PktLen:16>>,Pkt1],
   if (DBOp == send) or (DBOp == sendNcache) or (DBOp == sendNhotcache) or (DBOp == ixfr) ->
-    %send_dns_tcp(Socket,Pkt2, []);
     send_dns(Socket,Pkt2, [Proto,[]]);
     true -> ok
   end,
@@ -841,7 +845,7 @@ send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Question
   if ((IOCExp>Zone#rpz.serial) or (IOCExp==0)) and (DBOp == ixfr) and (IXFRNewR /= true) -> Rules1 = [SOAREC | Rules], Cnt1=Cnt+1, IXFRNewR1 = true; true -> Rules1=Rules, Cnt1=Cnt, IXFRNewR1 = IXFRNewR end,
   Pkt1 = list_to_binary([Pkt, Rules1]),
   PSize1 = byte_size(Pkt1)+SOANSSize,
-  send_packets(Socket,Tail, Pkt1 , ACount+Cnt1, PSize1, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR1,Proto);
+  send_packets(Socket,Tail, Pkt1 , ACount+Cnt1, PSize1, Zip, PktH, Questions, SOAREC,NSRec,Zone#rpz{rule_count=Zone#rpz.rule_count+Cnt, ioc_count=Zone#rpz.ioc_count+1},MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR1,Proto);
 
 send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto) when Zone#rpz.ioc_type == <<"fqdn">> -> % докидываем записи и пересчитываем размеры
   if ((IOCExp>Zone#rpz.serial) or (IOCExp==0)) and (DBOp == ixfr) and (IXFRNewR /= true) -> SOASize=byte_size(SOAREC); true -> SOASize=0 end,
@@ -856,7 +860,7 @@ send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Question
   if ((IOCExp>Zone#rpz.serial) or (IOCExp==0)) and (DBOp == ixfr) and (IXFRNewR /= true) -> Rules1 = [SOAREC | Rules], Cnt1=Cnt+1, IXFRNewR1 = true; true -> Rules1=Rules, Cnt1=Cnt, IXFRNewR1 = IXFRNewR end,
   Pkt1 = list_to_binary([Pkt, Rules1, Rules2]),
   PSize1 = byte_size(Pkt1)+SOANSSize,
-  send_packets(Socket,Tail,Pkt1,ACount+Cnt1,PSize1, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR1,Proto);
+  send_packets(Socket,Tail,Pkt1,ACount+Cnt1,PSize1, Zip, PktH, Questions, SOAREC,NSRec,Zone#rpz{rule_count=Zone#rpz.rule_count+Cnt, ioc_count=Zone#rpz.ioc_count+1},MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR1,Proto);
 
 send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto) -> % докидываем записи и пересчитываем размеры
   if ((IOCExp>Zone#rpz.serial) or (IOCExp==0)) and (DBOp == ixfr) and (IXFRNewR /= true) -> SOASize=byte_size(SOAREC); true -> SOASize=0 end,
@@ -872,7 +876,7 @@ send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Question
   if ((IOCExp>Zone#rpz.serial) or (IOCExp==0)) and (DBOp == ixfr) and (IXFRNewR /= true) -> Rules1 = [SOAREC | Rules], Cnt1=Cnt+1, IXFRNewR1 = true; true -> Rules1=Rules, Cnt1=Cnt, IXFRNewR1 = IXFRNewR end,
   Pkt1 = list_to_binary([Pkt, Rules1, Rules2]),
   PSize1 = byte_size(Pkt1)+SOANSSize,
-  send_packets(Socket,Tail, Pkt1 , ACount+Cnt1, PSize1, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR1,Proto).
+  send_packets(Socket,Tail, Pkt1 , ACount+Cnt1, PSize1, Zip, PktH, Questions, SOAREC,NSRec,Zone#rpz{rule_count=Zone#rpz.rule_count+Cnt, ioc_count=Zone#rpz.ioc_count+1},MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR1,Proto).
 
 gen_wildcard(WCards, [Rules|RESTR], [WRules|RESTWR], PSize) ->
   {ok,Rul1,Cnt1}=gen_wildcard(WCards, Rules, WRules, PSize),

@@ -131,14 +131,35 @@ srv_mgmt(Req, State, Format) when State#state.op == terminate -> %Shutdown serve
 srv_mgmt(Req, State, Format) when State#state.op == stats_serv -> % Statistics -- TODO
 	#{peer := {IP, Port}} = Req,
     ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(230),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
-	Srv_IOCs = lists:sum(([ element(25,X) || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), element(25,X) /= undefined])),
-	RPZ_stat = [ {element(4,X),element(25,X)} || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), element(25,X) /= undefined],
-	Sources_stat = [ {element(2,X),element(6,X)} || [X]  <- ets:match(cfg_table,{[source,'_'],'$2'}),element(6,X) /= undefined],
-	Body=case Format of
-		txt     ->  io_lib:format("Srv total RPZ IOCs: ~p\nRPZ:\n ~p\nSources:\n ~p\n",[Srv_IOCs,RPZ_stat,Sources_stat]);
-        json    ->  io_lib:format("{\"srv_total_rules\":~p,\"rpz\":~s,\"sources\":~s}\n",[Srv_IOCs,list_tuples_to_json(RPZ_stat),list_tuples_to_json(Sources_stat)])
-    end,
-	{Body, Req, State};
+		Srv_rules = lists:sum(([ X#rpz.rule_count || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), X#rpz.rule_count /= undefined])),
+		RPZ_stat = [ {X#rpz.zone_str,X#rpz.rule_count} || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), X#rpz.rule_count /= undefined],
+		Sources_stat = [ {X#source.name,X#source.ioc_count} || [X]  <- ets:match(cfg_table,{[source,'_'],'$2'}), X#source.ioc_count /= undefined],
+		Body=case Format of
+			txt     ->  io_lib:format("Srv total RPZ rules: ~p\nRPZ:\n ~p\nSources:\n ~p\n",[Srv_rules,RPZ_stat,Sources_stat]);
+					json    ->  io_lib:format("{\"srv_total_rules\":~p,\"rpz\":~s,\"sources\":~s}\n",[Srv_rules,list_tuples_to_json(RPZ_stat),list_tuples_to_json(Sources_stat)])
+			end,
+		{Body, Req, State};
+
+srv_mgmt(Req, State, Format) when State#state.op == stats_rpz -> % Statistics -- TODO
+	#{peer := {IP, Port}} = Req,
+    ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(230),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
+		RPZ_stat = [ {X#rpz.zone_str,X#rpz.rule_count} || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), X#rpz.rule_count /= undefined],
+		Body=case Format of
+			txt     ->  io_lib:format("RPZ:\n ~p\n",[RPZ_stat]);
+					json    ->  io_lib:format("{\"rpz\":~s}\n",[list_tuples_to_json(RPZ_stat)])
+			end,
+		{Body, Req, State};
+
+srv_mgmt(Req, State, Format) when State#state.op == stats_source -> % Statistics -- TODO
+	#{peer := {IP, Port}} = Req,
+    ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(230),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
+		Sources_stat = [ {X#source.name,X#source.ioc_count} || [X]  <- ets:match(cfg_table,{[source,'_'],'$2'}), X#source.ioc_count /= undefined],
+		Body=case Format of
+			txt     ->  io_lib:format("Sources:\n ~p\n",[Sources_stat]);
+					json    ->  io_lib:format("{\"sources\":~s}\n",[list_tuples_to_json(Sources_stat)])
+			end,
+		{Body, Req, State};
+
 
 
 srv_mgmt(Req, State, Format) when State#state.op == get_rpz -> % Get RPZ
