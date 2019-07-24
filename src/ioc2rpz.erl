@@ -660,7 +660,7 @@ send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,RH,Rest,Zone,?T_IXFR,NSSe
 	T_ZIP_L=init_T_ZIP_L(Zone),
   %В момент переключения на добавления - SOARECCL обнуляем, таким образом отслеживаем, что мы добавили новую SOA
   {ok, NRules, NIOCs}=send_packets(Socket,IOCexp ++ IOCnew, [], 0, 0, true, [DNSId, <<1:1, OptB:7, 1:1, OptE:3, ?NOERROR:4, 1:16>>], Questions, SOAREC,SOARECCL,Zone,MP,PktHLen,T_ZIP_L,TSIG,0,ixfr,0,false,Proto),
-  ioc2rpz_fun:logMessage("Zone ~p, # of rules ~p, # of IOCs ~p ~n", [Zone#rpz.zone_str, NRules, NIOCs]), 
+  ioc2rpz_fun:logMessage("Zone ~p, ~p rules, ~p IOCs ~n", [Zone#rpz.zone_str, NRules, NIOCs]), 
   ets:delete(T_ZIP_L),
   ok;
 
@@ -698,7 +698,7 @@ send_zone_live(Socket,Op,Zone,PktH,Questions, SOAREC,NSRec,TSIG,Proto) ->
       ioc2rpz_db:delete_old_db_record(Zone),
 			T_ZIP_L=init_T_ZIP_L(Zone),
       {ok, NRules, NIOCs}=send_packets(Socket,IOC, [], 0, 0, true, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,0,Op,0,true,Proto),
-		  ioc2rpz_fun:logMessage("Live zone ~p, # of rules ~p, # of IOCs ~p ~n", [Zone#rpz.zone_str, NRules, NIOCs]), 
+		  ioc2rpz_fun:logMessage("Live zone ~p, ~p rules, ~p IOCs ~n", [Zone#rpz.zone_str, NRules, NIOCs]), 
       ets:delete(T_ZIP_L),
       {ok,MD5, NRules, NIOCs}
   end.

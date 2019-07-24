@@ -46,7 +46,7 @@
 %%%%%%
 %%%%%% Do not modify any settings below the line
 %%%%%%
--define(ioc2rpz_ver, "1.0.0.0-2019072101").
+-define(ioc2rpz_ver, "1.0.0.1-2019072201").
 
 -define(ZNameZip,16#c00c:16). %Zone name/original fqdn from a request is always at byte 10 in the response
 -define(ZNameZipN,16#c00c). % Offset in bytes - Zone name/original fqdn from a request is always at byte 10 in the response

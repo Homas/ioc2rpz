@@ -131,32 +131,29 @@ srv_mgmt(Req, State, Format) when State#state.op == terminate -> %Shutdown serve
 srv_mgmt(Req, State, Format) when State#state.op == stats_serv -> % Statistics -- TODO
 	#{peer := {IP, Port}} = Req,
     ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(230),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
-		Srv_rules = lists:sum(([ X#rpz.rule_count || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), X#rpz.rule_count /= undefined])),
-		RPZ_stat = [ {X#rpz.zone_str,X#rpz.rule_count} || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), X#rpz.rule_count /= undefined],
-		Sources_stat = [ {X#source.name,X#source.ioc_count} || [X]  <- ets:match(cfg_table,{[source,'_'],'$2'}), X#source.ioc_count /= undefined],
+		% io_lib:format("[~s]",[list_tuples_to_json([],Array)])
 		Body=case Format of
-			txt     ->  io_lib:format("Srv total RPZ rules: ~p\nRPZ:\n ~p\nSources:\n ~p\n",[Srv_rules,RPZ_stat,Sources_stat]);
-					json    ->  io_lib:format("{\"srv_total_rules\":~p,\"rpz\":~s,\"sources\":~s}\n",[Srv_rules,list_tuples_to_json(RPZ_stat),list_tuples_to_json(Sources_stat)])
+			txt     ->  io_lib:format("Srv:\n ~s\nRPZ:\n ~p\nSources:\n ~p\n",[gen_srv_stats(txt),gen_rpz_stats(),gen_source_stats()]);
+			json    ->  io_lib:format("{\"srv\":~s,\"rpz\":~s,\"sources\":~s}\n",[gen_srv_stats(json),list_tuples_to_json(gen_rpz_stats()),list_tuples_to_json(gen_source_stats())])
 			end,
 		{Body, Req, State};
+
 
 srv_mgmt(Req, State, Format) when State#state.op == stats_rpz -> % Statistics -- TODO
 	#{peer := {IP, Port}} = Req,
     ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(230),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
-		RPZ_stat = [ {X#rpz.zone_str,X#rpz.rule_count} || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), X#rpz.rule_count /= undefined],
 		Body=case Format of
-			txt     ->  io_lib:format("RPZ:\n ~p\n",[RPZ_stat]);
-					json    ->  io_lib:format("{\"rpz\":~s}\n",[list_tuples_to_json(RPZ_stat)])
+			txt     ->  io_lib:format("RPZ:\n ~p\n",[gen_rpz_stats()]);
+			json    ->  io_lib:format("{\"rpz\":~s}\n",[list_tuples_to_json(gen_rpz_stats())])
 			end,
 		{Body, Req, State};
 
 srv_mgmt(Req, State, Format) when State#state.op == stats_source -> % Statistics -- TODO
 	#{peer := {IP, Port}} = Req,
     ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(230),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
-		Sources_stat = [ {X#source.name,X#source.ioc_count} || [X]  <- ets:match(cfg_table,{[source,'_'],'$2'}), X#source.ioc_count /= undefined],
 		Body=case Format of
-			txt     ->  io_lib:format("Sources:\n ~p\n",[Sources_stat]);
-					json    ->  io_lib:format("{\"sources\":~s}\n",[list_tuples_to_json(Sources_stat)])
+			txt     ->  io_lib:format("Sources:\n ~p\n",[gen_source_stats()]);
+			json    ->  io_lib:format("{\"sources\":~s}\n",[list_tuples_to_json(gen_source_stats())])
 			end,
 		{Body, Req, State};
 
@@ -197,6 +194,26 @@ srv_mgmt(Req, State, Format) when State#state.op == catch_all -> % Catch all uns
 rest_terminate(Req, State) ->
 	ok.
 
+gen_rpz_stats() ->
+	[ [{"name",X#rpz.zone_str},{"rule_count",X#rpz.rule_count},{"ioc_count",X#rpz.ioc_count},{"serial",X#rpz.serial},{"serial_ixfr",X#rpz.serial_ixfr},{"update_time",X#rpz.update_time},{"ixfr_update_time",X#rpz.ixfr_update_time},{"ixfr_nz_update_time",X#rpz.ixfr_nz_update_time}] || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), X#rpz.rule_count /= undefined].
+
+gen_source_stats() ->
+	[ [{"name",X#source.name},{"ioc_count",X#source.ioc_count}] || [X]  <- ets:match(cfg_table,{[source,'_'],'$2'}), X#source.ioc_count /= undefined].
+
+gen_srv_stats(Format) ->
+	Srv_rules = lists:sum(([ X#rpz.rule_count || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), X#rpz.rule_count /= undefined])),
+	Node=node(),
+  WS = erlang:system_info(wordsize),
+  MemHC = binary_to_list(ioc2rpz_fun:conv_to_Mb(ioc2rpz_db:db_table_info(rpz_hotcache_table,memory) * WS)),
+  MemAXFR = binary_to_list(ioc2rpz_fun:conv_to_Mb(ioc2rpz_db:db_table_info(rpz_axfr_table,memory) * WS)),
+  MemIXFR = binary_to_list(ioc2rpz_fun:conv_to_Mb(ioc2rpz_db:db_table_info(rpz_ixfr_table,memory) * WS)),
+	gen_srv_stats(Format,[Node,Srv_rules,MemHC,MemAXFR,MemIXFR]).
+ 
+gen_srv_stats(txt, [Node,Srv_rules,MemHC,MemAXFR,MemIXFR]) ->
+  io_lib:format("node_name ~p\n srv_total_rules ~b\n hot_cache_mem ~s\n axfr_table_mem ~s\n ixfr_table_mem ~s\n",[Node,Srv_rules,MemHC,MemAXFR,MemIXFR]);
+gen_srv_stats(json, [Node,Srv_rules,MemHC,MemAXFR,MemIXFR]) ->
+  io_lib:format("{\"node_name\":\"~p\",\"srv_total_rules\":~b,\"hot_cache_mem\":\"~s\",\"axfr_table_mem\":\"~s\",\"ixfr_table_mem\":\"~s\"}",[Node,Srv_rules,MemHC,MemAXFR,MemIXFR]).
+
 list_tuples_to_json(Array) ->
     io_lib:format("[~s]",[list_tuples_to_json([],Array)]).    
 
@@ -213,8 +230,27 @@ tuple_to_json({Name,Value}) when is_integer(Value)->
     io_lib:format("{\"~s\":~b}",[Name,Value]);
     
 tuple_to_json({Name,Value}) ->
-    io_lib:format("{\"~s\":\"~b\"}",[Name,Value]).
+    io_lib:format("{\"~s\":\"~s\"}",[Name,Value]);
+
+tuple_to_json(REST) ->
+	Res=mtuple_to_json([],REST),
+  io_lib:format("{~s}",[Res]).
+
+mtuple_to_json([],[{Name,Value}|REST]) when is_integer(Value)->
+    mtuple_to_json(io_lib:format("\"~s\":~b",[Name,Value]),REST);
     
+mtuple_to_json([],[{Name,Value}|REST]) ->
+    mtuple_to_json(io_lib:format("\"~s\":\"~s\"",[Name,Value]),REST);
+
+mtuple_to_json(Val,[{Name,Value}|REST]) when is_integer(Value)->
+    mtuple_to_json(Val++io_lib:format(",\"~s\":~b",[Name,Value]),REST);
+    
+mtuple_to_json(Val,[{Name,Value}|REST]) ->
+    mtuple_to_json(Val++io_lib:format(",\"~s\":\"~s\"",[Name,Value]),REST);
+
+mtuple_to_json(Val,[]) ->
+    Val.
+		
 ioc2jsonarr(IOCs) ->
     %ioc2rpz_fun:logMessage("~p\n\n",[IOCs]),
     ioc2jsonarr([],IOCs).
