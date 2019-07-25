@@ -159,8 +159,8 @@ update_db_record(ets, Zone, Serial, IOC, IOCExp, [{{ioc,_,_},OSerial,ExpTime}], 
 update_db_record(ets, Zone, Serial, IOC, IOCExp, [{{ioc,_,_},OSerial,ExpTime}], CTime) when IOCExp > 0, ExpTime == 0 ->
 	ets:select_delete(rpz_ixfr_table,[{{{ioc,Zone,IOC},'_','_'},[],[true]}]),ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC},Serial,IOCExp});
 
-update_db_record(ets, Zone, Serial, IOC, IOCExp, Update, CTime) ->
-	?logDebugMSG("Not expected update ~p ~p ~p ~p ~p ~p ~n",[Zone, Serial, IOC, IOCExp, Update, CTime]);
+update_db_record(ets, _Zone, _Serial, _IOC, _IOCExp, _Update, CTime) -> ok; %not new but IOCExp =< CTime, e.g. IOCExp=0 and we cached an indicator with a real expiration time (ExpTime)
+	%?logDebugMSG("Not expected update ~p ~p ~p ~p ~p ~p ~n",[Zone, Serial, IOC, IOCExp, Update, CTime]);
 	
 update_db_record(mnesia, Zone, Serial, IOC, IOCExp, Update, CTime) -> ok.
 

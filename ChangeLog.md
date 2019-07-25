@@ -1,5 +1,8 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## 2019-07-21 v1.0.0.1
+- RPZ statistics collected: # rules and # indicators
+
 ## 2019-07-21 v1.0.0.0
 - Released v1.0.0.0
 
@@ -11,7 +14,7 @@
 
 ## 2019-06-13 v0.9.4.0
 - Fixed bugs:
-	- #10
+	- #10 "redirect_domain add zone name"
 	- live zones, wrong records count in the hot cache
 - Rule generation code was optimized
 - Configuration can be split by multiple files using "include" 

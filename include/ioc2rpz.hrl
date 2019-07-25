@@ -46,7 +46,7 @@
 %%%%%%
 %%%%%% Do not modify any settings below the line
 %%%%%%
--define(ioc2rpz_ver, "1.0.0.0-2019072101").
+-define(ioc2rpz_ver, "1.0.0.1-2019072201").
 
 -define(ZNameZip,16#c00c:16). %Zone name/original fqdn from a request is always at byte 10 in the response
 -define(ZNameZipN,16#c00c). % Offset in bytes - Zone name/original fqdn from a request is always at byte 10 in the response
@@ -125,7 +125,7 @@
 %SOA timers refresh, retry, expiration, neg_ttl
 %status: notready, updating, ready
 %serial_ixfr - minimum serial for ixfr - first ixfr update after axfr
--record(rpz, {rpzid, zone, zone_str, soa_timers, cache, wildcards, notify, action, akeys, ioc_type, axfr_time, ixfr_time, sources, status, serial, serial_new, serial_ixfr, notifylist, whitelist, ioc_md5, update_time, ixfr_update_time, ixfr_nz_update_time, pid, ioc_count, userid, max_ioc, key_groups}).
+-record(rpz, {rpzid, zone, zone_str, soa_timers, cache, wildcards, notify, action, akeys, ioc_type, axfr_time, ixfr_time, sources, status, serial, serial_new, serial_ixfr, notifylist, whitelist, ioc_md5, update_time, ixfr_update_time, ixfr_nz_update_time, pid, ioc_count, userid, max_ioc, key_groups, rule_count}).
 -record(source, {name, axfr_url, ixfr_url, regex, ioc_count, userid, max_ioc}).
 
 %user restriction
