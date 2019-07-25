@@ -1,3 +1,6 @@
+## Bugs
+- [ ] Config reload kills RPZ statistics
+
 ## Core / DNS
 - [ ] RPZ storage type: ets, mnesia
 - [ ] Mnesia for storage (and auto creation)

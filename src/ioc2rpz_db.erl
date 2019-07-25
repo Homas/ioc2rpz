@@ -192,9 +192,9 @@ get_zone_info(Zone,DB) ->
   get_zone_info(?DBStorage,Zone,DB).
 
 get_zone_info(ets,Zone,axfr) ->
-  ets:match(rpz_axfr_table,{{axfr_rpz_cfg,Zone#rpz.zone},'$0','$1','$2','$3','$4','$5','$6','$7'});
+  ets:match(rpz_axfr_table,{{axfr_rpz_cfg,Zone#rpz.zone},'$0','$1','$2','$3','$4','$5','$6','$7','$8','$9'});
 get_zone_info(ets,Zone,ixfr) ->
-  ets:match(rpz_ixfr_table,{{ixfr_rpz_cfg,Zone#rpz.zone},'$0','$1','$2','$3'});
+  ets:match(rpz_ixfr_table,{{ixfr_rpz_cfg,Zone#rpz.zone},'$0','$1','$2','$3','$4'});
 get_zone_info(mnesia,_Zone,axfr) ->
   ok;
 get_zone_info(mnesia,_Zone,ixfr) ->
@@ -204,9 +204,9 @@ get_allzones_info(DB) ->
   get_allzones_info(?DBStorage,DB).
 
 get_allzones_info(ets,axfr) ->
-  ets:match(rpz_axfr_table,{{axfr_rpz_cfg,'$0'},'$1','$2','$3','$4','$5','$6','$7','$8'});
+  ets:match(rpz_axfr_table,{{axfr_rpz_cfg,'$0'},'$1','$2','$3','$4','$5','$6','$7','$8','$9','$10'});
 get_allzones_info(ets,ixfr) ->
-  ets:match(rpz_ixfr_table,{{ixfr_rpz_cfg,'$0'},'$1','$2','$3','$4'});
+  ets:match(rpz_ixfr_table,{{ixfr_rpz_cfg,'$0'},'$1','$2','$3','$4','$5'});
 get_allzones_info(mnesia,axfr) ->
   ok;
 get_allzones_info(mnesia,ixfr) ->
@@ -240,14 +240,15 @@ save_zone_info(Zone) ->
 save_axfr_zone_info(Zone) ->
   save_axfr_zone_info(?DBStorage,Zone).
 save_axfr_zone_info(ets,Zone) ->
-  ets:insert(rpz_axfr_table, {{axfr_rpz_cfg,Zone#rpz.zone},Zone#rpz.zone_str,Zone#rpz.serial,Zone#rpz.soa_timers, Zone#rpz.cache, Zone#rpz.wildcards, Zone#rpz.sources, Zone#rpz.ioc_md5, Zone#rpz.update_time});
+  ets:insert(rpz_axfr_table, {{axfr_rpz_cfg,Zone#rpz.zone},Zone#rpz.zone_str,Zone#rpz.serial,Zone#rpz.soa_timers, Zone#rpz.cache, Zone#rpz.wildcards, Zone#rpz.sources, Zone#rpz.ioc_md5, Zone#rpz.update_time, Zone#rpz.ioc_count, Zone#rpz.rule_count});
+
 save_axfr_zone_info(mnesia,Zone) ->
   ok.
 
 save_ixfr_zone_info(Zone) ->
   save_ixfr_zone_info(?DBStorage,Zone).
 save_ixfr_zone_info(ets,Zone) ->
-  ets:insert(rpz_ixfr_table, {{ixfr_rpz_cfg,Zone#rpz.zone},Zone#rpz.zone_str,Zone#rpz.serial,Zone#rpz.serial_ixfr,Zone#rpz.ixfr_update_time});
+  ets:insert(rpz_ixfr_table, {{ixfr_rpz_cfg,Zone#rpz.zone},Zone#rpz.zone_str,Zone#rpz.serial,Zone#rpz.serial_ixfr,Zone#rpz.ixfr_update_time,Zone#rpz.ixfr_nz_update_time});
 save_ixfr_zone_info(mnesia,Zone) ->
   ok.
 

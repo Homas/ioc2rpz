@@ -215,10 +215,10 @@ read_config3([{rpz,{Zone, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards,
 	KeyGroups=lists:append([ Y || {groups, Y} <- [ X || X <- AKeys, is_tuple(X) ], is_list(Y) ]),
   SOATimers = <<Refresh:32,Retry:32,Expiration:32,Neg_ttl:32>>,
   case {Cache,load_zone_info(#rpz{zone=ZoneB,axfr_time=AXFR_Time, zone_str=Zone,ixfr_time=AXFR_Time, cache=Cache})} of
-    {"true",[ready = Status,Serial,_Soa_timersC,_CacheC,_WildcardsC,_SourcesC,_Ioc_md5,Update_time, ready,_Serial,Serial_IXFR,IXFR_Update_time]} -> ok;
-    {"true",[ready= Status,Serial,_Soa_timersC,_CacheC,_WildcardsC,_SourcesC,_Ioc_md5,Update_time, notready| _ ]} -> IXFR_Update_time=0, Serial_IXFR=0;
-    {"true",[notready = Status|_]} -> Update_time=0, IXFR_Update_time=0, Serial_IXFR=0, Serial=0;
-    _ -> Status = notready, Update_time=0, IXFR_Update_time=0, Serial_IXFR=0, Serial=0
+    {"true",[ready = Status,Serial,_Soa_timersC,_CacheC,_WildcardsC,_SourcesC,_Ioc_md5,Update_time,IOC_count,Rules_count, ready,_Serial,Serial_IXFR,IXFR_Update_time,NZ_Update_Time]} -> ok;
+    {"true",[ready= Status,Serial,_Soa_timersC,_CacheC,_WildcardsC,_SourcesC,_Ioc_md5,Update_time,IOC_count,Rules_count, notready| _ ]} -> IXFR_Update_time=0, Serial_IXFR=0, NZ_Update_Time=0;
+    {"true",[notready = Status|_]} -> Update_time=0, IXFR_Update_time=0, Serial_IXFR=0, Serial=0,NZ_Update_Time=0,IOC_count=0,Rules_count=0;
+    _ -> Status = notready, Update_time=0, IXFR_Update_time=0, Serial_IXFR=0, Serial=0,NZ_Update_Time=0,IOC_count=0,Rules_count=0
   end,
   ZAction = case Action of
    Action when Action=="nodata";Action=="passthru";Action=="drop";Action=="tcp-only";Action=="nxdomain";Action=="blockns" -> list_to_binary(Action);
@@ -226,7 +226,7 @@ read_config3([{rpz,{Zone, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards,
    [{LAction,LData}] when LAction=="redirect_ip" -> {list_to_binary(LAction),ioc2rpz_fun:ip_to_bin(LData)};
    _ -> ioc2rpz_fun:read_local_actions(Action)
   end,
-  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,[#rpz{zone=ZoneB, zone_str=Zone, soa_timers=SOATimers, cache=list_to_binary(Cache), wildcards=list_to_binary(Wildcards), action=ZAction, akeys=AKeysB, ioc_type=list_to_binary(IOCType), axfr_time=AXFR_Time, ixfr_time=IXFR_Time, sources=Sources, notifylist=NotifyList, whitelist=Whitelist, serial=Serial, status=Status, update_time=Update_time, ixfr_update_time=IXFR_Update_time, ixfr_nz_update_time=IXFR_Update_time, serial_ixfr=Serial_IXFR, key_groups=KeyGroups}|RPZ]);
+  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,[#rpz{zone=ZoneB, zone_str=Zone, soa_timers=SOATimers, cache=list_to_binary(Cache), wildcards=list_to_binary(Wildcards), action=ZAction, akeys=AKeysB, ioc_type=list_to_binary(IOCType), axfr_time=AXFR_Time, ixfr_time=IXFR_Time, sources=Sources, notifylist=NotifyList, whitelist=Whitelist, serial=Serial, status=Status, update_time=Update_time, ixfr_update_time=IXFR_Update_time, ixfr_nz_update_time=NZ_Update_Time, serial_ixfr=Serial_IXFR, key_groups=KeyGroups, ioc_count=IOC_count, rule_count=Rules_count}|RPZ]);
 
 read_config3([],startup,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)  ->
 	Keys_V = [ validateCFGKeys(Y) || Y <- Keys ],
@@ -400,12 +400,12 @@ load_axfr_zone_info(Zone) ->
 load_axfr_zone_info(ets,Zone) ->
   CTime=ioc2rpz_fun:curr_serial(),%erlang:system_time(seconds),
   case ioc2rpz_db:get_zone_info(Zone,axfr) of %ets:match(rpz_axfr_table,{{axfr_rpz_cfg,Zone#rpz.zone},'$1','$2','$3','$4','$5','$6','$7'})
-    [[_,Serial,Soa_timers,Cache,Wildcards,Sources,Ioc_md5,Update_time]] when (Update_time+Zone#rpz.axfr_time)>CTime ->
+    [[_,Serial,Soa_timers,Cache,Wildcards,Sources,Ioc_md5,Update_time,IOC_count,Rules_count]] when (Update_time+Zone#rpz.axfr_time)>CTime ->
       ioc2rpz_fun:logMessage("Get AXFR zone ~p serial ~p status ready. Last update ~p ~n",[Zone#rpz.zone_str,Serial,Update_time]),
-      [ready,Serial,Soa_timers,Cache,Wildcards,Sources,Ioc_md5,Update_time];
-    [[_,Serial,Soa_timers,Cache,Wildcards,Sources,Ioc_md5,Update_time]] when Zone#rpz.cache == "true" ->
+      [ready,Serial,Soa_timers,Cache,Wildcards,Sources,Ioc_md5,Update_time,IOC_count,Rules_count];
+    [[_,Serial,Soa_timers,Cache,Wildcards,Sources,Ioc_md5,Update_time,IOC_count,Rules_count]] when Zone#rpz.cache == "true" ->
       ioc2rpz_fun:logMessage("Get AXFR zone ~p serial ~p status notready ~n",[Zone#rpz.zone_str,Serial]),
-      [notready,Serial,Soa_timers,Cache,Wildcards,Sources,Ioc_md5,Update_time];
+      [notready,Serial,Soa_timers,Cache,Wildcards,Sources,Ioc_md5,Update_time,IOC_count,Rules_count];
     _NonCache when Zone#rpz.cache == "false" ->
       ioc2rpz_fun:logMessage("Zone ~p is non cacheable ~n",[Zone#rpz.zone_str]),
       [];
@@ -422,12 +422,12 @@ load_ixfr_zone_info(Zone) ->
 load_ixfr_zone_info(ets,Zone) ->
   CTime=ioc2rpz_fun:curr_serial(), %erlang:system_time(seconds),
   case ioc2rpz_db:get_zone_info(Zone,ixfr) of 
-    [[_,Serial,Serial_IXFR,IXFR_Update_time]] when (IXFR_Update_time+Zone#rpz.ixfr_time)>CTime ->
+    [[_,Serial,Serial_IXFR,IXFR_Update_time,NZ_Update_Time]] when (IXFR_Update_time+Zone#rpz.ixfr_time)>CTime ->
       ioc2rpz_fun:logMessage("Get IXFR zone ~p serial ~p status ready ~n",[Zone#rpz.zone_str,Serial_IXFR]),
-      [ready,Serial,Serial_IXFR,IXFR_Update_time];
-    [[_,Serial,Serial_IXFR,IXFR_Update_time]] when Zone#rpz.cache == "true"  ->
+      [ready,Serial,Serial_IXFR,IXFR_Update_time,NZ_Update_Time];
+    [[_,Serial,Serial_IXFR,IXFR_Update_time,NZ_Update_Time]] when Zone#rpz.cache == "true"  ->
       ioc2rpz_fun:logMessage("Get IXFR zone ~p serial ~p status notready ~n",[Zone#rpz.zone_str,Serial_IXFR]),
-      [notready,Serial,Serial_IXFR,IXFR_Update_time];
+      [notready,Serial,Serial_IXFR,IXFR_Update_time,NZ_Update_Time];
     _NonCache when Zone#rpz.cache == "false" ->
       [];
     _Else ->
