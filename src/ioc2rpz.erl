@@ -693,7 +693,7 @@ send_zone_live(Socket,Op,Zone,PktH,Questions, SOAREC,NSRec,TSIG,Proto) ->
     {cache, MD5} -> {updateSOA, MD5, Zone#rpz.rule_count, Zone#rpz.max_ioc};
     _Else ->
 %      {ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3})$"), %
-			{ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}(\\/[0-9]{1,3})?)|(.*::.*)$"),
+			{ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}(\\/[0-9]{1,3})?)$|(:)"),
       PktHLen = 12+byte_size(Questions),
       ioc2rpz_db:write_db_record(Zone,IOC,axfr),
       ioc2rpz_db:delete_old_db_record(Zone),
