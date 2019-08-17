@@ -21,7 +21,7 @@
 -include_lib("ioc2rpz.hrl").
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([start_ioc2rpz/2,send_notify/1,send_packets/20,domstr_to_bin/2,send_zone_live/9,mrpz_from_ioc/2,parse_dns_request/3,ip_to_str/1,dombin_to_str/1]).
+-export([start_ioc2rpz/2,send_notify/1,send_packets/20,domstr_to_bin/2,send_zone_live/9,mrpz_from_ioc/2,parse_dns_request/3,ip_to_str/1,dombin_to_str/1,reverse_IP/1]).
 
 
 %-compile([export_all]).
@@ -692,7 +692,8 @@ send_zone_live(Socket,Op,Zone,PktH,Questions, SOAREC,NSRec,TSIG,Proto) ->
   case {Op, Zone#rpz.ioc_md5} of
     {cache, MD5} -> {updateSOA, MD5, Zone#rpz.rule_count, Zone#rpz.max_ioc};
     _Else ->
-      {ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3})$"), %
+%      {ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3})$"), %
+			{ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}(\\/[0-9]{1,3})?)|(.*::.*)$"),
       PktHLen = 12+byte_size(Questions),
       ioc2rpz_db:write_db_record(Zone,IOC,axfr),
       ioc2rpz_db:delete_old_db_record(Zone),
@@ -1064,8 +1065,8 @@ gen_rpzrule(Domain,_,_,_,Action,_,_,_) ->
   {ok,0,[<<>>],[<<>>]}.
 
 
-reverse_IP(OrigIP) when OrigIP == <<"::1">>;OrigIP == <<"::1/128">> ->
-  <<"128.1:zz">>;
+%reverse_IP(OrigIP) when OrigIP == <<"::1">>;OrigIP == <<"::1/128">>;OrigIP == <<"::01">>;OrigIP == <<"::01/128">> ->
+%  <<"128.1.zz">>;
 
 reverse_IP(OrigIP) ->
   [IP|Mask] = ioc2rpz_fun:split_tail(OrigIP, <<"/">>),
@@ -1085,8 +1086,12 @@ reverse_IP6(<<>>,OrigIP,[Mask],_) ->
   IPv6=reverse_IP6(<<>>,OrigIP,no),
   <<Mask/binary, ".", IPv6/binary>>.
 
+reverse_IP6(<<>>,[<<>>|TAIL],ZZ) when ZZ == no ->
+  reverse_IP6([<<"zz">>],TAIL,yes);
 reverse_IP6(<<>>,[DIP|TAIL],ZZ) ->
   reverse_IP6(DIP,TAIL,ZZ);
+%reverse_IP6(RIP,[<<>>,<<>>|TAIL],ZZ) when ZZ == no ->
+%  reverse_IP6([<<"zz.">>,RIP],TAIL,yes);
 reverse_IP6(RIP,[],_ZZ) ->
   list_to_binary(RIP);
 reverse_IP6(RIP,[<<>>|TAIL],ZZ) when ZZ == no ->
@@ -1201,5 +1206,8 @@ reverse_IP_test() ->[
 	?assert(reverse_IP(<<"10.20.30.40">>) =:= <<"32.40.30.20.10">>),
 	?assert(reverse_IP(<<"10.20.30.40/24">>) =:= <<"24.40.30.20.10">>),
 	?assert(reverse_IP(<<"fc00:01::01">>) =:= <<"128.01.zz.01.fc00">>),
-	?assert(reverse_IP(<<"fc00::01/64">>) =:= <<"64.01.zz.fc00">>)
+	?assert(reverse_IP(<<"fc00::01/64">>) =:= <<"64.01.zz.fc00">>),
+	?assert(reverse_IP(<<"fd00::/8">>) =:= <<"8.zz.fd00">>),
+	?assert(reverse_IP(<<"::1">>) =:= <<"128.1.zz">>),
+	?assert(reverse_IP(<<"::01/128">>) =:= <<"128.01.zz">>)
 ].

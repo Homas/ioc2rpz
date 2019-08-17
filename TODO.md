@@ -1,5 +1,5 @@
 ## Bugs
-- [ ] Config reload kills RPZ statistics
+- [x] Config reload kills RPZ statistics
 
 ## Core / DNS
 - [ ] RPZ storage type: ets, mnesia
@@ -20,6 +20,7 @@
 - [ ] DoD https://tools.ietf.org/html/draft-ietf-dprive-dnsodtls-06
 
 - [ ] EUnit Tests for main funs.
+- [ ] Handle RPZ update if one of a sources is not availble or a recent update returned significatnly low number of indicators
 
 ## Sources
 - [ ] Add a script for RPZ via "shell:"
@@ -42,6 +43,7 @@
 
 
 ## RPZ
+- [ ] Monitor significant drop in # of IoCs and if detected - postpone an update to 1 - 3 IXF cycles or specified time 
 - [ ] RPZ by source intersection
 - [ ] Max # of IOCs
 - [ ] Catalog zones
