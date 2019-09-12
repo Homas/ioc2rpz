@@ -120,6 +120,7 @@ write_db_record(Zone,IOC,XFR) ->
 write_db_record(ets,Zone,IOCs,axfr) ->
   CTime=erlang:system_time(seconds),
   [ets:insert_new(rpz_ixfr_table, {{ioc,Zone#rpz.zone,IOC},Zone#rpz.serial,IOCExp}) || {IOC,IOCExp} <- IOCs, (IOCExp > CTime) or (IOCExp == 0)],
+	?logDebugMSG("AXFR update ets. Zone ~p. Indicators ~p~n",[Zone#rpz.zone_str,length(IOCs)]),
 	{ok,0}; %length(IOCs)
 
 write_db_record(mnesia,Zone,{IOC,IOCExp},axfr) ->
