@@ -18,7 +18,7 @@ In comparing with traditional network protection solutions a DNS server can hand
 
 Usually indicators of compromise are distributed in plain text but in different formats and only a few providers of IOCs make them available via RPZ.
 
-ioc2rpz is a custom DNS server which automatically converts indicators (e.g. malicious FQDNs, IPs) from various sources into RPZ feeds and automatically maintains/updates them. The feeds can be distributed to any open source and/or commercial DNS servers which support RPZ, e.g. ISC Bind, PowerDNS. You can run your own DNS server with RPZ filtering on a router, desktop, server and even Arduino. System memory is the only limitation.
+ioc2rpz is a custom DNS server which automatically converts indicators (e.g. malicious FQDNs, IPs) from various sources into RPZ feeds and automatically maintains/updates them. The feeds can be distributed to any open source and/or commercial DNS servers which support RPZ, e.g. ISC Bind, PowerDNS. You can run your own DNS server with RPZ filtering on a router, desktop, server and even Raspberry Pi. System memory is the only limitation.
 
 With ioc2rpz you can define your own feeds, actions and prevent undesired communications.
 
