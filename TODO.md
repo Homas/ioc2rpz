@@ -1,9 +1,63 @@
 ## Bugs
-- [x] Config reload kills RPZ statistics
 
 ## Core / DNS
+- [ ] DoH https://tools.ietf.org/html/rfc8484
+```
+   When using the GET method, the data payload for this media type MUST
+   be encoded with base64url [RFC4648] and then provided as a variable
+   named "dns" to the URI Template expansion.  Padding characters for
+   base64url MUST NOT be included.
+
+   When using the POST method, the data payload for this media type MUST
+   NOT be encoded and is used directly as the HTTP message body.
+	 
+   The first example request uses GET to request "www.example.com".
+   :method = GET
+   :scheme = https
+   :authority = dnsserver.example.net
+   :path = /dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB
+   accept = application/dns-message	 
+	 
+   The same DNS query for "www.example.com", using the POST method would
+   be:
+
+   :method = POST
+   :scheme = https
+   :authority = dnsserver.example.net
+   :path = /dns-query
+   accept = application/dns-message
+   content-type = application/dns-message
+   content-length = 33
+
+   <33 bytes represented by the following hex encoding>
+   00 00 01 00 00 01 00 00  00 00 00 00 03 77 77 77
+   07 65 78 61 6d 70 6c 65  03 63 6f 6d 00 00 01 00
+   01
+
+
+4.2.2.  HTTP Response Example
+
+   This is an example response for a query for the IN AAAA records for
+   "www.example.com" with recursion turned on.  The response bears one
+   answer record with an address of 2001:db8:abcd:12:1:2:3:4 and a TTL
+   of 3709 seconds.
+
+   :status = 200
+   content-type = application/dns-message
+   content-length = 61
+   cache-control = max-age=3709
+
+   <61 bytes represented by the following hex encoding>
+   00 00 81 80 00 01 00 01  00 00 00 00 03 77 77 77
+   07 65 78 61 6d 70 6c 65  03 63 6f 6d 00 00 1c 00
+   01 c0 0c 00 1c 00 01 00  00 0e 7d 00 10 20 01 0d
+   b8 ab cd 00 12 00 01 00  02 00 03 00 04
+	 
+```
+- [ ] upgrade to tls1.3 (supported by Erlang)
 - [ ] RPZ storage type: ets, mnesia
 - [ ] Mnesia for storage (and auto creation)
+
 - [ ] Force AXRF for a RPZ if a source doesn't have an IXFR url
 - [ ] Redo AXFR logs
 - [ ] Access to the hotcache and the cfg_table via FUNs
@@ -16,7 +70,6 @@
 - [ ] Wait while a remote server confirms receiving a notification
 - [ ] (2) EDNS0 Support: DNS Cookie, edns-tcp-keepalive, NSID
 - [ ] (3) Memory optimization for huge zones (erl -pa ebin +MEas bf ?????)
-- [ ] DoH https://tools.ietf.org/html/rfc8484
 - [ ] DoD https://tools.ietf.org/html/draft-ietf-dprive-dnsodtls-06
 
 - [ ] EUnit Tests for main funs.

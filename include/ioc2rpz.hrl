@@ -20,6 +20,7 @@
 -define(SaveETS,false). % Save DB into files if DB is ETS.
 -define(Port,53). %DNS Port
 -define(PortTLS,853). %DoT Port
+-define(PortDoH,443). %DoH Port
 -define(PortREST,8443). %REST Port
 -define(TTL,900). %Default record TTL
 -define(DefConf,"./cfg/ioc2rpz.conf"). %Default configuration
