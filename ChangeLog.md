@@ -1,5 +1,8 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## 2019-09-15 v1.0.0.3
+- Fixed bug #17 "Full zone update brakes a zone and next incremental updates do not add new indicators". 
+
 ## 2019-07-21 v1.0.0.2
 -IPv4/IPv6 networks detection in IOCs for mixed zones
 -IPv6 localhost network detection in IOCs
