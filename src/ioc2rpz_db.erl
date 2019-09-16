@@ -119,7 +119,12 @@ write_db_record(Zone,IOC,XFR) ->
 
 write_db_record(ets,Zone,IOCs,axfr) ->
   CTime=erlang:system_time(seconds),
-  [ets:insert_new(rpz_ixfr_table, {{ioc,Zone#rpz.zone,IOC},Zone#rpz.serial,IOCExp}) || {IOC,IOCExp} <- IOCs, (IOCExp > CTime) or (IOCExp == 0)],
+
+  %clean up after closing the issue 17
+%  NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[],['true']}]), % to debug issue 17
+  [ets:insert(rpz_ixfr_table, {{ioc,Zone#rpz.zone,IOC},Zone#rpz.serial,IOCExp}) || {IOC,IOCExp} <- IOCs, (IOCExp > CTime) or (IOCExp == 0)],
+%  NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[],['true']}]), % to debug issue 17
+%   ?logDebugMSG("AXFR update ets. Zone ~p. Before ~p After ~p Indicators ~p~n",[Zone#rpz.zone_str, NRbefore, NRafter,length(IOCs)]), % to debug issue 17
 	{ok,0}; %length(IOCs)
 
 write_db_record(mnesia,Zone,{IOC,IOCExp},axfr) ->

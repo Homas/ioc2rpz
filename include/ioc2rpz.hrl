@@ -20,6 +20,7 @@
 -define(SaveETS,false). % Save DB into files if DB is ETS.
 -define(Port,53). %DNS Port
 -define(PortTLS,853). %DoT Port
+-define(PortDoH,443). %DoH Port
 -define(PortREST,8443). %REST Port
 -define(TTL,900). %Default record TTL
 -define(DefConf,"./cfg/ioc2rpz.conf"). %Default configuration
@@ -46,7 +47,7 @@
 %%%%%%
 %%%%%% Do not modify any settings below the line
 %%%%%%
--define(ioc2rpz_ver, "1.0.0.2-2019081601").
+-define(ioc2rpz_ver, "1.0.0.2-2019091101").
 
 -define(ZNameZip,16#c00c:16). %Zone name/original fqdn from a request is always at byte 10 in the response
 -define(ZNameZipN,16#c00c). % Offset in bytes - Zone name/original fqdn from a request is always at byte 10 in the response
