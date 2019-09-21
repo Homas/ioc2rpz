@@ -863,7 +863,7 @@ send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Question
   PSize1 = byte_size(Pkt1)+SOANSSize,
   send_packets(Socket,Tail,Pkt1,ACount+Cnt1,PSize1, Zip, PktH, Questions, SOAREC,NSRec,Zone#rpz{rule_count=Zone#rpz.rule_count+Cnt, ioc_count=Zone#rpz.ioc_count+1},MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR1,Proto);
 
-send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto) -> % докидываем записи и пересчитываем размеры
+send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto) -> %mixed докидываем записи и пересчитываем размеры
   if ((IOCExp>Zone#rpz.serial) or (IOCExp==0)) and (DBOp == ixfr) and (IXFRNewR /= true) -> SOASize=byte_size(SOAREC); true -> SOASize=0 end,
   %ioc2rpz_fun:logMessage("Check ~p ~p ~p ~p ~p ~n",[Zone#rpz.zone_str, IOC,IOCExp,Zone#rpz.serial,DBOp]),
   if (IOCExp>Zone#rpz.serial) or (IOCExp==0) or (DBOp == ixfr)  ->
@@ -1052,7 +1052,7 @@ gen_rpzrule(Domain,RPZ,TTL,<<"false">>,RType,Action,PktHLen,T_ZIP_L) when RType=
       <<"nsdname">> -> ".rpz-nsdname.";
       <<"nsip">> -> ".rpz-nsip."
     end
-  ,RPZ#rpz.zone_str]),
+  ,RPZ#rpz.zone_str,"."]),
   %LAction = case Action of
   %  Action when is_binary(Action) -> Action;
   %  _Else -> <<"nxdomain">>
