@@ -1,6 +1,7 @@
 ## Bugs
 
 ## Core / DNS
+- [ ] Enforce domain validation. Discard indicators with wrong chars
 - [ ] DoH https://tools.ietf.org/html/rfc8484
 ```
    When using the GET method, the data payload for this media type MUST

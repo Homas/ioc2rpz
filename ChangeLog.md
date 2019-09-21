@@ -1,5 +1,8 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## 2019-09-20 v1.0.0.3
+- Bug. Incremental update. Indicators w/o expiration date were not added to a zone.
+
 ## 2019-09-15 v1.0.0.3
 - Fixed bug #17 "Full zone update brakes a zone and next incremental updates do not add new indicators". 
 

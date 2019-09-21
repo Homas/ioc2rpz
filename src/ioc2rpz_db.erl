@@ -152,20 +152,22 @@ write_db_record(mnesia,Zone,IOCs,ixfr) ->
 write_db_record(_DBStorage,_Zone,_IOCs,_XFR) ->
 	{ok,0}. %non cached zones
 
-update_db_record(ets, Zone, Serial, IOC, IOCExp, [], CTime) when IOCExp > CTime ->
-	%?logDebugMSG("Update ~p ~p ~p ~p ~p ~n",[Serial, IOC, IOCExp, false, CTime]),
-	ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC},Serial,IOCExp}); %insert for duplicate_bag
-
-update_db_record(ets, Zone, Serial, IOC, IOCExp, [], CTime) when IOCExp =< CTime -> ok; % do not add new but expired indicators
+update_db_record(ets, Zone, Serial, IOC, IOCExp, [], CTime) when IOCExp > 0,IOCExp =< CTime ->
+	%?logDebugMSG("Bypassing ~p ~p ~p ~p ~p ~n",[Serial, IOC, IOCExp, false, CTime]),
+	ok; % do not add new but expired indicators
 
 update_db_record(ets, Zone, Serial, IOC, IOCExp, [{{ioc,_,_},OSerial,ExpTime}], CTime) when ExpTime < IOCExp, IOCExp >= CTime ->
 	ets:delete_object(rpz_ixfr_table,{{ioc,Zone,IOC},OSerial,ExpTime}),ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC},OSerial,IOCExp});
 
-update_db_record(ets, Zone, Serial, IOC, IOCExp, [{{ioc,_,_},OSerial,ExpTime}], CTime) when IOCExp > 0, ExpTime == 0 ->
+update_db_record(ets, Zone, Serial, IOC, IOCExp, [{{ioc,_,_},OSerial,ExpTime}], CTime) when IOCExp > 0, IOCExp > CTime, ExpTime == 0 ->
 	ets:select_delete(rpz_ixfr_table,[{{{ioc,Zone,IOC},'_','_'},[],[true]}]),ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC},Serial,IOCExp});
 
-update_db_record(ets, _Zone, _Serial, _IOC, _IOCExp, _Update, CTime) -> ok; %not new but IOCExp =< CTime, e.g. IOCExp=0 and we cached an indicator with a real expiration time (ExpTime)
-	%?logDebugMSG("Not expected update ~p ~p ~p ~p ~p ~p ~n",[Zone, Serial, IOC, IOCExp, Update, CTime]);
+update_db_record(ets, Zone, Serial, IOC, IOCExp, [], CTime) when IOCExp > CTime ; IOCExp == 0 ->
+	%?logDebugMSG("Update ~p ~p ~p ~p ~p ~n",[Serial, IOC, IOCExp, false, CTime]),
+	ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC},Serial,IOCExp}); %insert for duplicate_bag
+
+update_db_record(ets, Zone, Serial, IOC, IOCExp, Update, CTime) -> %ok; %not new but IOCExp =< CTime, e.g. IOCExp=0 and we cached an indicator with a real expiration time (ExpTime)
+	?logDebugMSG("Not expected update ~p ~p ~p ~p ~p ~p ~n",[Zone, Serial, IOC, IOCExp, Update, CTime]);
 	
 update_db_record(mnesia, Zone, Serial, IOC, IOCExp, Update, CTime) -> ok.
 
