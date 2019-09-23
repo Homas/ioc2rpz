@@ -1,5 +1,8 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## 2019-09-20 v1.0.0.4
+-Filtering out indicators with illegal chars (ioc2rpz:clean_labels). Performance should be validated.
+
 ## 2019-09-20 v1.0.0.3
 - Bug. Incremental update. Indicators w/o expiration date were not added to a zone.
 

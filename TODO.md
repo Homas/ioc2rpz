@@ -2,6 +2,7 @@
 
 ## Core / DNS
 - [ ] Enforce domain validation. Discard indicators with wrong chars
+  - [ ] (ioc2rpz:clean_labels). Performance should be validated.
 - [ ] DoH https://tools.ietf.org/html/rfc8484
 ```
    When using the GET method, the data payload for this media type MUST
