@@ -1,0 +1,56 @@
+# List of publicly avaiable DNS over HTTPs (DoH) servers and canary domains
+
+# Browsers
+## Mozilla/FireFox canary domain
+use-application-dns.net
+
+# Various DoH providers
+
+## Cloudflare
+cloudflare-dns.com
+1.1.1.1
+
+## Google
+dns.google
+8.8.8.8
+8.8.4.4
+
+## Quad9
+dns.quad9.net
+dns9.quad9.net
+dns10.quad9.net
+9.9.9.9
+
+## Cisco Umbrella
+doh.opendns.com
+
+## AdGuard
+dns.adguard.com
+dns-family.adguard.com
+
+## CleanBrowsing
+doh.cleanbrowsing.org
+
+## nextdns.io
+dns.nextdns.io
+
+## PowerDNS
+doh.powerdns.org
+
+## blahdns.com
+doh-ch.blahdns.com
+doh-jp.blahdns.com
+doh-de.blahdns.com
+
+## SecureDNS.eu
+doh.securedns.eu
+
+## Commons Host
+commons.host
+
+## DnsWarden
+doh.dnswarden.com
+
+## Foundation for Applied Privacy
+doh.appliedprivacy.net
+
