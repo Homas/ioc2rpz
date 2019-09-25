@@ -7,7 +7,7 @@ use-application-dns.net
 # Various DoH providers
 
 ## Cloudflare
-cloudflare-dns.com
+cloudflare-dns.com  
 1.1.1.1
 
 ## Google
