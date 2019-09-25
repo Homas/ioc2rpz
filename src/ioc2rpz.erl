@@ -863,7 +863,7 @@ send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Question
   PSize1 = byte_size(Pkt1)+SOANSSize,
   send_packets(Socket,Tail,Pkt1,ACount+Cnt1,PSize1, Zip, PktH, Questions, SOAREC,NSRec,Zone#rpz{rule_count=Zone#rpz.rule_count+Cnt, ioc_count=Zone#rpz.ioc_count+1},MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR1,Proto);
 
-send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto) -> % докидываем записи и пересчитываем размеры
+send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto) -> %mixed докидываем записи и пересчитываем размеры
   if ((IOCExp>Zone#rpz.serial) or (IOCExp==0)) and (DBOp == ixfr) and (IXFRNewR /= true) -> SOASize=byte_size(SOAREC); true -> SOASize=0 end,
   %ioc2rpz_fun:logMessage("Check ~p ~p ~p ~p ~p ~n",[Zone#rpz.zone_str, IOC,IOCExp,Zone#rpz.serial,DBOp]),
   if (IOCExp>Zone#rpz.serial) or (IOCExp==0) or (DBOp == ixfr)  ->
@@ -970,6 +970,7 @@ gen_rpzrule(Domain,RPZ,TTL,<<"true">>,Action, LocData,PktHLen,T_ZIP_L) -> %wildc
 gen_rpzrule(Domain,RPZ,TTL,<<"false">>,<<"nxdomain">>,[],PktHLen,T_ZIP_L) -> %wildcard = false
   case domstr_to_bin_zip(Domain,PktHLen,T_ZIP_L) of
     {error, _} ->
+			?logDebugMSG("Zone ~p bad IOC ~p ~n",[RPZ#rpz.zone_str,Domain]),
       {ok,0,[],[]};
     {_,BDomain} -> %ok, zip
       {ok,1,[list_to_binary([BDomain,<<?T_CNAME:16,?C_IN:16, TTL:32,1:16,0>>])],[<<?T_CNAME:16,?C_IN:16, TTL:32,1:16,0>>]}
@@ -1052,7 +1053,7 @@ gen_rpzrule(Domain,RPZ,TTL,<<"false">>,RType,Action,PktHLen,T_ZIP_L) when RType=
       <<"nsdname">> -> ".rpz-nsdname.";
       <<"nsip">> -> ".rpz-nsip."
     end
-  ,RPZ#rpz.zone_str]),
+  ,RPZ#rpz.zone_str,"."]),
   %LAction = case Action of
   %  Action when is_binary(Action) -> Action;
   %  _Else -> <<"nxdomain">>
@@ -1118,12 +1119,17 @@ domstr_to_bin([],_,Bin) ->
 
 
 domstr_to_bin_zip(Str,Pos,T_ZIP_L) when byte_size(Str) > 2->
-  domstr_to_bin_zip(Str,1,Pos,T_ZIP_L);
+  domstr_to_bin_zip(clean_labels(Str),1,Pos,T_ZIP_L);
+
 domstr_to_bin_zip(Str,_Pos,_T_ZIP_L) ->
   domstr_to_bin(Str,0).
 
-domstr_to_bin_zip(Str,Zero,Pos,T_ZIP_L) ->
-  Labels = ioc2rpz_fun:split_tail(Str, <<".">>),
+
+domstr_to_bin_zip({error,Labels},_Zero,_Pos,_T_ZIP_L) ->
+  %?logDebugMSG("Bad IOC ~p ~n",[Labels]),
+  {error,[]};
+
+domstr_to_bin_zip({ok,Labels},Zero,Pos,T_ZIP_L) ->
   case ets:lookup(T_ZIP_L, Labels)  of
     [{_,Offset}] -> BOffset = (16#c000 bor Offset), {zip, <<BOffset:16>>};
     [] when Pos =< 16#3FFF -> ets:insert(T_ZIP_L, {Labels, Pos}), %insert_new
@@ -1150,7 +1156,33 @@ domstr_to_bin_zip([],0,Bin,_Pos,_T_ZIP_L) ->
 domstr_to_bin_zip([],_Zero,Bin,_Pos,_T_ZIP_L) ->
   {ok,list_to_binary([Bin])}.
 
+clean_labels(Str) ->
+  Labels = ioc2rpz_fun:split_tail(Str, <<".">>),
+	%?logDebugMSG("Labels ~p ~n",[Labels]),
+  case clean_labels([], Labels) of
+		{ok, LabelsFix} -> {ok, LabelsFix};
+		{error, _} -> {error, Str}
+	end.
 
+clean_labels(GoodL, [Head|Tail]) when Head == <<>>, Tail =/= [] ->
+	%?logDebugMSG("GoodL ~p ~p ~n",[GoodL, Tail]),
+	%{error, []};
+	clean_labels(GoodL, Tail);
+
+clean_labels(GoodL, [Head|Tail]) ->
+	%48 - "0", 57 - "9", 45 - "-", 95 - "_",  65 - "A", 90 - "Z", 97 - "a", 122 - "z"
+  case ([X || <<X>> <= Head, not((X >= 48) and (X =< 57)) and not((X >= 65) and (X =< 90)) and not((X >= 97) and (X =< 122)) and (X /= 45) and (X /= 95)]) of
+		[] -> clean_labels(GoodL ++ [Head], Tail);
+		_ -> % ?logDebugMSG("Bad label - ~p ~n",[Head]),
+				{error,[]}
+	end;
+
+
+clean_labels(GoodL, []) when GoodL ==[] ->
+	{error, []};
+
+clean_labels(GoodL, []) when GoodL /=[] ->
+	{ok, GoodL}.
 
 dombin_to_str(Dom) ->
   dombin_to_str(<<"">>,Dom).
