@@ -1,7 +1,8 @@
 ## Bugs
 
 ## Core / DNS
-- [ ] Enforce domain validation. Discard indicators with wrong chars
+- [ ] HotCache optimization if refresh time less than hotcache storage time 
+- [x] Enforce domain validation. Discard indicators with wrong chars
   - [ ] (ioc2rpz:clean_labels). Performance should be validated.
 - [ ] DoH https://tools.ietf.org/html/rfc8484
 ```
