@@ -1000,7 +1000,7 @@ gen_rpzrule(Domain,RPZ,TTL,<<"false">>,{Action,LocData},_,PktHLen,T_ZIP_L) when 
       {ok,0,[],[]};
     {_,BDomain} -> %ok, zip
      {_,LocDataZ} = domstr_to_bin_zip({ok,LocData},0,PktHLen+10+byte_size(BDomain),T_ZIP_L),
-%     {_,LocDataZ} = domstr_to_bin(LocData,0),
+%     {_,LocDataZ} = domstr_to_bin(LocData,0), 
       ELDS=byte_size(LocDataZ),
       {ok,1,[list_to_binary([BDomain,<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])],[list_to_binary([<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])]}
   end;
