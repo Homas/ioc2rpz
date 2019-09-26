@@ -121,7 +121,7 @@ dns.brahma.world
 
 #DoH sdns://AgcAAAAAAAAADjE2NC4xMzIuNDUuMTEyABVkbnMuZGV2ZWxvcGVyLmxpOjg0NDMKL2Rucy1xdWVyeQ
 164.132.45.112
-dns.developer.li:8443
+dns.developer.li
 
 #DoH sdns://AgcAAAAAAAAAHlsyMDAxOjQxZDA6MzAyOjIyMDA6OjczNV06ODQ0MwAVZG5zLmRldmVsb3Blci5saTo4NDQzCi9kbnMtcXVlcnk
 2001:41d0:302:2200::735
@@ -181,7 +181,7 @@ doh-de.blahdns.com
 doh-jp.blahdns.com
 
 #DoH sdns://AgMAAAAAAAAAKVsyMDAxOjE5ZjA6NzAwMToxZGVkOjU0MDA6MDFmZjpmZTkwOjk0NWJdABJkb2gtanAuYmxhaGRucy5jb20KL2Rucy1xdWVyeQ
-2001:19f0:7001:1ded:5400:01ff:fe90:945b
+2001:19f0:7001:1ded:5400:1ff:fe90:945b
 doh-jp.blahdns.com
 
 #DoH sdns://AgMAAAAAAAAAAAAVZG9oLmNsZWFuYnJvd3Npbmcub3JnEi9kb2gvYWR1bHQtZmlsdGVyLw
