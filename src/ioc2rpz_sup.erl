@@ -64,9 +64,18 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
       %shutdown => 1000,
       %type => supervisor,
       %modules => [ioc2rpz_proc_sup]},
-  
+			
+			%DoT
       #{id => ioc2rpz_tls_sup_v6,
       start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[tls6_sup,IPStr6,inet6]]},
+      restart => transient,
+      shutdown => 1000,
+      type => supervisor,
+      modules => [ioc2rpz_proc_sup]},
+			
+			%DoH
+      #{id => ioc2rpz_doh_sup_v6,
+      start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[doh6_sup,IPStr6,inet6]]},
       restart => transient,
       shutdown => 1000,
       type => supervisor,
@@ -93,6 +102,7 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
     %type => supervisor,
     %modules => [ioc2rpz_proc_sup]},
     
+		%DNS TCP
     #{id => ioc2rpz_tcp_sup_v6,
     start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[tcp6_sup,IPStr6,inet6]]},
     restart => transient,
@@ -108,7 +118,8 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
     %shutdown => 1000,
     %type => supervisor,
     %modules => [ioc2rpz_proc_sup]},
-
+		
+		%DNS UDP
     #{id => ioc2rpz_udp_sup_v6,
     start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[udp6_sup,IPStr6,inet6]]},
     restart => transient,
