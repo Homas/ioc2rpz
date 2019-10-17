@@ -6,6 +6,8 @@
 - [x] Enforce domain validation. Discard indicators with wrong chars
   - [ ] (ioc2rpz:clean_labels). Performance should be validated.
 - [ ] DoH https://tools.ietf.org/html/rfc8484
+https://developers.google.com/speed/public-dns/docs/secure-transports
+https://developers.cloudflare.com/1.1.1.1/dns-over-https/wireformat/
 
 ```
    When using the GET method, the data payload for this media type MUST

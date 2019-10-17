@@ -74,12 +74,13 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
       modules => [ioc2rpz_proc_sup]},
 			
 			%DoH
-      #{id => ioc2rpz_doh_sup_v6,
-      start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[doh6_sup,IPStr6,inet6]]},
-      restart => transient,
-      shutdown => 1000,
-      type => supervisor,
-      modules => [ioc2rpz_proc_sup]},
+			% DoH is for DNS UDP, We can support onlu small zones or SOA. Disabled for now.
+      %#{id => ioc2rpz_doh_sup_v6,
+      %start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[doh6_sup,IPStr6,inet6]]},
+      %restart => transient,
+      %shutdown => 1000,
+      %type => supervisor,
+      %modules => [ioc2rpz_proc_sup]},
       
       %REST
       #{id => ioc2rpz_rest_tls_sup_v6,
