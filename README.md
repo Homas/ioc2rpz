@@ -389,7 +389,7 @@ You can find other IOC feeds on the wiki-page: https://github.com/Homas/ioc2rpz/
 - [Rebar3](https://www.rebar3.org)
 
 # Do you want to support to the project?
-You can suppor the project with [GitHub Sponsor program](https://github.com/users/Homas/sponsorship). 
+You can suppor the project via [GitHub Sponsor](https://github.com/users/Homas/sponsorship). 
 
 # Contact us
 You can contact us by email: feedback(at)ioc2rpz[.]net or in [Telegram](https://t.me/ioc2rpz).
