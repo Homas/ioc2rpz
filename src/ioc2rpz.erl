@@ -116,6 +116,10 @@ send_dns(Socket,Pkt,[Proto,Args]) when Proto#proto.proto == tcp, Proto#proto.tls
    ok -> ok
   end;
 
+send_dns(Socket,Pkt,[Proto,Args]) when Proto#proto.proto == doh ->
+	%ioc2rpz_fun:logMessage("Send DoH\n",[]),
+	{ok, Pkt};
+
 send_dns(Socket,Pkt,[Proto,Args]) when Proto#proto.proto == udp ->
   send_dns_udp(Socket, Proto#proto.rip, Proto#proto.rport, Pkt, Args).
 
@@ -294,8 +298,7 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
     _ ->
       ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(102),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
       send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?NOTAUTH:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto)
-  end,
-  ok.
+  end.
 
 
 send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, [MSG,_TSGV,QStr, QType, QClass], Proto) ->

@@ -50,9 +50,8 @@ init([Proc,IPStr,Proto]) when Proc == tls_sup; Proc == tls6_sup -> %DoT
 
 
 init([Proc,_IPStr,_Proto]) when Proc == rest_tls_sup; Proc == rest_tls6_sup -> %REST
-
 	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6','_'}),
-	Ciphers=ssl:cipher_suites(default, 'tlsv1.2'),	
+	Ciphers=ssl:cipher_suites(default, ?TLSVersion),	
 	Dispatch = cowboy_router:compile([{'_', [
 				{"/", ioc2rpz_rest, [root]},
 				{"/api/[:api_ver]/stats/serv", ioc2rpz_rest, [stats_serv]},
@@ -69,8 +68,20 @@ init([Proc,_IPStr,_Proto]) when Proc == rest_tls_sup; Proc == rest_tls6_sup -> %
 	{ok, _} = cowboy:start_tls(https, [{port, ?PortREST},{certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile}, {ciphers, Ciphers}], #{env => #{dispatch => Dispatch}}),
 	%{cacertfile, Cert#cert.cacertfile},
   ioc2rpz_fun:logMessage("ioc2rpz ~p started ~n", [Proc]),
-  {ok, {{one_for_one, 10, 10}, []}}.
+  {ok, {{one_for_one, 10, 10}, []}};
 
+init([Proc,_IPStr,_Proto]) when Proc == doh_sup; Proc == doh6_sup -> %DoH
+	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6','_'}),
+	Ciphers=ssl:cipher_suites(default, ?TLSVersion),	
+	Dispatch = cowboy_router:compile([{'_', [
+				{"/", ioc2rpz_doh, [root]},
+				{"/dns-query", ioc2rpz_doh, [dns_query]},
+				{'_', ioc2rpz_doh, [catch_all]}
+					]}]),
+	{ok, _} = cowboy:start_tls(doh, [{port, ?PortDoH},{certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile}, {ciphers, Ciphers}], #{env => #{dispatch => Dispatch}}),
+	%{cacertfile, Cert#cert.cacertfile},
+  ioc2rpz_fun:logMessage("ioc2rpz ~p started ~n", [Proc]),
+  {ok, {{one_for_one, 10, 10}, []}}.
 
 open_tcp_sockets(IPStr,Proto) when IPStr /= "", IPStr /= [] ->
   {ok,IP}=inet:parse_address(IPStr),
@@ -85,13 +96,13 @@ open_tcp_sockets(_IPStr,Proto) ->
 open_tls_sockets(IPStr,Proto) when IPStr /= "", IPStr /= [] ->
   {ok,IP}=inet:parse_address(IPStr),
 	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6','_'}),
-	Ciphers=ssl:cipher_suites(default, 'tlsv1.2'),
+	Ciphers=ssl:cipher_suites(default, ?TLSVersion),
 	{ok, TLSSocket} = ssl:listen(?PortTLS, [{ip, IP},{active,once}, binary, Proto, {certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile}, {ciphers, Ciphers} ]), %,{cacertfile, Cert#cert.cacertfile}
   {ok, TLSSocket};
 
 open_tls_sockets(_IPStr,Proto) ->
 	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6','_'}),
-	Ciphers=ssl:cipher_suites(default, 'tlsv1.2'),
+	Ciphers=ssl:cipher_suites(default, ?TLSVersion),
 	{ok, TLSSocket} = ssl:listen(?PortTLS, [{active,once}, binary, Proto, {certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile}, {ciphers, Ciphers}]), %,{cacertfile, Cert#cert.cacertfile}
   {ok, TLSSocket}.
 

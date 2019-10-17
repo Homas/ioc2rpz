@@ -1,11 +1,14 @@
 ## Bugs
 
 ## Core / DNS
-- [ ] HotCache optimization if refresh time less than hotcache storage time 
+- [ ] HotCache optimization if refresh time less than hotcache storage time
+- [ ] Zone update - flush hot cache 
 - [x] Enforce domain validation. Discard indicators with wrong chars
   - [ ] (ioc2rpz:clean_labels). Performance should be validated.
 - [ ] DoH https://tools.ietf.org/html/rfc8484
-- [ ] Zone update - flush hot cache 
+https://developers.google.com/speed/public-dns/docs/secure-transports
+https://developers.cloudflare.com/1.1.1.1/dns-over-https/wireformat/
+
 ```
    When using the GET method, the data payload for this media type MUST
    be encoded with base64url [RFC4648] and then provided as a variable
@@ -58,6 +61,7 @@
    b8 ab cd 00 12 00 01 00  02 00 03 00 04
 	 
 ```
+- [ ] , A and AAAA requests. Optional A/AAAA support is added to be able to access the server via unique hostnames. In that case ioc2rpz behaves as an authoritative server
 - [ ] upgrade to tls1.3 (supported by Erlang)
 - [ ] RPZ storage type: ets, mnesia
 - [ ] Mnesia for storage (and auto creation)
