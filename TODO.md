@@ -1,6 +1,9 @@
 ## Bugs
 
 ## Core / DNS
+- [ ] check IoC in the RPZs feeds "What's in your DNS?"
+- [ ] REST API rate limiting
+- [ ] DNS requests rate limiting
 - [ ] HotCache optimization if refresh time less than hotcache storage time
 - [ ] Zone update - flush hot cache 
 - [x] Enforce domain validation. Discard indicators with wrong chars

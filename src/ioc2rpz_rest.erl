@@ -192,6 +192,29 @@ srv_mgmt(Req, State, Format) when State#state.op == get_rpz -> % Get RPZ
 	{Body, Req0, State};
 
 
+%srv_mgmt(Req, State, Format) when State#state.op == get_ioc -> % Check in which feeds ioc is included
+%	#{peer := {IP, Port}} = Req,
+%  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(230),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
+%	IOC = binary_to_list(cowboy_req:binding(rpz, Req)),
+%
+%% need to validate TSIG on the access to the feeds
+%
+% DB
+%11> ets:select(rpz_ixfr_table,[{{{ioc,'$0',<<"99.98.61.5">>},'$2','$3'},[],[{{'$0','$2','$3'}}]}]).   
+%[{<<5,108,111,99,97,108,7,105,111,99,50,114,112,122,0>>,
+%  1572419220,0},
+% {<<8,108,111,99,97,108,45,105,112,7,105,111,99,50,114,112,
+%    122,0>>,
+%  1572419220,0}]
+%12> ets:select(rpz_ixfr_table,[{{{ioc,'$0',<<"baddomain.com">>},'$2','$3'},[],[{{'$0','$2','$3'}}]}]).
+%[]
+%13> ets:select(rpz_ixfr_table,[{{{ioc,'$0',<<"baddomain1.com">>},'$2','$3'},[],[{{'$0','$2','$3'}}]}]).
+%[{<<5,108,111,99,97,108,7,105,111,99,50,114,112,122,0>>,
+%  1572419220,0}]
+%
+%	{Body, Req0, State};
+
+
 srv_mgmt(Req, State, Format) when State#state.op == catch_all -> % Catch all unsupported requests from authenticated users
 	#{peer := {IP, Port}} = Req,
     ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(137),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
