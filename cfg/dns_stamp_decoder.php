@@ -1,9 +1,8 @@
+<?php
 # to run
 #grep "sdns://" public-resolvers.md | php dns_stamp_decoder.php
 #https://dnscrypt.info/stamps/
 #https://raw.githubusercontent.com/DNScrypt/dnscrypt-resolvers/master/v2/public-resolvers.md
-
-<?php
 
 	function base64url_decode($data, $strict = false){
 			// Convert Base64URL to Base64 by replacing “-” with “+” and “_” with “/”
@@ -26,16 +25,26 @@
 			//  1-8 = params
 			//  9 = len for IP
 			//  10-len9 = IP
-			if (ord($str[9])!=0) $IP=substr($str,10,ord($str[9])); else $IP="#no ip";
+			if (ord($str[9])!=0) $IP_org=substr($str,10,ord($str[9])); else $IP_org="#no ip";
 			$i=10+ord($str[9]);
 			while (ord($str[$i])>127){
-				echo "$i ".ord($str[$i])." \n";
+//				echo "$i ".ord($str[$i])." \n";
 				$i=$i+ord($str[$i])-127;
 				if ($i>strlen($str)) break;
 			};
 			if ($i>strlen($str)) break;
 			$i=$i+ord($str[$i])+1;
-			echo "\n#DoH $f\n".$IP."\n".substr($str,$i+1,ord($str[$i]))."\n";
+			$domain_org=substr($str,$i+1,ord($str[$i]));
+			preg_match('/^([a-zA-Z0-9\.\-]+)/',$domain_org,$m);
+			$domain=$m[0];
+
+			preg_match('/(^[0-9\.]+|^\[[0-9a-fA-F\:]+\]|#no ip)/',$IP_org,$m);
+			$IP=trim($m[0],'[]');
+
+			echo "#DoH $f\n";
+			if ($domain_org != $domain) echo "#original domain: $domain_org\n";
+			if ($IP_org != $IP) echo "#original IP: $IP_org\n";
+			echo "$domain\n$IP\n\n";
 		};
 	}		
 		
