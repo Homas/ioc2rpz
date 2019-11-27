@@ -1,5 +1,8 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## 2019-11-25 v1.1.0.1
+- Bug with updating zones (broken packets after AXFR and wildcard rule after IXFR). It is recommended to upgrade to the newest release.
+
 ## 2019-09-28 v1.1.0.0
 - DoT (DNS over HTTPs) support for zone transfer and SOA. 
 

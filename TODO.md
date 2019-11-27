@@ -1,4 +1,5 @@
 ## Bugs
+- [ ] wildcard rule is generated
 
 ## Core / DNS
 - [ ] check IoC in the RPZs feeds "What's in your DNS?"
@@ -68,6 +69,7 @@ https://developers.cloudflare.com/1.1.1.1/dns-over-https/wireformat/
 - [ ] upgrade to tls1.3 (supported by Erlang)
 - [ ] RPZ storage type: ets, mnesia
 - [ ] Mnesia for storage (and auto creation)
+https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-for-mnesia
 
 - [ ] Force AXRF for a RPZ if a source doesn't have an IXFR url
 - [ ] Redo AXFR logs

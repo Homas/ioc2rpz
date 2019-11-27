@@ -872,7 +872,7 @@ send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Question
   if (IOCExp>Zone#rpz.serial) or (IOCExp==0) or (DBOp == ixfr)  ->
       case re:run(IOC,MP,[global,notempty,{capture,[1],binary}]) of
         {match,_} -> {ok, Cnt, Rules, WRules} = gen_rpzrule(reverse_IP(IOC),Zone,?TTL,<<"false">>,<<"ip">>,Zone#rpz.action,PktHLen+PSize+SOASize,T_ZIP_L), Rules2=[];% Cnt=1;
-        _ -> {ok, _, Rules, WRules} = gen_rpzrule(list_to_binary([IOC,".",Zone#rpz.zone_str,"."]),Zone,?TTL,<<"false">>,Zone#rpz.action,[],PktHLen+PSize+SOASize,T_ZIP_L), {ok,Rules2,Cnt}=gen_wildcard(Zone#rpz.wildcards,Rules, WRules,PSize+PktHLen) % Zone#rpz.zone_str
+        _ -> {ok, _, Rules, WRules} = gen_rpzrule(list_to_binary([IOC,".",Zone#rpz.zone_str,"."]),Zone,?TTL,<<"false">>,Zone#rpz.action,[],PktHLen+PSize+SOASize,T_ZIP_L), {ok,Rules2,Cnt}=gen_wildcard(Zone#rpz.wildcards,Rules, WRules,PSize+PktHLen+SOASize) % Zone#rpz.zone_str SOASize-не было 20191124???
       end;
       true -> Cnt=0, Rules=[], Rules2=[]
   end,
@@ -891,7 +891,7 @@ gen_wildcard(WCards, [], [], PSize) ->
   {ok,[],0};
 
 gen_wildcard(<<"true">>, _Rules, WRules, PSize) when PSize < 16#3FFF ->
-  R1Loc=(16#c000 bor PSize),
+  R1Loc=(16#c000 bor PSize), % looks like this is a bug
   Rules2=[<<1,"*",R1Loc:16>>, WRules],
   {ok,Rules2,2};
 
