@@ -911,7 +911,7 @@ remove_WL(IOC,WL) ->
 %медлеенее в 2 раза
 
   %WLSet = gb_sets:from_list(WL), %bug #20
-	WLSet = gb_sets:from_list([E || {E,Exp} = X <- WL]).
+	WLSet = gb_sets:from_list([E || {E,Exp} = X <- WL]),
 	
   [X || {E,Exp} = X <- ordsets:to_list(ordsets:from_list(IOC)), not gb_sets:is_element(E, WLSet)]. % TODO duplicates gb_sets vs ordsets
 
@@ -1249,4 +1249,8 @@ reverse_IP_test() ->[
 	?assert(reverse_IP(<<"fd00::/8">>) =:= <<"8.zz.fd00">>),
 	?assert(reverse_IP(<<"::1">>) =:= <<"128.1.zz">>),
 	?assert(reverse_IP(<<"::01/128">>) =:= <<"128.01.zz">>)
+].
+
+remove_WL_test() -> [
+	?assert(remove_WL([{<<"yellowcabnc.com">>,0},{<<"google1.com">>,0},{<<"example1.com">>,0},{<<"exa1.com">>,0}],[{<<"yellowcabnc.com">>,0},{<<"google.com">>,0},{<<"example.com">>,0}]) =:= [{<<"exa1.com">>,0}, {<<"example1.com">>,0},{<<"google1.com">>,0}])
 ].
