@@ -902,13 +902,17 @@ gen_wildcard(<<"false">>, _Rules, _WRules, _PSize) ->
   {ok,[],1}.
 
 remove_WL(IOC,WL) when WL == [] ->
+%the function removes whitelisted indiicators from the list of IOC
   ordsets:to_list(ordsets:from_list(IOC));
 
 remove_WL(IOC,WL) ->
 %TODO do not check expiration date, but save the largest expiration
 %  ordsets:to_list(ordsets:subtract(ordsets:from_list(IOC), ordsets:from_list(WL))).
 %медлеенее в 2 раза
-  WLSet = gb_sets:from_list(WL),
+
+  %WLSet = gb_sets:from_list(WL), %bug #20
+	WLSet = gb_sets:from_list([E || {E,Exp} = X <- WL]).
+	
   [X || {E,Exp} = X <- ordsets:to_list(ordsets:from_list(IOC)), not gb_sets:is_element(E, WLSet)]. % TODO duplicates gb_sets vs ordsets
 
 mrpz_from_ioc(Zone,UType) -> %Zone - RPZ zone

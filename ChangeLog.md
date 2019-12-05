@@ -1,5 +1,7 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## 2019-12-05 v1.1.0.2
+
 ## 2019-11-25 v1.1.0.1
 - Bug with updating zones (broken packets after AXFR and wildcard rule after IXFR). It is recommended to upgrade to the newest release.
 
