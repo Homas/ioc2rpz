@@ -1252,5 +1252,6 @@ reverse_IP_test() ->[
 ].
 
 remove_WL_test() -> [
-	?assert(remove_WL([{<<"yellowcabnc.com">>,0},{<<"google1.com">>,0},{<<"example1.com">>,0},{<<"exa1.com">>,0}],[{<<"yellowcabnc.com">>,0},{<<"google.com">>,0},{<<"example.com">>,0}]) =:= [{<<"exa1.com">>,0}, {<<"example1.com">>,0},{<<"google1.com">>,0}])
+	?assert(remove_WL([{<<"yellowcabnc.com">>,0},{<<"google1.com">>,0},{<<"example1.com">>,0},{<<"exa1.com">>,0}],[{<<"yellowcabnc.com">>,0},{<<"google.com">>,0},{<<"example.com">>,0}]) =:= [{<<"exa1.com">>,0}, {<<"example1.com">>,0},{<<"google1.com">>,0}]),
+	?assert(remove_WL([{<<"yellowcabnc.com">>,10},{<<"google.com">>,0},{<<"ioc2rpz.ru">>,10}],[{<<"yellowcabnc.com">>,0},{<<"google.com">>,0},{<<"isc.com">>,0},{<<"example.com">>,0}]) =:= [{<<"ioc2rpz.ru">>,10}])
 ].
