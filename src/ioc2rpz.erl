@@ -902,13 +902,17 @@ gen_wildcard(<<"false">>, _Rules, _WRules, _PSize) ->
   {ok,[],1}.
 
 remove_WL(IOC,WL) when WL == [] ->
+%the function removes whitelisted indiicators from the list of IOC
   ordsets:to_list(ordsets:from_list(IOC));
 
 remove_WL(IOC,WL) ->
 %TODO do not check expiration date, but save the largest expiration
 %  ordsets:to_list(ordsets:subtract(ordsets:from_list(IOC), ordsets:from_list(WL))).
 %медлеенее в 2 раза
-  WLSet = gb_sets:from_list(WL),
+
+  %WLSet = gb_sets:from_list(WL), %bug #20
+	WLSet = gb_sets:from_list([E || {E,Exp} = X <- WL]),
+	
   [X || {E,Exp} = X <- ordsets:to_list(ordsets:from_list(IOC)), not gb_sets:is_element(E, WLSet)]. % TODO duplicates gb_sets vs ordsets
 
 mrpz_from_ioc(Zone,UType) -> %Zone - RPZ zone
@@ -1245,4 +1249,9 @@ reverse_IP_test() ->[
 	?assert(reverse_IP(<<"fd00::/8">>) =:= <<"8.zz.fd00">>),
 	?assert(reverse_IP(<<"::1">>) =:= <<"128.1.zz">>),
 	?assert(reverse_IP(<<"::01/128">>) =:= <<"128.01.zz">>)
+].
+
+remove_WL_test() -> [
+	?assert(remove_WL([{<<"yellowcabnc.com">>,0},{<<"google1.com">>,0},{<<"example1.com">>,0},{<<"exa1.com">>,0}],[{<<"yellowcabnc.com">>,0},{<<"google.com">>,0},{<<"example.com">>,0}]) =:= [{<<"exa1.com">>,0}, {<<"example1.com">>,0},{<<"google1.com">>,0}]),
+	?assert(remove_WL([{<<"yellowcabnc.com">>,10},{<<"google.com">>,0},{<<"ioc2rpz.ru">>,10}],[{<<"yellowcabnc.com">>,0},{<<"google.com">>,0},{<<"isc.com">>,0},{<<"example.com">>,0}]) =:= [{<<"ioc2rpz.ru">>,10}])
 ].
