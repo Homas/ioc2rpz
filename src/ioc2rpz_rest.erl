@@ -199,6 +199,8 @@ srv_mgmt(Req, State, Format) when State#state.op == get_rpz -> % Get RPZ
 %
 %% need to validate TSIG on the access to the feeds
 %
+% ioc2rpz_db:lookup_db_record(<<"baddomain1.com">>,no).
+% ioc2rpz_db:lookup_db_record(<<"99.98.61.5">>,no).
 % DB
 %11> ets:select(rpz_ixfr_table,[{{{ioc,'$0',<<"99.98.61.5">>},'$2','$3'},[],[{{'$0','$2','$3'}}]}]).   
 %[{<<5,108,111,99,97,108,7,105,111,99,50,114,112,122,0>>,
@@ -213,6 +215,21 @@ srv_mgmt(Req, State, Format) when State#state.op == get_rpz -> % Get RPZ
 %  1572419220,0}]
 %
 %	{Body, Req0, State};
+
+
+srv_mgmt(Req, State, Format) when State#state.op == get_ioc -> % check IoC
+	#{peer := {IP, Port}} = Req,
+    ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(230),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
+		IOC = cowboy_req:binding(ioc, Req),
+		TKEY = try
+				maps:get(tkey,cowboy_req:match_qs([tkey],Req)) %%%%% parse_qs
+			catch _:_ ->
+				<<"">>
+		end,
+		{Recur, Zones, ZNames} = get_tkey_zones(TKEY),
+    %ioc2rpz_fun:logMessage("Recursion: ~p\nZones: ~p\n\n",[Recur,Zones]),
+		Body=format_ioc(ioc2rpz_db:lookup_db_record(IOC,Recur),{IOC,TKEY,ZNames},Format),
+		{Body, Req, State};
 
 
 srv_mgmt(Req, State, Format) when State#state.op == catch_all -> % Catch all unsupported requests from authenticated users
@@ -231,6 +248,64 @@ srv_mgmt(Req, State, Format) when State#state.op == catch_all -> % Catch all uns
 	
 rest_terminate(Req, State) ->
 	ok.
+
+format_ioc({ok,Results},Req,Format) ->
+	format_ioc(Results,Req,Format,"");
+
+format_ioc({error,_Results},{IOC,_TKEY,_Zones},json) ->
+	io_lib:format("{\"status\":\"error\", \"ioc\": ~p}",[IOC]);
+
+format_ioc({error,_Results},{IOC,_TKEY,_Zones},txt) ->
+	io_lib:format("status: error\nIOC: ~p\n}",[IOC]).
+
+format_ioc([],{IOC,TKEY,_Zones},json, Result) ->
+ io_lib:format("{\"ioc\":\"~s\", \"tkey\":\"~s\", Elements:[~s]",[IOC,TKEY,Result]);
+
+format_ioc([{El,Feeds}|Results],Req,json,"") ->
+	Ind=io_lib:format("{\"Element\": \"~s\", \"Feeds\": ~s}\n\n",[El, parse_feeds(Feeds,Req,"",json)]),
+	format_ioc(Results,Req,json, Ind);
+ 
+format_ioc([{El,Feeds}|Results],Req,Format,Result) ->
+	Ind=io_lib:format("{\"Element\": \"~s\", \"Feeds\": ~s}\n\n",[El, parse_feeds(Feeds,Req,"",json)]),
+	format_ioc(Results,Req,json, Result ++","++ Ind).
+	
+
+parse_feeds([],_Req,Result,json) ->
+	"["++Result++"]";
+
+parse_feeds([{Feed, Serial, Exp}|REST],{_IOC,_TKEY,Zones}=Req,"",json) ->
+	Memb=lists:member(Feed,Zones),
+	Feed_Str=if (Memb) -> io_lib:format("{\"feed\":~p, \"serial\": ~p, \"ioc_exp\": ~p}",[ioc2rpz:dombin_to_str(Feed), Serial, Exp]); true -> "" end,
+	parse_feeds(REST,Req,Feed_Str,json);
+	
+parse_feeds([{Feed, Serial, Exp}|REST],{_IOC,_TKEY,Zones}=Req,Result,json) ->
+	Memb=lists:member(Feed,Zones),
+	Feed_Str=if (Memb) -> ","++io_lib:format("{\"feed\":~p, \"serial\": ~p, \"ioc_exp\": ~p}",[ioc2rpz:dombin_to_str(Feed), Serial, Exp]); true -> "" end,
+	parse_feeds(REST,Req,Result++Feed_Str,json).
+
+%%%
+%%% Get zones availble for TKey
+%%%
+get_tkey_zones(TKey) ->
+	{ok, TKeyBin} = ioc2rpz:domstr_to_bin(TKey,0),
+	Groups = [ X || [X,Y] <- ets:match(cfg_table,{[key_group,'$1',TKeyBin],'$3'}) ],
+	get_tkey_zones(TKeyBin, Groups, [ X || [X] <- ets:match(cfg_table,{[rpz,'_'],'_','$4'}) ], []). %{X#rpz.zone, X#rpz.zone_str, X#rpz.wildcards, X#rpz.akeys, X#rpz.ioc_type, X#rpz.key_groups}
+
+get_tkey_zones(TKeyBin, _Groups,[], Zones) ->
+	Recur = [ X || {_,_,_,X} <- Zones, X == true ] /= [],
+	ZNames = [ X || {X,_,_,_} <- Zones ],
+	{Recur, lists:flatten(Zones), ZNames};
+	
+get_tkey_zones(TKeyBin, Groups, [RPZ|Rest], Zones) ->
+	KZ = lists:member(TKeyBin, RPZ#rpz.akeys),
+	GZ = [X || X <- Groups, lists:member(X,RPZ#rpz.key_groups)],
+	AZ=case {KZ,GZ,TKeyBin} of
+		{true,_,_} -> [{RPZ#rpz.zone, RPZ#rpz.zone_str, RPZ#rpz.ioc_type, RPZ#rpz.wildcards}];
+		{_,Gr,_} when Gr /= [] -> [{RPZ#rpz.zone, RPZ#rpz.zone_str, RPZ#rpz.ioc_type, RPZ#rpz.wildcards}];
+		{_,_,<<0,0>>} -> [{RPZ#rpz.zone, RPZ#rpz.zone_str, RPZ#rpz.ioc_type, RPZ#rpz.wildcards}];
+		_Else -> []
+	end,
+	get_tkey_zones(TKeyBin, Groups, Rest, Zones ++ AZ).
 
 gen_rpz_stats() ->
 	[ [{"name",X#rpz.zone_str},{"rule_count",X#rpz.rule_count},{"ioc_count",X#rpz.ioc_count},{"serial",X#rpz.serial},{"serial_ixfr",X#rpz.serial_ixfr},{"update_time",X#rpz.update_time},{"ixfr_update_time",X#rpz.ixfr_update_time},{"ixfr_nz_update_time",X#rpz.ixfr_nz_update_time}] || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), X#rpz.rule_count /= undefined].

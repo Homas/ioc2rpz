@@ -17,7 +17,7 @@
 -module(ioc2rpz_db).
 -include_lib("ioc2rpz.hrl").
 -export([init_db/3,db_table_info/2,read_db_pkt/1,write_db_pkt/2,delete_db_pkt/1,read_db_record/3,write_db_record/3,delete_old_db_record/1,saveZones/0,loadZones/0,loadZones/1,
-        get_zone_info/2,clean_DB/1,save_zone_info/1,get_allzones_info/2]).
+        get_zone_info/2,clean_DB/1,save_zone_info/1,get_allzones_info/2, lookup_db_record/2]).
 
 
 init_db(ets,DBDir,PID) ->
@@ -149,7 +149,7 @@ write_db_record(ets,Zone,IOCs,ixfr) when IOCs == [] ->
 write_db_record(mnesia,Zone,IOCs,ixfr) ->
 	{ok,0};
 
-write_db_record(_DBStorage,_Zone,_IOCs,_XFR) ->
+write_db_record(_DBStorage,_Zone,_IOCs,_XFR) ->	
 	{ok,0}. %non cached zones
 
 update_db_record(ets, Zone, Serial, IOC, IOCExp, [], CTime) when IOCExp > 0,IOCExp =< CTime ->
@@ -170,6 +170,25 @@ update_db_record(ets, Zone, Serial, IOC, IOCExp, Update, CTime) -> %ok; %not new
 	?logDebugMSG("Not expected update ~p ~p ~p ~p ~p ~p ~n",[Zone, Serial, IOC, IOCExp, Update, CTime]);
 	
 update_db_record(mnesia, Zone, Serial, IOC, IOCExp, Update, CTime) -> ok.
+
+%%%
+%%% Lookup if an indicator is in the DB.
+%%% Recurs - validate hosts/fqdns if they are blocked by a wildcard rule or a subnet. 
+%%%
+lookup_db_record(IOC, Recurs) ->
+	lookup_db_record(?DBStorage, IOC, Recurs).
+
+lookup_db_record(ets, IOC, false) ->
+	{ok,[{IOC,ets:select(rpz_ixfr_table,[{{{ioc,'$0',IOC},'$2','$3'},[],[{{'$0','$2','$3'}}]}])}]}; 
+
+lookup_db_record(mnesia, IOC, false) ->
+	{ok,[{IOC,[]}]};
+
+lookup_db_record(ets, IOC, true) ->
+	{ok,[{IOC,ets:select(rpz_ixfr_table,[{{{ioc,'$0',IOC},'$2','$3'},[],[{{'$0','$2','$3'}}]}])}]}; 
+
+lookup_db_record(mnesia, IOC, true) ->
+	{ok,[{IOC,[]}]}.
 
 delete_old_db_record(Zone) ->
   delete_old_db_record(?DBStorage,Zone).
