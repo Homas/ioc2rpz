@@ -256,17 +256,17 @@ format_ioc({error,_Results},{IOC,_TKEY,_Zones},json) ->
 	io_lib:format("{\"status\":\"error\", \"ioc\": ~p}",[IOC]);
 
 format_ioc({error,_Results},{IOC,_TKEY,_Zones},txt) ->
-	io_lib:format("status: error\nIOC: ~p\n}",[IOC]).
+	io_lib:format("status: error\nIOC: ~p\n",[IOC]).
 
 format_ioc([],{IOC,TKEY,_Zones},json, Result) ->
- io_lib:format("{\"ioc\":\"~s\", \"tkey\":\"~s\", Elements:[~s]",[IOC,TKEY,Result]);
+ io_lib:format("{\"ioc\":\"~s\", \"tkey\":\"~s\", \"elements\":[~s]}\n\n",[IOC,TKEY,Result]);
 
 format_ioc([{El,Feeds}|Results],Req,json,"") ->
-	Ind=io_lib:format("{\"Element\": \"~s\", \"Feeds\": ~s}\n\n",[El, parse_feeds(Feeds,Req,"",json)]),
+	Ind=io_lib:format("{\"element\": \"~s\", \"feeds\": ~s}",[El, parse_feeds(Feeds,Req,"",json)]),
 	format_ioc(Results,Req,json, Ind);
  
 format_ioc([{El,Feeds}|Results],Req,Format,Result) ->
-	Ind=io_lib:format("{\"Element\": \"~s\", \"Feeds\": ~s}\n\n",[El, parse_feeds(Feeds,Req,"",json)]),
+	Ind=io_lib:format("{\"element\": \"~s\", \"feeds\": ~s}",[El, parse_feeds(Feeds,Req,"",json)]),
 	format_ioc(Results,Req,json, Result ++","++ Ind).
 	
 
