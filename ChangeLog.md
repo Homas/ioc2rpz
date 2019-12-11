@@ -1,7 +1,7 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
 ## 2019-12-10 v1.1.1.0
-- IoC lookup
+- IoC lookup REST API call
 
 ## 2019-12-05 v1.1.0.2
 - Bug #20. Whitelists didn't work.
