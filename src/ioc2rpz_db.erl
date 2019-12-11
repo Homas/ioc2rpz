@@ -185,6 +185,7 @@ lookup_db_record(mnesia, IOC, false) ->
 	{ok,[{IOC,[]}]};
 
 lookup_db_record(ets, IOC, true) ->
+% check IP or domain
 	{ok,[{IOC,ets:select(rpz_ixfr_table,[{{{ioc,'$0',IOC},'$2','$3'},[],[{{'$0','$2','$3'}}]}])}]}; 
 
 lookup_db_record(mnesia, IOC, true) ->

@@ -164,13 +164,13 @@ clean_feed(IOC,none) ->
 %Default REFEX
 %Extract IOCs,remove unsupported chars using standard REGEX. Expiration date is not supported;
 clean_feed(IOC,[]) ->
-  {ok,MP} = re:compile("^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"),
+  {ok,MP} = re:compile("^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$",[{newline, any}]),
   [ X || X <- clean_feed(IOC,[],MP), X /= <<>>];
 
 
 %Extract IOCs,remove unsupported chars using user's defined REGEX. Expiration date is supported. First value - IOC, second - Exp. Date;
 clean_feed(IOC,REX) -> %REX - user's regular expression
-  {ok,MP} = re:compile(REX),
+  {ok,MP} = re:compile(REX,[{newline, any}]),
   [ X || X <- clean_feed(IOC,[],MP), X /= <<>>].
 
 clean_feed([Head|Tail],CleanIOC,REX) ->
@@ -190,11 +190,11 @@ clean_feed_bin(IOC,none) ->
   [ {X,0} || X <- IOC, X /= <<>>];
 
 clean_feed_bin(IOC,[]) ->
-  {ok,MP} = re:compile("^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"),
+  {ok,MP} = re:compile("^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$",[{newline, any}]), 
   [ X || X <- clean_feed_bin(IOC,<<>>,MP), X /= <<>>];
 
 clean_feed_bin(IOC,REX) -> %REX - user's regular expression
-  {ok,MP} = re:compile(REX),
+  {ok,MP} = re:compile(REX,[{newline, any}]), 
   [ X || X <- clean_feed_bin(IOC,<<>>,MP), X /= <<>>].
 
 clean_feed_bin([Head|Tail],CleanIOC,REX) ->

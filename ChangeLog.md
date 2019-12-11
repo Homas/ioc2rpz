@@ -1,5 +1,8 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## 2019-12-11 v1.1.1.1
+- [CB] Regex expressions were updated to match any type of newline string chars "{newline, any}"
+
 ## 2019-12-10 v1.1.1.0
 - IoC lookup REST API call
 

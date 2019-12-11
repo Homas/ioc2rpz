@@ -259,14 +259,14 @@ format_ioc({error,_Results},{IOC,_TKEY,_Zones},txt) ->
 	io_lib:format("status: error\nIOC: ~p\n",[IOC]).
 
 format_ioc([],{IOC,TKEY,_Zones},json, Result) ->
- io_lib:format("{\"ioc\":\"~s\", \"tkey\":\"~s\", \"elements\":[~s]}\n\n",[IOC,TKEY,Result]);
+ io_lib:format("{\"ioc\":\"~s\", \"tkey\":\"~s\", \"data\":[~s]}\n\n",[IOC,TKEY,Result]);
 
 format_ioc([{El,Feeds}|Results],Req,json,"") ->
-	Ind=io_lib:format("{\"element\": \"~s\", \"feeds\": ~s}",[El, parse_feeds(Feeds,Req,"",json)]),
+	Ind=io_lib:format("{\"ioc\": \"~s\", \"feeds\": ~s}",[El, parse_feeds(Feeds,Req,"",json)]),
 	format_ioc(Results,Req,json, Ind);
  
 format_ioc([{El,Feeds}|Results],Req,Format,Result) ->
-	Ind=io_lib:format("{\"element\": \"~s\", \"feeds\": ~s}",[El, parse_feeds(Feeds,Req,"",json)]),
+	Ind=io_lib:format("{\"ioc\": \"~s\", \"feeds\": ~s}",[El, parse_feeds(Feeds,Req,"",json)]),
 	format_ioc(Results,Req,json, Result ++","++ Ind).
 	
 
@@ -275,12 +275,12 @@ parse_feeds([],_Req,Result,json) ->
 
 parse_feeds([{Feed, Serial, Exp}|REST],{_IOC,_TKEY,Zones}=Req,"",json) ->
 	Memb=lists:member(Feed,Zones),
-	Feed_Str=if (Memb) -> io_lib:format("{\"feed\":~p, \"serial\": ~p, \"ioc_exp\": ~p}",[ioc2rpz:dombin_to_str(Feed), Serial, Exp]); true -> "" end,
+	Feed_Str=if (Memb) -> io_lib:format("{\"feed\":~p, \"rpz_serial\": ~p, \"ioc_expiration\": ~p}",[ioc2rpz:dombin_to_str(Feed), Serial, Exp]); true -> "" end,
 	parse_feeds(REST,Req,Feed_Str,json);
 	
 parse_feeds([{Feed, Serial, Exp}|REST],{_IOC,_TKEY,Zones}=Req,Result,json) ->
 	Memb=lists:member(Feed,Zones),
-	Feed_Str=if (Memb) -> ","++io_lib:format("{\"feed\":~p, \"serial\": ~p, \"ioc_exp\": ~p}",[ioc2rpz:dombin_to_str(Feed), Serial, Exp]); true -> "" end,
+	Feed_Str=if (Memb) -> ","++io_lib:format("{\"feed\":~p, \"rpz_serial\": ~p, \"ioc_expiration\": ~p}",[ioc2rpz:dombin_to_str(Feed), Serial, Exp]); true -> "" end,
 	parse_feeds(REST,Req,Result++Feed_Str,json).
 
 %%%
