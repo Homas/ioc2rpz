@@ -3,6 +3,7 @@
 
 ## Core / DNS
 - [-] check IoC in the RPZs feeds "What's in your DNS?"
+- [ ] simple permissions model
 - [ ] REST API rate limiting
 - [ ] DNS requests rate limiting
 - [ ] HotCache optimization if refresh time less than hotcache storage time

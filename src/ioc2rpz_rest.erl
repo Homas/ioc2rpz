@@ -226,9 +226,9 @@ srv_mgmt(Req, State, Format) when State#state.op == get_ioc -> % check IoC
 			catch _:_ ->
 				<<"">>
 		end,
-		{Recur, Zones, ZNames} = get_tkey_zones(TKEY),
+		{Recur, Zones} = get_tkey_zones(TKEY),
     %ioc2rpz_fun:logMessage("Recursion: ~p\nZones: ~p\n\n",[Recur,Zones]),
-		Body=format_ioc(ioc2rpz_db:lookup_db_record(IOC,Recur),{IOC,TKEY,ZNames},Format),
+		Body=format_ioc(ioc2rpz_db:lookup_db_record(IOC,Recur),{IOC,TKEY, Zones},Format),
 		{Body, Req, State};
 
 
@@ -274,13 +274,13 @@ parse_feeds([],_Req,Result,json) ->
 	"["++Result++"]";
 
 parse_feeds([{Feed, Serial, Exp}|REST],{_IOC,_TKEY,Zones}=Req,"",json) ->
-	Memb=lists:member(Feed,Zones),
-	Feed_Str=if (Memb) -> io_lib:format("{\"feed\":~p, \"rpz_serial\": ~p, \"ioc_expiration\": ~p}",[ioc2rpz:dombin_to_str(Feed), Serial, Exp]); true -> "" end,
+	Memb=maps:is_key(Feed,Zones),
+	Feed_Str=if (Memb) -> {FN,TY,WC}=maps:get(Feed,Zones), io_lib:format("{\"feed\":~p, \"wildcard\":~s, \"type\":~p, \"rpz_serial\": ~p, \"ioc_expiration\": ~p}",[FN, WC, binary_to_list(TY), Serial, Exp]); true -> "" end,
 	parse_feeds(REST,Req,Feed_Str,json);
 	
 parse_feeds([{Feed, Serial, Exp}|REST],{_IOC,_TKEY,Zones}=Req,Result,json) ->
-	Memb=lists:member(Feed,Zones),
-	Feed_Str=if (Memb) -> ","++io_lib:format("{\"feed\":~p, \"rpz_serial\": ~p, \"ioc_expiration\": ~p}",[ioc2rpz:dombin_to_str(Feed), Serial, Exp]); true -> "" end,
+	Memb=maps:is_key(Feed,Zones),
+	Feed_Str=if (Memb) -> {FN,TY,WC}=maps:get(Feed,Zones), ","++io_lib:format("{\"feed\":~p, \"wildcard\":~s, \"type\":~p, \"rpz_serial\": ~p, \"ioc_expiration\": ~p}",[FN, WC, binary_to_list(TY), Serial, Exp]); true -> "" end,
 	parse_feeds(REST,Req,Result++Feed_Str,json).
 
 %%%
@@ -292,17 +292,17 @@ get_tkey_zones(TKey) ->
 	get_tkey_zones(TKeyBin, Groups, [ X || [X] <- ets:match(cfg_table,{[rpz,'_'],'_','$4'}) ], []). %{X#rpz.zone, X#rpz.zone_str, X#rpz.wildcards, X#rpz.akeys, X#rpz.ioc_type, X#rpz.key_groups}
 
 get_tkey_zones(TKeyBin, _Groups,[], Zones) ->
-	Recur = [ X || {_,_,_,X} <- Zones, X == true ] /= [],
-	ZNames = [ X || {X,_,_,_} <- Zones ],
-	{Recur, lists:flatten(Zones), ZNames};
+	Recur = [ X || {_,{_,_,X}} <- Zones, X == true ] /= [],
+%	ZNames = [ X || {X,{_,_,_}} <- Zones ],
+	{Recur, maps:from_list(lists:flatten(Zones))};
 	
 get_tkey_zones(TKeyBin, Groups, [RPZ|Rest], Zones) ->
 	KZ = lists:member(TKeyBin, RPZ#rpz.akeys),
 	GZ = [X || X <- Groups, lists:member(X,RPZ#rpz.key_groups)],
 	AZ=case {KZ,GZ,TKeyBin} of
-		{true,_,_} -> [{RPZ#rpz.zone, RPZ#rpz.zone_str, RPZ#rpz.ioc_type, RPZ#rpz.wildcards}];
-		{_,Gr,_} when Gr /= [] -> [{RPZ#rpz.zone, RPZ#rpz.zone_str, RPZ#rpz.ioc_type, RPZ#rpz.wildcards}];
-		{_,_,<<0,0>>} -> [{RPZ#rpz.zone, RPZ#rpz.zone_str, RPZ#rpz.ioc_type, RPZ#rpz.wildcards}];
+		{true,_,_} -> [{RPZ#rpz.zone, {RPZ#rpz.zone_str, RPZ#rpz.ioc_type, RPZ#rpz.wildcards}}];
+		{_,Gr,_} when Gr /= [] -> [{RPZ#rpz.zone, {RPZ#rpz.zone_str, RPZ#rpz.ioc_type, RPZ#rpz.wildcards}}];
+		{_,_,<<0,0>>} -> [{RPZ#rpz.zone,{RPZ#rpz.zone_str, RPZ#rpz.ioc_type, RPZ#rpz.wildcards}}];
 		_Else -> []
 	end,
 	get_tkey_zones(TKeyBin, Groups, Rest, Zones ++ AZ).
