@@ -17,7 +17,7 @@
 -module(ioc2rpz_fun).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("ioc2rpz.hrl").
--export([logMessage/2,logMessageCEF/2,strs_to_binary/1,curr_serial/0,curr_serial_60/0,constr_ixfr_url/3,ip_to_bin/1,read_local_actions/1,split_bin_bytes/2,split_tail/2,
+-export([logMessage/2,logMessageCEF/2,strs_to_binary/1,curr_serial/0,curr_serial_60/0,constr_ixfr_url/3,ip_to_bin/1,read_local_actions/1,split_bin_bytes/2,split_tail/2,rsplit_tail/2,
          bin_to_lowcase/1,ip_in_list/2,intersection/2,bin_to_hexstr/1,conv_to_Mb/1,q_class/1,q_type/1,split/2,msg_CEF/1,base64url_decode/1]).
 
 logMessage(Message, Vars) ->
@@ -160,6 +160,14 @@ split_tail(String, Pattern) ->
 %  ioc2rpz_fun:logMessage("z_split ~p ~p ~n",[String, Pattern]),
 	case binary:split(String, Pattern) of %binary:split
 		[First, Second] -> [First | split_tail(Second, Pattern)];
+		[First] -> [First];
+		[] -> []
+	end.
+
+rsplit_tail(String, Pattern) ->
+%  ioc2rpz_fun:logMessage("z_split ~p ~p ~n",[String, Pattern]),
+	case binary:split(String, Pattern) of %binary:split
+		[First, Second] -> rsplit_tail(Second, Pattern) ++ [First];
 		[First] -> [First];
 		[] -> []
 	end.

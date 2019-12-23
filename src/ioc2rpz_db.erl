@@ -186,10 +186,26 @@ lookup_db_record(mnesia, IOC, false) ->
 
 lookup_db_record(ets, IOC, true) ->
 % check IP or domain
-	{ok,[{IOC,ets:select(rpz_ixfr_table,[{{{ioc,'$0',IOC},'$2','$3'},[],[{{'$0','$2','$3'}}]}])}]}; 
+			%ioc2rpz_fun:logMessage("Checking IOC ~s ~n",[IOC]),
+			{ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}(\\/[0-9]{1,3})?)$|(:)"),
+      case re:run(IOC,MP,[global,notempty,{capture,[1],binary}]) of
+        {match,_} -> {ok,[{IOC,ets:select(rpz_ixfr_table,[{{{ioc,'$0',IOC},'$2','$3'},[],[{{'$0','$2','$3'}}]}])}]};
+        _ ->  lookup_db_record(ets,IOC,<<"">>,ioc2rpz_fun:rsplit_tail(IOC, <<".">>),[])
+      end; 
 
 lookup_db_record(mnesia, IOC, true) ->
 	{ok,[{IOC,[]}]}.
+
+lookup_db_record(ets,IOC, FQDN, [], Result) ->
+  %ioc2rpz_fun:logMessage("Result: ~p\n\n",[{ok,Result}]),
+	FResult = [{IOC2,ARR} || {IOC2,ARR} <-Result, ((IOC == IOC2) or (ARR /= []))],
+	{ok,FResult};
+
+lookup_db_record(ets,IOC, FQDN, [Label|REST], Result) ->
+	NFQDN = if FQDN == <<"">> -> Label; true ->  <<Label/binary,".",FQDN/binary>> end,
+  %ioc2rpz_fun:logMessage("Checking ~p ~n",[NFQDN]),
+	lookup_db_record(ets, IOC, NFQDN, REST, Result ++ [{NFQDN,ets:select(rpz_ixfr_table,[{{{ioc,'$0',NFQDN},'$2','$3'},[],[{{'$0','$2','$3'}}]}])}]).
+
 
 delete_old_db_record(Zone) ->
   delete_old_db_record(?DBStorage,Zone).

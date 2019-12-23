@@ -292,7 +292,7 @@ get_tkey_zones(TKey) ->
 	get_tkey_zones(TKeyBin, Groups, [ X || [X] <- ets:match(cfg_table,{[rpz,'_'],'_','$4'}) ], []). %{X#rpz.zone, X#rpz.zone_str, X#rpz.wildcards, X#rpz.akeys, X#rpz.ioc_type, X#rpz.key_groups}
 
 get_tkey_zones(TKeyBin, _Groups,[], Zones) ->
-	Recur = [ X || {_,{_,_,X}} <- Zones, X == true ] /= [],
+	Recur = [ X || {_,{_,_,X}} <- Zones, X == <<"true">> ] /= [],
 %	ZNames = [ X || {X,{_,_,_}} <- Zones ],
 	{Recur, maps:from_list(lists:flatten(Zones))};
 	
