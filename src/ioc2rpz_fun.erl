@@ -297,3 +297,13 @@ base64url_decode_test() -> [
  ?assert(base64url_decode(<<"AAABAAABAAAAAAAAB2V4YW1wbGUDY29tAAABAAE">>) =:= {ok,<<0,0,1,0,0,1,0,0,0,0,0,0,7,101,120,97,109,112,108,101,3,99,111,109,0,0,1,0,1>>}),
  ?assert(base64url_decode(<<"AAABAAABAAAAAAAAB2V4YW1wbGUDY29tAAABAAE==">>) =:= {error,<<>>})
 ].
+
+bin_to_lowcase_test() ->[
+	?assert(bin_to_lowcase(<<"fC00::01">>) =:= <<"fc00::01">>),
+	?assert(bin_to_lowcase(<<"Aaaaaa">>) =:= <<"aaaaaa">>),
+	?assert(bin_to_lowcase(<<"bBbBbB">>) =:= <<"bbbbbb">>),
+	?assert(bin_to_lowcase(<<"ccC">>) =:= <<"ccc">>),
+	?assert(bin_to_lowcase(<<"D">>) =:= <<"d">>),
+	?assert(bin_to_lowcase(<<"f">>) =:= <<"f">>),
+	?assert(bin_to_lowcase(<<"eeeeeeeeeeeeeeeeeeeeeee">>) =:= <<"eeeeeeeeeeeeeeeeeeeeeee">>)
+].

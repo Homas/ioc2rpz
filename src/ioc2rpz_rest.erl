@@ -220,7 +220,7 @@ srv_mgmt(Req, State, Format) when State#state.op == get_rpz -> % Get RPZ
 srv_mgmt(Req, State, Format) when State#state.op == get_ioc -> % check IoC
 	#{peer := {IP, Port}} = Req,
     ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(230),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
-		IOC = cowboy_req:binding(ioc, Req),
+		IOC = ioc2rpz_fun:bin_to_lowcase(cowboy_req:binding(ioc, Req)),
 		TKEY = try
 				maps:get(tkey,cowboy_req:match_qs([tkey],Req)) %%%%% parse_qs
 			catch _:_ ->

@@ -1,5 +1,8 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## 2019-12-11 v1.1.1.3
+- [CB] IoC lookup REST API call. The submitted indicator converted to lowcase before the lookups.
+
 ## 2019-12-11 v1.1.1.2
 - [CB] IoC lookup REST API call output was modified
 
