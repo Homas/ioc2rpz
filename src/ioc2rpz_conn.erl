@@ -22,14 +22,7 @@ get_ioc(URL,REGEX,Source) ->
   case get_ioc(URL,?Src_Retry) of
     {ok, Bin} ->
       ioc2rpz_fun:logMessage("Source: ~p, size: ~s (~p), MD5: ~p ~n",[Source#source.name, ioc2rpz_fun:conv_to_Mb(byte_size(Bin)),byte_size(Bin), ioc2rpz_fun:bin_to_hexstr(crypto:hash(md5,Bin))]), %TODO debug
-      %Uncomment next 2 lines in case of limited memory. REGEX must be prepared for lowcase sources
-      %BinLow=ioc2rpz_fun:bin_to_lowcase(Bin),
-      %L=clean_feed(ioc2rpz_fun:split_tail(BinLow,<<"\n">>),REGEX),
-      
-      %methods used below consume more memory. It is not possible to run ioc2rpz with 1M indicator on AWS free tier
-      %L=clean_feed_bin(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX),
-      %Comment next 1 line in case of limited memory. REGEX must be prepared for lowcase sources
-      
+
       %TODO spawn cleanup
       CTime=ioc2rpz_fun:curr_serial_60(),
       %L=[ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX) ],
@@ -164,13 +157,13 @@ clean_feed(IOC,none) ->
 %Default REFEX
 %Extract IOCs,remove unsupported chars using standard REGEX. Expiration date is not supported;
 clean_feed(IOC,[]) ->
-  {ok,MP} = re:compile("^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"),
+  {ok,MP} = re:compile("^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$",[{newline, any}]),
   [ X || X <- clean_feed(IOC,[],MP), X /= <<>>];
 
 
 %Extract IOCs,remove unsupported chars using user's defined REGEX. Expiration date is supported. First value - IOC, second - Exp. Date;
 clean_feed(IOC,REX) -> %REX - user's regular expression
-  {ok,MP} = re:compile(REX),
+  {ok,MP} = re:compile(REX,[{newline, any}]),
   [ X || X <- clean_feed(IOC,[],MP), X /= <<>>].
 
 clean_feed([Head|Tail],CleanIOC,REX) ->
@@ -190,11 +183,11 @@ clean_feed_bin(IOC,none) ->
   [ {X,0} || X <- IOC, X /= <<>>];
 
 clean_feed_bin(IOC,[]) ->
-  {ok,MP} = re:compile("^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"),
+  {ok,MP} = re:compile("^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$",[{newline, any}]), 
   [ X || X <- clean_feed_bin(IOC,<<>>,MP), X /= <<>>];
 
 clean_feed_bin(IOC,REX) -> %REX - user's regular expression
-  {ok,MP} = re:compile(REX),
+  {ok,MP} = re:compile(REX,[{newline, any}]), 
   [ X || X <- clean_feed_bin(IOC,<<>>,MP), X /= <<>>].
 
 clean_feed_bin([Head|Tail],CleanIOC,REX) ->

@@ -111,6 +111,7 @@ API requests:
 - GET ``/api/v1.0/mgmt/update_tkeys`` - update TSIG keys.
 - GET ``/api/v1.0/mgmt/terminate`` - shutdown ioc2rpz server.
 - GET ``/api/v1.0/feed/:rpz`` - get content (indicators) of ``:rpz`` feed. 
+- GET ``/api/v1.0/ioc/:ioc?tkey=:tkey`` - check if indicator is blocked by RPZ feeds. An optional param ``:tkey`` allows to limit validation to a specific TSIG Key. W/o it the search will be done among all feeds. 
 
 ## Configuration file
 The configuration is an Erlang file. Every configuration option is an Erlang term so the configuration must comply with Erlang syntax. ioc2rpz does not check the configuration file for possible errors, typos etc.

@@ -17,7 +17,7 @@
 -module(ioc2rpz_fun).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("ioc2rpz.hrl").
--export([logMessage/2,logMessageCEF/2,strs_to_binary/1,curr_serial/0,curr_serial_60/0,constr_ixfr_url/3,ip_to_bin/1,read_local_actions/1,split_bin_bytes/2,split_tail/2,
+-export([logMessage/2,logMessageCEF/2,strs_to_binary/1,curr_serial/0,curr_serial_60/0,constr_ixfr_url/3,ip_to_bin/1,read_local_actions/1,split_bin_bytes/2,split_tail/2,rsplit_tail/2,
          bin_to_lowcase/1,ip_in_list/2,intersection/2,bin_to_hexstr/1,conv_to_Mb/1,q_class/1,q_type/1,split/2,msg_CEF/1,base64url_decode/1]).
 
 logMessage(Message, Vars) ->
@@ -164,6 +164,14 @@ split_tail(String, Pattern) ->
 		[] -> []
 	end.
 
+rsplit_tail(String, Pattern) ->
+%  ioc2rpz_fun:logMessage("z_split ~p ~p ~n",[String, Pattern]),
+	case binary:split(String, Pattern) of %binary:split
+		[First, Second] -> rsplit_tail(Second, Pattern) ++ [First];
+		[First] -> [First];
+		[] -> []
+	end.
+
 bin_to_lowcase(A) ->
  << << (b_to_lowcase(C)) >> || << C >> <= A >>.
 % << << C >> || << C >> <= A >>.
@@ -288,4 +296,14 @@ ip_to_bin_test() ->[
 base64url_decode_test() -> [
  ?assert(base64url_decode(<<"AAABAAABAAAAAAAAB2V4YW1wbGUDY29tAAABAAE">>) =:= {ok,<<0,0,1,0,0,1,0,0,0,0,0,0,7,101,120,97,109,112,108,101,3,99,111,109,0,0,1,0,1>>}),
  ?assert(base64url_decode(<<"AAABAAABAAAAAAAAB2V4YW1wbGUDY29tAAABAAE==">>) =:= {error,<<>>})
+].
+
+bin_to_lowcase_test() ->[
+	?assert(bin_to_lowcase(<<"fC00::01">>) =:= <<"fc00::01">>),
+	?assert(bin_to_lowcase(<<"Aaaaaa">>) =:= <<"aaaaaa">>),
+	?assert(bin_to_lowcase(<<"bBbBbB">>) =:= <<"bbbbbb">>),
+	?assert(bin_to_lowcase(<<"ccC">>) =:= <<"ccc">>),
+	?assert(bin_to_lowcase(<<"D">>) =:= <<"d">>),
+	?assert(bin_to_lowcase(<<"f">>) =:= <<"f">>),
+	?assert(bin_to_lowcase(<<"eeeeeeeeeeeeeeeeeeeeeee">>) =:= <<"eeeeeeeeeeeeeeeeeeeeeee">>)
 ].

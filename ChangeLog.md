@@ -1,6 +1,19 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## 2019-12-11 v1.1.1.3
+- [CB] IoC lookup REST API call. The submitted indicator converted to lowcase before the lookups.
+
+## 2019-12-11 v1.1.1.2
+- [CB] IoC lookup REST API call output was modified
+
+## 2019-12-11 v1.1.1.1
+- [CB] Regex expressions were updated to match any type of newline string chars "{newline, any}"
+
+## 2019-12-10 v1.1.1.0
+- IoC lookup REST API call
+
 ## 2019-12-05 v1.1.0.2
+- Bug #20. Whitelists didn't work.
 
 ## 2019-11-25 v1.1.0.1
 - Bug with updating zones (broken packets after AXFR and wildcard rule after IXFR). It is recommended to upgrade to the newest release.
