@@ -374,18 +374,18 @@ kdig @94.130.30.123 -y hmac-sha256:ioc2rpz-YOUR-UNIQUE-KEY-NAME:ioc2rpz-YOUR-UNI
 You can find other IOC feeds on the wiki-page: https://github.com/Homas/ioc2rpz/wiki/IOC-Sources. 
 
 ## References
-- [Domain Name System (DNS) IANA Considerations](https://tools.ietf.org/html/rfc6895)
-- [Domain Names - Implementation and Specification](https://tools.ietf.org/html/rfc1035)
-- [Incremental Zone Transfer in DNS](https://tools.ietf.org/html/rfc1995)
+- [RFC-6895 Domain Name System (DNS) IANA Considerations](https://tools.ietf.org/html/rfc6895)
+- [RFC-1035 Domain Names - Implementation and Specification](https://tools.ietf.org/html/rfc1035)
+- [RFC-1995 Incremental Zone Transfer in DNS](https://tools.ietf.org/html/rfc1995)
 - [DNS Response Policy Zones (RPZ)](https://tools.ietf.org/html/draft-ietf-dnsop-dns-rpz-00) + [vixie](https://tools.ietf.org/html/draft-vixie-dns-rpz-02)
-- [Secret Key Transaction Authentication for DNS (TSIG)](https://tools.ietf.org/html/rfc2845)
-- [HMAC: Keyed-Hashing for Message Authentication](https://tools.ietf.org/html/rfc2104)
-- [HMAC SHA TSIG Algorithm Identifiers](https://tools.ietf.org/html/rfc4635)
-- [DNS Transport over TCP - Implementation Requirements](https://tools.ietf.org/html/rfc5966)
-- [A Mechanism for Prompt Notification of Zone Changes (DNS NOTIFY)](https://tools.ietf.org/html/rfc1996)
+- [RFC-2845 Secret Key Transaction Authentication for DNS (TSIG)](https://tools.ietf.org/html/rfc2845)
+- [RFC-2104 HMAC: Keyed-Hashing for Message Authentication](https://tools.ietf.org/html/rfc2104)
+- [RFC-4635 HMAC SHA TSIG Algorithm Identifiers](https://tools.ietf.org/html/rfc4635)
+- [RFC-5966 DNS Transport over TCP - Implementation Requirements](https://tools.ietf.org/html/rfc5966)
+- [RFC-1996 A Mechanism for Prompt Notification of Zone Changes (DNS NOTIFY)](https://tools.ietf.org/html/rfc1996)
 - [Extension Mechanisms for DNS (EDNS(0))](https://tools.ietf.org/html/rfc6891) + [ENDS Option Codes](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-11)
-- [Domain Name System (DNS) Cookies](https://tools.ietf.org/html/rfc7873)
-- [Specification for DNS over Transport Layer Security (TLS)](https://tools.ietf.org/html/rfc7858)
+- [RFC-7873 Domain Name System (DNS) Cookies](https://tools.ietf.org/html/rfc7873)
+- [RFC-7858 Specification for DNS over Transport Layer Security (TLS)](https://tools.ietf.org/html/rfc7858)
 - [Cowboy Web Server](https://ninenines.eu)
 - [Rebar3](https://www.rebar3.org)
 
