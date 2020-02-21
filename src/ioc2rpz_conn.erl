@@ -81,7 +81,7 @@ get_ioc(<<"shell:",CMD/binary>> = _URL, Retry) ->
 %download IOCs from http/https/ftp
 get_ioc(<<Proto:5/bytes,_/binary>> = URL, Retry) when Proto == <<"http:">>;Proto == <<"https">>;Proto == <<"ftp:/">> ->
 	httpc:set_options([{cookies,enabled}]),
-  case httpc:request(get,{binary_to_list(URL),[{"User-Agent", "Mozilla"},{timeout, ?SourcePullTimeout}]},[],[{body_format,binary},{sync,true}]) of %,{socket_opts,[{cookies,enabled}]}
+  case httpc:request(get,{binary_to_list(URL),[{"User-Agent", "Mozilla"}]},[{timeout, ?SourcePullTimeout}],[{body_format,binary},{sync,true}]) of %,{socket_opts,[{cookies,enabled}]}
   {ok,{{_,200,_},_,Response}} ->
     {ok,Response};
   {ok,{{_,Code,_},Headers,Response}} ->
