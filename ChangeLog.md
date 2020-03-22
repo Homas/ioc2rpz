@@ -1,5 +1,8 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## 2020-02-20 v1.1.1.4
+- [CB] A default timeout (SourcePullTimeout - 5 minutes) was added to limit time for fetching feeds/sources via http/https/ftp.
+
 ## 2019-12-11 v1.1.1.3
 - [CB] IoC lookup REST API call. The submitted indicator converted to lowcase before the lookups.
 

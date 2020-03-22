@@ -1,5 +1,5 @@
 ## Bugs
-- [x] wildcard rule is generated
+- [ ] Take a look on the bugs mentioned in REST section
 
 ## Core / DNS
 - [x] check IoC in the RPZs feeds "What's in your DNS?"

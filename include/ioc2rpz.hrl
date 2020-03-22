@@ -43,12 +43,12 @@
 -define(HotCacheTime,900). %900 Time to cache IOCs/Records/Pkts in the hot cache. More usefull for online rpz.
 -define(HotCacheTimeIXFR,0). %Time to cache IXFR IOCs in a hot cache. By default it is cached for a minute because of curr_serial_60.
 -define(ShellMaxRespSize,2*1024*1024*1024). %Maximum response size for shell source
-
+-define(SourcePullTimeout, 5 * 60 * 1000). %Default source/feed download timeout. Fetching will be interrupted if this download time exceeds it. 
 
 %%%%%%
 %%%%%% Do not modify any settings below the line
 %%%%%%
--define(ioc2rpz_ver, "1.1.1.3-2019127001").
+-define(ioc2rpz_ver, "1.1.1.4-2020022001").
 
 -define(ZNameZip,16#c00c:16). %Zone name/original fqdn from a request is always at byte 10 in the response
 -define(ZNameZipN,16#c00c). % Offset in bytes - Zone name/original fqdn from a request is always at byte 10 in the response
