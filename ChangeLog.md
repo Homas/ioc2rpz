@@ -1,5 +1,9 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+
+## 2020-07-07 v1.1.2.0
+- [CB] By default switched to TLS1.3. If you need TLS1.2 support change TLSVersion parameter in include/ioc2rpz.hrl
+
 ## 2020-02-20 v1.1.1.4
 - [CB] A default timeout (SourcePullTimeout - 5 minutes) was added to limit time for fetching feeds/sources via http/https/ftp.
 
@@ -22,7 +26,7 @@
 - Bug with updating zones (broken packets after AXFR and wildcard rule after IXFR). It is recommended to upgrade to the newest release.
 
 ## 2019-09-28 v1.1.0.0
-- DoT (DNS over HTTPs) support for zone transfer and SOA. 
+- DoH (DNS over HTTPs) for SOA requests. 
 
 ## 2019-09-20 v1.0.0.4
 - [CB] Filtering out indicators with illegal chars (ioc2rpz:clean_labels). Performance should be validated.
