@@ -51,7 +51,7 @@ init([Proc,IPStr,Proto]) when Proc == tls_sup; Proc == tls6_sup -> %DoT
 
 init([Proc,_IPStr,_Proto]) when Proc == rest_tls_sup; Proc == rest_tls6_sup -> %REST
 	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6','_'}),
-	Ciphers=ssl:cipher_suites(default, ?TLSVersion),	
+	Ciphers=ioc2rpz_fun:get_cipher_suites(?TLSVersion),
 	Dispatch = cowboy_router:compile([{'_', [
 				{"/", ioc2rpz_rest, [root]},
 				{"/api/[:api_ver]/stats/serv", ioc2rpz_rest, [stats_serv]},
@@ -73,7 +73,7 @@ init([Proc,_IPStr,_Proto]) when Proc == rest_tls_sup; Proc == rest_tls6_sup -> %
 
 init([Proc,_IPStr,_Proto]) when Proc == doh_sup; Proc == doh6_sup -> %DoH
 	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6','_'}),
-	Ciphers=ssl:cipher_suites(default, ?TLSVersion),	
+	Ciphers=ioc2rpz_fun:get_cipher_suites(?TLSVersion),	
 	Dispatch = cowboy_router:compile([{'_', [
 				{"/", ioc2rpz_doh, [root]},
 				{"/dns-query", ioc2rpz_doh, [dns_query]},
@@ -97,13 +97,13 @@ open_tcp_sockets(_IPStr,Proto) ->
 open_tls_sockets(IPStr,Proto) when IPStr /= "", IPStr /= [] ->
   {ok,IP}=inet:parse_address(IPStr),
 	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6','_'}),
-	Ciphers=ssl:cipher_suites(default, ?TLSVersion),
+	Ciphers=ioc2rpz_fun:get_cipher_suites(?TLSVersion),
 	{ok, TLSSocket} = ssl:listen(?PortTLS, [{ip, IP},{active,once}, binary, Proto, {certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile}, {ciphers, Ciphers} ]), %,{cacertfile, Cert#cert.cacertfile}
   {ok, TLSSocket};
 
 open_tls_sockets(_IPStr,Proto) ->
 	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6','_'}),
-	Ciphers=ssl:cipher_suites(default, ?TLSVersion),
+	Ciphers=ioc2rpz_fun:get_cipher_suites(?TLSVersion),
 	{ok, TLSSocket} = ssl:listen(?PortTLS, [{active,once}, binary, Proto, {certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile}, {ciphers, Ciphers}]), %,{cacertfile, Cert#cert.cacertfile}
   {ok, TLSSocket}.
 

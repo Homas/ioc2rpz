@@ -18,7 +18,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("ioc2rpz.hrl").
 -export([logMessage/2,logMessageCEF/2,strs_to_binary/1,curr_serial/0,curr_serial_60/0,constr_ixfr_url/3,ip_to_bin/1,read_local_actions/1,split_bin_bytes/2,split_tail/2,rsplit_tail/2,
-         bin_to_lowcase/1,ip_in_list/2,intersection/2,bin_to_hexstr/1,conv_to_Mb/1,q_class/1,q_type/1,split/2,msg_CEF/1,base64url_decode/1]).
+         bin_to_lowcase/1,ip_in_list/2,intersection/2,bin_to_hexstr/1,conv_to_Mb/1,q_class/1,q_type/1,split/2,msg_CEF/1,base64url_decode/1,get_cipher_suites/1]).
 
 logMessage(Message, Vars) ->
   logMessage(group_leader(), Message, Vars).
@@ -262,6 +262,15 @@ base64url_decode(Str) ->
 			error:Reason:Stk -> {error,<<>>}
 	end.
 
+
+get_cipher_suites('tlsv1.2-1.3') ->
+  TLS12=ssl:cipher_suites(default, 'tlsv1.2'),
+  TLS13=ssl:cipher_suites(exclusive, 'tlsv1.3'),
+  ssl:append_cipher_suites(TLS12,TLS13);
+
+get_cipher_suites(TLSVersion) ->
+  ssl:cipher_suites(default, TLSVersion).
+  
 
 %%%%
 %%%% EUnit tests

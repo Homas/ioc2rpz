@@ -1,8 +1,8 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
 
-## 2020-07-07 v1.1.2.0
-- [CB] By default switched to TLS1.3. If you need TLS1.2 support change TLSVersion parameter in include/ioc2rpz.hrl
+## 2020-07-08 v1.1.2.1
+- [CB] By default only TLSv1.2 and TLSv1.3 are supported. If you need to downgrade to TLSv1.1 (not recommended) or support only TLSv1.3 update TLSVersion parameter in include/ioc2rpz.hrl
 
 ## 2020-02-20 v1.1.1.4
 - [CB] A default timeout (SourcePullTimeout - 5 minutes) was added to limit time for fetching feeds/sources via http/https/ftp.

@@ -33,7 +33,7 @@
 -define(debug, true). % Log debug messages
 -define(ioc2rpzSampleRPZ,"sample-zone.ioc2rpz"). %Default DB location
 
--define(TLSVersion,'tlsv1.3'). % 'tlsv1.2', 'tlsv1.3'
+-define(TLSVersion,'tlsv1.2-1.3'). % 'tlsv1.2', 'tlsv1.3'
 
 %%%Optimization
 -define(DNSPktMax,16383). %Max DNS packet size. DNS Label Zip is available up to 16384 bytes 65000/max
@@ -48,7 +48,7 @@
 %%%%%%
 %%%%%% Do not modify any settings below the line
 %%%%%%
--define(ioc2rpz_ver, "1.1.2.0-2020070701").
+-define(ioc2rpz_ver, "1.1.2.1-2020070901").
 
 -define(ZNameZip,16#c00c:16). %Zone name/original fqdn from a request is always at byte 10 in the response
 -define(ZNameZipN,16#c00c). % Offset in bytes - Zone name/original fqdn from a request is always at byte 10 in the response
