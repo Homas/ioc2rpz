@@ -268,9 +268,12 @@ get_cipher_suites('tlsv1.2-1.3') ->
   TLS13=ssl:cipher_suites(exclusive, 'tlsv1.3'),
   ssl:append_cipher_suites(TLS12,TLS13);
 
-get_cipher_suites(TLSVersion) ->
-  ssl:cipher_suites(default, TLSVersion).
-  
+get_cipher_suites(TLSVersion) when TLSVersion=="tlsv1.2";TLSVersion=="tlsv1.3";TLSVersion=="dtlsv1.2";TLSVersion=="tlsv1.1" -> %'tlsv1.2', 'tlsv1.3'
+  ssl:cipher_suites(default, TLSVersion);
+
+get_cipher_suites(TLSVersion) when TLSVersion=="tlsv1.2";TLSVersion=="tlsv1.3";TLSVersion=="dtlsv1.2";TLSVersion=="tlsv1.1" -> %'tlsv1.2', 'tlsv1.3'
+  logMessage("unsuported TLS version ~s ~n", [TLSVersion]),
+  ssl:cipher_suites(default, 'tlsv1.2').
 
 %%%%
 %%%% EUnit tests

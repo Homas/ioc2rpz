@@ -3,6 +3,7 @@
 - [ ] Take a look on the bugs mentioned in REST section
 
 ## Core / DNS
+- [ ] Migrate crypto:hmac/3 (depricated) to crypto:mac/4
 - [ ] Force RPZ, Source refresh
 - [ ] RPZ from RPZs
 - [ ] simple permissions model
@@ -119,7 +120,7 @@ https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-
 - [ ] Statistics per zone (# records, last update, # AXFR, # IXFR, last axfr update time, avg axfr update time, last ixfr update time, avg ixfr update time)
 - [ ] RPZ behavior: ignore unreachable sources, use old data for unreachable sources, do not update the zone
 - [ ] Additional local records: ptr, srv, mx etc
-- [0] Replaced by RPZ from RPZs ----- An action per source: {"",action,locdata} //default action ,{"source_name",action,locdata}
+- [X] Replaced by RPZ from RPZs ----- An action per source: {"",action,locdata} //default action ,{"source_name",action,locdata}
 - [ ] RPZ transfer rate limiting
 
 - [ ] (2) FDateTime,ToDateTime,FDateTimeZ,ToDateTimeZ + support them for AXFR  
