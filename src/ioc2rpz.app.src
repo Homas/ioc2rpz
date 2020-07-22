@@ -16,7 +16,7 @@
 {application, ioc2rpz,
  [
   {description, ""},
-  {vsn, "1.0.0.3"},
+  {vsn, "1.1.2.0"},
   {modules, [
              ioc2rpz_app,
              ioc2rpz_sup,
