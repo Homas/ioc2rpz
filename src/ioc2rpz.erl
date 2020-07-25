@@ -154,6 +154,11 @@ parse_dns_request(Socket, Data, Proto) when Proto#proto.rport == 53; Proto#proto
 %%% DDoS attempt
   ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(501),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto]);
 
+parse_dns_request(Socket, <<DNSId:2/binary, 1:1, OptB:7, _:1, OptE:3, _:4, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/big-unsigned-unit:8,NSCOUNT:2/binary,ARCOUNT:2/binary, Rest/binary>> = _Data, Proto) -> 
+%%% QR bit set. We've got response instead of query. Drop the message.
+  [QName,<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, _Other_REC/binary>>] = binary:split(Rest,<<0>>),
+  QStr=dombin_to_str(QName),
+  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(109),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]);
   
 parse_dns_request(Socket, <<DNSId:2/binary, _:1, OptB:7, _:1, OptE:3, _:4, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/big-unsigned-unit:8,NSCOUNT:2/binary,ARCOUNT:2/binary, Rest/binary>> = _Data, Proto) when QDCOUNT /= 1 -> %_:2/binary, ;ANCOUNT /= 0
 %%% Bad DNS request. QDCount != 1
