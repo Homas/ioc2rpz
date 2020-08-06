@@ -158,20 +158,27 @@ split_bin_bytes(Bin,_Size)  ->
 
 
 split_tail(String, Pattern) ->
-%  ioc2rpz_fun:logMessage("z_split ~p ~p ~n",[String, Pattern]),
-	case binary:split(String, Pattern) of %binary:split
-		[First, Second] -> [First | split_tail(Second, Pattern)];
-		[First] -> [First];
-		[] -> []
-	end.
+ binary:split(String,Pattern,[global]). %[<<"\r\n">>,<<"\n">>,<<"\r">>]
 
 rsplit_tail(String, Pattern) ->
-%  ioc2rpz_fun:logMessage("z_split ~p ~p ~n",[String, Pattern]),
-	case binary:split(String, Pattern) of %binary:split
-		[First, Second] -> rsplit_tail(Second, Pattern) ++ [First];
-		[First] -> [First];
-		[] -> []
-	end.
+ lists:reverse(split_tail(String, Pattern)).
+
+% Old split_tail/rsplit_tail slow, to remove 2020-08-05
+%split_tail(String, Pattern) ->
+%%  ioc2rpz_fun:logMessage("z_split ~p ~p ~n",[String, Pattern]),
+%	case binary:split(String, Pattern) of %binary:split
+%		[First, Second] -> [First | split_tail(Second, Pattern)];
+%		[First] -> [First];
+%		[] -> []
+%	end.
+
+%rsplit_tail(String, Pattern) ->
+%%  ioc2rpz_fun:logMessage("z_split ~p ~p ~n",[String, Pattern]),
+%	case binary:split(String, Pattern) of %binary:split
+%		[First, Second] -> rsplit_tail(Second, Pattern) ++ [First];
+%		[First] -> [First];
+%		[] -> []
+%	end.
 
 bin_to_lowcase(A) ->
  << << (b_to_lowcase(C)) >> || << C >> <= A >>.
