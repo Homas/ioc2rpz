@@ -26,7 +26,7 @@ get_ioc(URL,REGEX,Source) ->
       %TODO spawn cleanup
       CTime=ioc2rpz_fun:curr_serial_60(),
       %L=[ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX) ],
-      L=p_clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX,Source#source.max_ioc), 
+      L=p_clean_feed(ioc2rpz_fun:split_tail(Bin,[<<"\r\n">>,<<"\n">>,<<"\r">>]),REGEX,Source#source.max_ioc), 
       
       ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators, clean time ~p ~n",[Source#source.name, length(L), (ioc2rpz_fun:curr_serial_60()-CTime)]), %TODO debug
       L;
