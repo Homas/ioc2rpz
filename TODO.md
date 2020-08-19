@@ -1,5 +1,5 @@
 ## Bugs
-- [ ] Drop DNS responses (DNS response flag set) - we do not expect them
+- [x] Drop DNS responses (DNS response flag set) - we do not expect them
 - [ ] Take a look on the bugs mentioned in REST section
 
 ## Core / DNS
@@ -93,10 +93,10 @@ https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-
 - [ ] Handle RPZ update if one of a sources is not availble or a recent update returned significatnly low number of indicators
 
 ## Sources
-- [ ] Add a script for RPZ via "shell:"
+- [x] Add a script for RPZ via "shell:"
 - [ ] Simultanious source downloads
 - [ ] Add source PostreSQL, MySQL via "shell:"
-- [ ] Dedup IoC from different sources with different expiration dates
+- [/] Dedup IoC from different sources with different expiration dates
 - [ ] RPZ action per source
 - [ ] (2) Source based on files check by mod.date and size -> read by chunks
 

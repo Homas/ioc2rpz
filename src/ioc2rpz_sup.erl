@@ -64,7 +64,7 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
       %shutdown => 1000,
       %type => supervisor,
       %modules => [ioc2rpz_proc_sup]},
-			
+
 			%DoT
       #{id => ioc2rpz_tls_sup_v6,
       start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[tls6_sup,IPStr6,inet6]]},
@@ -72,7 +72,7 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
       shutdown => 1000,
       type => supervisor,
       modules => [ioc2rpz_proc_sup]},
-			
+
 			%DoH
 			% DoH is for DNS UDP, We can support onlu small zones or SOA. Disabled for now.
       %#{id => ioc2rpz_doh_sup_v6,
@@ -81,7 +81,7 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
       %shutdown => 1000,
       %type => supervisor,
       %modules => [ioc2rpz_proc_sup]},
-      
+
       %REST
       #{id => ioc2rpz_rest_tls_sup_v6,
       start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[rest_tls6_sup,IPStr6,inet6]]},
@@ -89,7 +89,7 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
       shutdown => 1000,
       type => supervisor,
       modules => [ioc2rpz_proc_sup]}
-      
+
     ];
     true -> ChildTLS=[]
   end,
@@ -102,7 +102,7 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
     %shutdown => 1000,
     %type => supervisor,
     %modules => [ioc2rpz_proc_sup]},
-    
+
 		%DNS TCP
     #{id => ioc2rpz_tcp_sup_v6,
     start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[tcp6_sup,IPStr6,inet6]]},
@@ -119,7 +119,7 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
     %shutdown => 1000,
     %type => supervisor,
     %modules => [ioc2rpz_proc_sup]},
-		
+
 		%DNS UDP
     #{id => ioc2rpz_udp_sup_v6,
     start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[udp6_sup,IPStr6,inet6]]},
@@ -127,7 +127,7 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
     shutdown => 1000,
     type => supervisor,
     modules => [ioc2rpz_proc_sup]}
-    
+
   ],
   {ok, {SupFlags, ChildSpecs ++ ChildTLS}}.
 
@@ -180,7 +180,7 @@ read_config3([{include,Filename}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sour
 		_ -> KeysI=[],Key_GroupsI=[],WhiteListsI=[],SourcesI=[],RPZI=[]
 	end,
   read_config3(REST,RType, Srv, KeysI ++ Keys,Key_GroupsI ++ Key_Groups, WhiteListsI ++ WhiteLists, SourcesI ++ Sources, RPZI ++ RPZ);
-	
+
 
 read_config3([{srv,{Serv,Email,MKeys,ACL}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
   {ok,ServB}=ioc2rpz:domstr_to_bin(list_to_binary(Serv),0),
@@ -234,7 +234,7 @@ read_config3([{rpz,{Zone, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards,
   end,
   ZAction = case Action of
    Action when Action=="nodata";Action=="passthru";Action=="drop";Action=="tcp-only";Action=="nxdomain";Action=="blockns" -> list_to_binary(Action);
-   [{LAction,LData}] when LAction=="redirect_domain" -> {list_to_binary(LAction),list_to_binary(LData)};
+   [{LAction,LData}] when LAction=="redirect_domain" -> {list_to_binary(LAction),binary:split(list_to_binary(LData),<<".">>,[global])};
    [{LAction,LData}] when LAction=="redirect_ip" -> {list_to_binary(LAction),ioc2rpz_fun:ip_to_bin(LData)};
    _ -> ioc2rpz_fun:read_local_actions(Action)
   end,
@@ -246,7 +246,7 @@ read_config3([],startup,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)  ->
 	[ ets:insert_new(cfg_table, {[key_group,Y,Z],Z}) || {Y,Z} <- lists:flatten([ gen_group_array(Y#key.name_bin,Y#key.key_groups) || Y <- Keys_V ]) ],
 
   SrvV = validateCFGSrv(Srv), ets:insert_new(cfg_table, {srv,SrvV#srv.server,SrvV#srv.email,SrvV#srv.mkeys,SrvV#srv.acl,SrvV#srv.cert,SrvV}),
-  
+
 %  WhiteLists_V=[ X || X <- [ validateCFGWL(Y) || Y <- WhiteLists ] ],
   WhiteLists_Used=lists:merge([ X#rpz.whitelist || X <- RPZ]),
   WhiteLists_V=[ validateCFGWL(Y) || Y <- WhiteLists, lists:member(Y#source.name,WhiteLists_Used) ],
@@ -298,7 +298,7 @@ read_config3([],reload,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)  ->
 
   WhiteLists_Used=lists:merge([ X#rpz.whitelist || X <- RPZ]),
   Sources_Used=lists:merge([ X#rpz.sources || X <- RPZ]),
-  
+
   WhiteLists_V=[ validateCFGWL(Y) || Y <- WhiteLists, lists:member(Y#source.name,WhiteLists_Used) ],
   Sources_V=[ validateCFGSrc(Y) || Y <- Sources, lists:member(Y#source.name,Sources_Used) ],
 
@@ -318,13 +318,13 @@ read_config3([],reload,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)  ->
   [ ets:delete(cfg_table, [source,X#source.name]) || X <- WhiteLists_D ++ Sources_D ],
   [ ets:delete(rpz_hotcache_table, {X#source.name,Y}) || X <- WhiteLists_UPD ++ Sources_UPD ++ WhiteLists_D ++ Sources_D, Y <- [axfr,ixfr] ],
 
-  
+
   RPZ_V= [ Z || Z <- [ validateCFGRPZ(Y,Sources_V,WhiteLists_V) || Y <- RPZ ], Z /= [] ],
   RPZ_D = [ X || X <- RPZ_C, not lists:member(X#rpz.zone, [ Z#rpz.zone || Z <- RPZ_V ]) ],
   RPZ_N = [ X || X <- RPZ_V, not lists:member(X#rpz.zone, [ Z#rpz.zone || Z <- RPZ_C ]) ],
 
 %TODO TKEYS and Groups should be checked
-  RPZ_UPD = [ X || X <- RPZ_V, not checkRPZEq(X,lists:keyfind(X#rpz.zone,3,RPZ_C)),lists:member(X#rpz.zone, [ Z#rpz.zone || Z <- RPZ_C ]) ] ++ 
+  RPZ_UPD = [ X || X <- RPZ_V, not checkRPZEq(X,lists:keyfind(X#rpz.zone,3,RPZ_C)),lists:member(X#rpz.zone, [ Z#rpz.zone || Z <- RPZ_C ]) ] ++
             [ X || X <- RPZ_V, ioc2rpz_fun:intersection(X#rpz.whitelist,[Z#source.name || Z <- WhiteLists_UPD]) /= [] ] ++
             [ X || X <- RPZ_V, ioc2rpz_fun:intersection(X#rpz.sources,[Z#source.name || Z <- Sources_UPD]) /= [] ],
 
@@ -391,7 +391,7 @@ validateCFGSrc(Src) -> %Check: RegEx and URLs availability. If URL is not availa
 validateCFGRPZ(RPZ,S,W) -> %Check: Sources, Whitelists
   SV = not lists:member(false, [ lists:member(X, [ Z#source.name || Z <- S ])  || X <- RPZ#rpz.sources  ]),
   WV = not lists:member(false, [ lists:member(X, [ Z#source.name || Z <- W ])  || X <- RPZ#rpz.whitelist ]),
-  if not SV -> % or not WV 
+  if not SV -> % or not WV
     ioc2rpz_fun:logMessage("RPZ ~p was not loaded. No sources. Sources ~p Whitelists ~p.~n",[RPZ#rpz.zone_str,SV,WV]),
     [];
     true -> RPZ
@@ -433,7 +433,7 @@ load_ixfr_zone_info(Zone) ->
 
 load_ixfr_zone_info(ets,Zone) ->
   CTime=ioc2rpz_fun:curr_serial(), %erlang:system_time(seconds),
-  case ioc2rpz_db:get_zone_info(Zone,ixfr) of 
+  case ioc2rpz_db:get_zone_info(Zone,ixfr) of
     [[_,Serial,Serial_IXFR,IXFR_Update_time,NZ_Update_Time]] when (IXFR_Update_time+Zone#rpz.ixfr_time)>CTime ->
       ioc2rpz_fun:logMessage("Get IXFR zone ~p serial ~p status ready ~n",[Zone#rpz.zone_str,Serial_IXFR]),
       [ready,Serial,Serial_IXFR,IXFR_Update_time,NZ_Update_Time];
@@ -546,6 +546,6 @@ rebuild_axfr_zone(Zone) ->
   T_ZIP_L=ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), % нужны ли {read_concurrency, true}, {write_concurrency, true} ???
 	%T_ZIP_L=init_T_ZIP_L(Zone),
   {ok, NRules, NIOCs} = ioc2rpz:send_packets(<<>>,IOC, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,[],0,cache,0,false,no),
-  ioc2rpz_fun:logMessage("Zone ~p, # of rules ~p, # of IOCs ~p ~n", [Zone#rpz.zone_str, NRules, NIOCs]), 
+  ioc2rpz_fun:logMessage("Zone ~p, # of rules ~p, # of IOCs ~p ~n", [Zone#rpz.zone_str, NRules, NIOCs]),
   ets:delete(T_ZIP_L),
   {ok, NRules, NIOCs}.

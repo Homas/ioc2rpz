@@ -125,7 +125,7 @@ send_dns(Socket,Pkt,[Proto,Args]) when Proto#proto.proto == udp ->
 
 send_dns_tcp(Socket, Pkt, addlen) -> %used to send the first or an only packet
   gen_tcp:send(Socket, [<<(byte_size(Pkt)):16>>,Pkt]),
-  ok = inet:setopts(Socket, [{active, once}]); 
+  ok = inet:setopts(Socket, [{active, once}]);
 
 send_dns_tcp(Socket, Pkt, []) -> %used to pass intermediate packets
   gen_tcp:send(Socket, Pkt),
@@ -135,7 +135,7 @@ send_dns_tls(Socket, Pkt, addlen) -> %used to send the first or an only packet
   ssl:send(Socket, [<<(byte_size(Pkt)):16>>,Pkt]),
 % The connection will not be reused and a child will be terminated
 % TODO check compliance with DoT
-  ok = ssl:setopts(Socket, [{active, once}]); 
+  ok = ssl:setopts(Socket, [{active, once}]);
 
 send_dns_tls(Socket, Pkt, []) -> %used to pass intermediate packets
   ssl:send(Socket, Pkt),
@@ -154,12 +154,12 @@ parse_dns_request(Socket, Data, Proto) when Proto#proto.rport == 53; Proto#proto
 %%% DDoS attempt
   ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(501),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto]);
 
-parse_dns_request(Socket, <<DNSId:2/binary, 1:1, OptB:7, _:1, OptE:3, _:4, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/big-unsigned-unit:8,NSCOUNT:2/binary,ARCOUNT:2/binary, Rest/binary>> = _Data, Proto) -> 
+parse_dns_request(Socket, <<DNSId:2/binary, 1:1, OptB:7, _:1, OptE:3, _:4, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/big-unsigned-unit:8,NSCOUNT:2/binary,ARCOUNT:2/binary, Rest/binary>> = _Data, Proto) ->
 %%% QR bit set. We've got response instead of query. Drop the message.
   [QName,<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, _Other_REC/binary>>] = binary:split(Rest,<<0>>),
   QStr=dombin_to_str(QName),
   ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(109),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]);
-  
+
 parse_dns_request(Socket, <<DNSId:2/binary, _:1, OptB:7, _:1, OptE:3, _:4, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/big-unsigned-unit:8,NSCOUNT:2/binary,ARCOUNT:2/binary, Rest/binary>> = _Data, Proto) when QDCOUNT /= 1 -> %_:2/binary, ;ANCOUNT /= 0
 %%% Bad DNS request. QDCount != 1
   [QName,<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, _Other_REC/binary>>] = binary:split(Rest,<<0>>),
@@ -528,7 +528,7 @@ send_sample_zone(Socket, DNSId, OptB, OptE, Questions, MailAddr, NSServ, TSIG, P
   end,
   ets:delete(T_ZIP_L),
   send_dns(Socket,Pkt1, [Proto,addlen]).
-  
+
 %END Send sample zone
 
 %Send server status
@@ -604,7 +604,7 @@ send_notify(Dst,Pkt,tcp,NRuns,Zone) ->
 
 send_cached_zone(Socket,NSREC, SOAREC, TSIG, PktH, Questions, Pkts, Proto) -> %created becasue of concurent zone creation
   send_cached_zone(Socket,NSREC, SOAREC, TSIG, PktH, Questions, Pkts,0, Proto).
-  
+
 send_cached_zone(Socket,_NSREC, _SOAREC, _TSIG, _PktH, _Questions, [], _PktNum, Proto) ->
 ok;
 
@@ -618,7 +618,7 @@ send_cached_zone(Socket, NSREC, SOAREC, TSIG, PktH, Questions, [{PktN,ANCOUNT,NS
   end,
   case send_dns(Socket,Pkt1, [Proto,addlen]) of
     ok -> send_cached_zone(Socket, NSREC, SOAREC, TSIG1, PktH, Questions, REST,PktNum+1, Proto);
-  	{error, Reason} -> {error, Reason}  
+  	{error, Reason} -> {error, Reason}
   end.
 
 %Return cached zone
@@ -670,13 +670,13 @@ send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,RH,Rest,Zone,?T_IXFR,NSSe
 	T_ZIP_L=init_T_ZIP_L(Zone),
   %В момент переключения на добавления - SOARECCL обнуляем, таким образом отслеживаем, что мы добавили новую SOA
   {ok, NRules, NIOCs}=send_packets(Socket,IOCexp ++ IOCnew, [], 0, 0, true, [DNSId, <<1:1, OptB:7, 1:1, OptE:3, ?NOERROR:4, 1:16>>], Questions, SOAREC,SOARECCL,Zone,MP,PktHLen,T_ZIP_L,TSIG,0,ixfr,0,false,Proto),
-  ioc2rpz_fun:logMessage("Zone ~p, ~p rules, ~p IOCs ~n", [Zone#rpz.zone_str, NRules, NIOCs]), 
+  ioc2rpz_fun:logMessage("Zone ~p, ~p rules, ~p IOCs ~n", [Zone#rpz.zone_str, NRules, NIOCs]),
   ets:delete(T_ZIP_L),
   ok;
 
 %Zone was not cached, but should be
 send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,_RH,_Rest,Zone,QType,_NSServ,_MailAddr,TSIG,SOA}, Proto) when Zone#rpz.status == notready;Zone#rpz.status == updating ->
- % ioc2rpz_fun:logMessage("Zone ~p is not ready ~n", [Zone#rpz.zone_str]), 
+ % ioc2rpz_fun:logMessage("Zone ~p is not ready ~n", [Zone#rpz.zone_str]),
   ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(121),[ip_to_str(Proto#proto.rip),Proto#proto.rport,Proto#proto.proto,Zone#rpz.zone_str, ioc2rpz_fun:q_type(QType), "IN",dombin_to_str(TSIG#dns_TSIG_RR.name),""]),
   send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?SERVFAIL:4>>, <<1:16,0:16,0:16,0:16>>, Questions, TSIG, Proto);
 
@@ -709,14 +709,14 @@ send_zone_live(Socket,Op,Zone,PktH,Questions, SOAREC,NSRec,TSIG,Proto) ->
       ioc2rpz_db:delete_old_db_record(Zone),
 			T_ZIP_L=init_T_ZIP_L(Zone),
       {ok, NRules, NIOCs}=send_packets(Socket,IOC, [], 0, 0, true, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,0,Op,0,true,Proto),
-		  ioc2rpz_fun:logMessage("Live zone ~p, ~p rules, ~p IOCs ~n", [Zone#rpz.zone_str, NRules, NIOCs]), 
+		  ioc2rpz_fun:logMessage("Live zone ~p, ~p rules, ~p IOCs ~n", [Zone#rpz.zone_str, NRules, NIOCs]),
       ets:delete(T_ZIP_L),
       {ok,MD5, NRules, NIOCs}
   end.
 
-w_send_packets(PID, Zone) ->      
-  receive 
-    { ok, PID, {ok, NRules, NIOCs} } -> 
+w_send_packets(PID, Zone) ->
+  receive
+    { ok, PID, {ok, NRules, NIOCs} } ->
       %ioc2rpz_fun:logMessage("Zone ~p. Got message from ~p # of rules ~p # of IOCs ~p~n",[Zone, PID, NRules, NIOCs]),
 			{ok, NRules, NIOCs}
   end.
@@ -730,7 +730,7 @@ send_packets(Socket,[], [], 0, _ACount, _Zip, PktH, Questions, SOAREC,NSRec,Zone
     if (DBOp == ixfr) -> EndSOA=SOAREC, Cnt=1; true->EndSOA = <<>>,Cnt=0 end,
     if TSIG /= [] ->
       {ok,TSIGRR,_}=add_TSIG(list_to_binary([PktH, <<(3+Cnt):16,0:16,0:16>>, Questions, SOAREC, NSRec, SOAREC,EndSOA]),TSIG),
-      Pkt1 = list_to_binary([PktH, <<(3+Cnt):16,0:16,1:16>>, Questions, SOAREC, NSRec, SOAREC,EndSOA, TSIGRR]); 
+      Pkt1 = list_to_binary([PktH, <<(3+Cnt):16,0:16,1:16>>, Questions, SOAREC, NSRec, SOAREC,EndSOA, TSIGRR]);
       true -> Pkt1 = list_to_binary([PktH,<<(3+Cnt):16,0:16,0:16>>, Questions, SOAREC, NSRec,EndSOA, SOAREC])
     end,
     %PktLen = byte_size(Pkt1),
@@ -759,13 +759,13 @@ send_packets(Socket,IOC, [], _ACount, _PSize, Zip, PktH, Questions, SOAREC,NSRec
   %TODO split IOC by # cores and spawn for DBOp == cache
   %sequential
   %send_packets(Socket,IOC, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto);
-	%	{ok, Zone#rpz.rule_count, Zone#rpz.ioc_count}; 
+	%	{ok, Zone#rpz.rule_count, Zone#rpz.ioc_count};
   %concurrent
   if DBOp == cache ->
       [IOC1,IOC2]=ioc2rpz_fun:split(IOC,?IOCperProc),
       ParentPID = self(),
 %      spawn_opt(ioc2rpz,send_packets,[Socket,IOC1, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC, NSRec, Zone, MP, PktHLen, 0, TSIG, PktN, DBOp, SOANSSize, IXFRNewR,Proto],[{fullsweep_after,0}]),
-%  ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]) ---> init_T_ZIP_L(Zone) 
+%  ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]) ---> init_T_ZIP_L(Zone)
       PID=spawn_opt(fun() ->
         ParentPID ! {ok, self(), ioc2rpz:send_packets(Socket,IOC1, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC, NSRec, Zone#rpz{rule_count=0, ioc_count=0}, MP, PktHLen, init_T_ZIP_L(Zone), TSIG, PktN, DBOp, SOANSSize, IXFRNewR, Proto) }
         end
@@ -814,7 +814,7 @@ send_packets(Socket,[], Pkt, ACount, _PSize, _Zip, PktH, Questions, SOAREC,NSREC
     ets:insert(rpz_hotcache_table, {{pkthotcache,Zone#rpz.zone,PktN},CTime, term_to_binary({PktN,ACount,0,0, Pkt},[{compressed,?Compression}])}); %2019-06-13 BUG in live zones # of records ACount+Cnt
     true -> ok
   end,
-	{ok, Zone#rpz.rule_count, Zone#rpz.ioc_count}; 
+	{ok, Zone#rpz.rule_count, Zone#rpz.ioc_count};
 
 % превышен размер пакета, нужно отсылать
 send_packets(Socket,Tail, Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto) when PSize > ?DNSPktMax ->
@@ -883,7 +883,7 @@ send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Question
       end;
       true -> Cnt=0, Rules=[], Rules2=[]
   end,
- 
+
   if ((IOCExp>Zone#rpz.serial) or (IOCExp==0)) and (DBOp == ixfr) and (IXFRNewR /= true) -> Rules1 = [SOAREC | Rules], Cnt1=Cnt+1, IXFRNewR1 = true; true -> Rules1=Rules, Cnt1=Cnt, IXFRNewR1 = IXFRNewR end,
   Pkt1 = list_to_binary([Pkt, Rules1, Rules2]),
   PSize1 = byte_size(Pkt1)+SOANSSize,
@@ -919,7 +919,7 @@ remove_WL(IOC,WL) ->
 
   %WLSet = gb_sets:from_list(WL), %bug #20
 	WLSet = gb_sets:from_list([E || {E,Exp} = X <- WL]),
-	
+
   [X || {E,Exp} = X <- ordsets:to_list(ordsets:from_list(IOC)), not gb_sets:is_element(E, WLSet)]. % TODO duplicates gb_sets vs ordsets
 
 mrpz_from_ioc(Zone,UType) -> %Zone - RPZ zone
@@ -1013,8 +1013,10 @@ gen_rpzrule(Domain,RPZ,TTL,<<"false">>,{Action,LocData},_,PktHLen,T_ZIP_L) when 
     {error, _} ->
       {ok,0,[],[]};
     {_,BDomain} -> %ok, zip
-     {_,LocDataZ} = domstr_to_bin_zip({ok,[LocData]},0,PktHLen+10+byte_size(BDomain),T_ZIP_L),
-%     {_,LocDataZ} = domstr_to_bin(LocData,0), 
+     {_,LocDataZ} = domstr_to_bin_zip({ok,LocData},0,PktHLen+10+byte_size(BDomain),T_ZIP_L),
+%       ioc2rpz_fun:logMessage("Domain ~p DomainZ ~p ~n",[LocData,LocDataZ]), %TODO debug
+
+%     {_,LocDataZ} = domstr_to_bin(LocData,0),
       ELDS=byte_size(LocDataZ),
       {ok,1,[list_to_binary([BDomain,<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])],[list_to_binary([<<?T_CNAME:16,?C_IN:16, TTL:32,ELDS:16>>,LocDataZ])]}
   end;
@@ -1133,9 +1135,11 @@ domstr_to_bin([],_,Bin) ->
 
 
 domstr_to_bin_zip(Str,Pos,T_ZIP_L) when byte_size(Str) > 2->
+%  ioc2rpz_fun:logMessage("Domain ~p ~n",[Str]), %TODO debug
   domstr_to_bin_zip(clean_labels(Str),1,Pos,T_ZIP_L);
 
 domstr_to_bin_zip(Str,_Pos,_T_ZIP_L) ->
+%  ioc2rpz_fun:logMessage("Weird domain. Domain ~p ~n",[Str]), %TODO debug
   domstr_to_bin(Str,0).
 
 
@@ -1226,13 +1230,13 @@ hexstr_to_bin([X|T], Acc) ->
   {ok, [V], []} = io_lib:fread("~16u", lists:flatten([X,"0"])),
   hexstr_to_bin(T, [V | Acc]).
 
-%%% Convert internal IP representation to a string 
+%%% Convert internal IP representation to a string
 ip_to_str({0,0,0,0,0,65535,IP1,IP2}) ->
   <<IP1B1:8, IP1B2:8>> = <<IP1:16>>,
   <<IP2B1:8, IP2B2:8>> = <<IP2:16>>,
   %?logDebugMSG("~p:~p ~p.~p.~p.~p~n",[IP1,IP2,IP1B1,IP1B2,IP2B1,IP2B2]),
   inet_parse:ntoa({IP1B1,IP1B2,IP2B1,IP2B2});
-  
+
 ip_to_str(IP) ->
   %?logDebugMSG("~p~n",[IP]),
   inet_parse:ntoa(IP).
