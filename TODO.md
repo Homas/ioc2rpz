@@ -3,6 +3,7 @@
 
 ## Core / DNS
 - [ ] Migrate crypto:hmac/3 (depricated) to crypto:mac/4
+- [ ] Upgrade Cowboy
 - [ ] If IXFR source not set or equal AXFR - get removed records for IXFR
 - [ ] Force RPZ, Source refresh
 - [ ] RPZ from RPZs
