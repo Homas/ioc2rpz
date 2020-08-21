@@ -12,7 +12,7 @@
 %See the License for the specific language governing permissions and
 %limitations under the License.
 
-%ioc2rpz params 
+%ioc2rpz params
 -define(IOCperProc,10000). %IOCs per spawn process
 
 -define(MGMToDNS,true). %Defines if management ioc2rpz over DNS is enabled
@@ -29,7 +29,7 @@
 -define(Src_Retry,3). %# of retries if a source is not available
 -define(Src_Retry_TimeOut,3). %timeout between retries in seconds
 
-%-define(logTS, true). % Log timestamps 
+%-define(logTS, true). % Log timestamps
 -define(debug, true). % Log debug messages
 -define(ioc2rpzSampleRPZ,"sample-zone.ioc2rpz"). %Default DB location
 
@@ -43,7 +43,7 @@
 -define(HotCacheTime,900). %900 Time to cache IOCs/Records/Pkts in the hot cache. More usefull for online rpz.
 -define(HotCacheTimeIXFR,0). %Time to cache IXFR IOCs in a hot cache. By default it is cached for a minute because of curr_serial_60.
 -define(ShellMaxRespSize,2*1024*1024*1024). %Maximum response size for shell source
--define(SourcePullTimeout, 5 * 60 * 1000). %Default source/feed download timeout. Fetching will be interrupted if this download time exceeds it. 
+-define(SourcePullTimeout, 5 * 60 * 1000). %Default source/feed download timeout. Fetching will be interrupted if this download time exceeds it.
 
 %%%%%%
 %%%%%% Do not modify any settings below the line
@@ -62,6 +62,8 @@
 -else.
 -define(addTS(Dest),true).
 -endif.
+
+-define(iif(Cond,True,False),(case Cond of true -> True; false -> False end)).
 
 % Debug messages
 -ifdef(debug).
