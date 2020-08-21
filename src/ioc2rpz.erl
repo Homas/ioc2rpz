@@ -329,7 +329,9 @@ send_TSIG_error(badtimegoodmac, Socket, DNSId, OptB, OptE, Question, TSIG, [MSG,
   MAC = case TSIG#dns_TSIG_RR.alg_str of %TODO вынести в функцию
     "md5" -> crypto:hmac(md5,TSIG#dns_TSIG_RR.key,PKT);
     "sha256" -> crypto:hmac(sha256,TSIG#dns_TSIG_RR.key,PKT);
-    "sha512" -> crypto:hmac(sha512,TSIG#dns_TSIG_RR.key,PKT)
+    "sha512" -> crypto:hmac(sha512,TSIG#dns_TSIG_RR.key,PKT);
+      _Else  -> ioc2rpz_fun:logMessage("Unknown TKey Alg ~p ~n",[TSIG#dns_TSIG_RR.alg_str]),
+                <<>>
   end,
   MAC_LEN=byte_size(MAC),
   DATA = <<(TSIG#dns_TSIG_RR.alg)/binary,(TSIG#dns_TSIG_RR.time):6/binary,(TSIG#dns_TSIG_RR.fudge)/binary,MAC_LEN:2/big-unsigned-unit:8,MAC/binary,(TSIG#dns_TSIG_RR.oid):16,?TSIG_BADTIME:16/big-unsigned,6:16,CTime:48>>,
