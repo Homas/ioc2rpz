@@ -130,7 +130,7 @@
 %status: notready, updating, ready
 %serial_ixfr - minimum serial for ixfr - first ixfr update after axfr
 -record(rpz, {rpzid, zone, zone_str, soa_timers, cache, wildcards, notify, action, akeys, ioc_type, axfr_time, ixfr_time, sources, status, serial, serial_new, serial_ixfr, notifylist, whitelist, ioc_md5, update_time, ixfr_update_time, ixfr_nz_update_time, pid, ioc_count, userid, max_ioc, key_groups, rule_count}).
--record(source, {name, axfr_url, ixfr_url, regex, ioc_count, userid, max_ioc}).
+-record(source, {name, axfr_url, ixfr_url, regex, ioc_count, userid, max_ioc, hotcache_time, hotcacheixfr_time}).
 
 %user restriction
 -record(user, {userid,max_ioc,max_wl}). %max # of IOCs and WL entries

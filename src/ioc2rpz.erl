@@ -319,7 +319,7 @@ parse_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/
 
     {QName, QType, QClass,RRRes} ->
 %    _  ->
-      ?logDebugMSG("Unknow Error. Request ~p ~p ~p ~p ~n",[QName, QType, QClass,RRRes]),
+      ?logDebugMSG("Unknow request ~p ~p ~p ~p ~n",[QName, QType, QClass,RRRes]),
       ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(102),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
       send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?NOTIMP:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto)
   end.
@@ -958,7 +958,7 @@ mrpz_from_ioc([SRC|REST], RPZ,UType, IOC) -> %List of the sources, RPZ zone, UTy
   CTime=RPZ#rpz.serial, %CTime=ioc2rpz_fun:curr_serial(),
   [[Source]]=ets:match(cfg_table,{[source,SRC],'$2'}),
    case {ets:match(rpz_hotcache_table,{{SRC,UType},'$2','$3'}),UType} of
-    {[[Timestamp,IOCZip]],axfr} when CTime=<(Timestamp+?HotCacheTime) ->
+    {[[Timestamp,IOCZip]],axfr} when CTime=<(Timestamp+Source#source.hotcache_time) ->
       IOC1=binary_to_term(IOCZip),
       ioc2rpz_fun:logMessage("Got source ~p from cache~n",[SRC]); %TODO debug
     {[[_Timestamp,_IOCZip]],axfr} ->
@@ -980,7 +980,7 @@ mrpz_from_ioc([SRC|REST], RPZ,UType, IOC) -> %List of the sources, RPZ zone, UTy
       ioc2rpz_fun:logMessage("Memory total ~p after garbage collector. processes ~p binary ~p ~n",[erlang:memory(total)/1024/1024,erlang:memory(processes)/1024/1024,erlang:memory(binary)/1024/1024]), %TODO debug
 
       ets:insert(rpz_hotcache_table, {{SRC,UType},CTime, term_to_binary(IOC1,[{compressed,?Compression}])});
-    {[[Timestamp,IOCZip]],ixfr} when CTime=<(Timestamp+?HotCacheTimeIXFR) ->
+    {[[Timestamp,IOCZip]],ixfr} when CTime=<(Timestamp+Source#source.hotcacheixfr_time) ->
       IOC1=binary_to_term(IOCZip),
       ioc2rpz_fun:logMessage("Got source ~p IXFR from cache ~n",[SRC]); %TODO debug
     {_,ixfr} ->

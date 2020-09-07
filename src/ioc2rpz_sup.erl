@@ -210,15 +210,21 @@ read_config3([{key_group,{GName,Keys}}|REST],RType,Srv,Keys,Key_Groups,WhiteList
 
 %%% No UserId, max count
 read_config3([{whitelist,{Name,AXFR,REGEX}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
-  read_config3(REST,RType,Srv,Keys,Key_Groups,[#source{name=Name,axfr_url=AXFR,regex=REGEX}|WhiteLists],Sources,RPZ);
+  read_config3(REST,RType,Srv,Keys,Key_Groups,[#source{name=Name,axfr_url=AXFR,regex=REGEX,hotcache_time=?HotCacheTime,hotcacheixfr_time=?HotCacheTimeIXFR}|WhiteLists],Sources,RPZ);
 read_config3([{source,{Name,AXFR,IXFR,REGEX}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
-  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX}|Sources],RPZ);
+  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX,hotcache_time=?HotCacheTime,hotcacheixfr_time=?HotCacheTimeIXFR}|Sources],RPZ);
 
 %%% With UserId, max count
 read_config3([{whitelist,{Name,AXFR,REGEX,UserID,Max_Count}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
-  read_config3(REST,RType,Srv,Keys,Key_Groups,[#source{name=Name,axfr_url=AXFR,regex=REGEX,userid=UserID,max_ioc=Max_Count}|WhiteLists],Sources,RPZ);
+  read_config3(REST,RType,Srv,Keys,Key_Groups,[#source{name=Name,axfr_url=AXFR,regex=REGEX,userid=UserID,max_ioc=Max_Count,hotcache_time=?HotCacheTime,hotcacheixfr_time=?HotCacheTimeIXFR}|WhiteLists],Sources,RPZ);
 read_config3([{source,{Name,AXFR,IXFR,REGEX,UserID,Max_Count}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
-  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX,userid=UserID,max_ioc=Max_Count}|Sources],RPZ);
+  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX,userid=UserID,max_ioc=Max_Count,hotcache_time=?HotCacheTime,hotcacheixfr_time=?HotCacheTimeIXFR}|Sources],RPZ);
+
+%%% With UserId, max count, hotcache_time, hotcacheixfr_time
+read_config3([{whitelist,{Name,AXFR,REGEX,UserID,Max_Count,HotCacheTime,HotCacheTimeIXFR}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
+  read_config3(REST,RType,Srv,Keys,Key_Groups,[#source{name=Name,axfr_url=AXFR,regex=REGEX,userid=UserID,max_ioc=Max_Count,hotcache_time=HotCacheTime,hotcacheixfr_time=HotCacheTimeIXFR}|WhiteLists],Sources,RPZ);
+read_config3([{source,{Name,AXFR,IXFR,REGEX,UserID,Max_Count,HotCacheTime,HotCacheTimeIXFR}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
+  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX,userid=UserID,max_ioc=Max_Count,hotcache_time=HotCacheTime,hotcacheixfr_time=HotCacheTimeIXFR}|Sources],RPZ);
 
 
 read_config3([{rpz,{Zone, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards, Action, AKeys, IOCType, AXFR_Time, IXFR_Time, Sources, NotifyList, Whitelist}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,RPZ) ->
