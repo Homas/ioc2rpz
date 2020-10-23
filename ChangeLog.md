@@ -1,6 +1,9 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
 
+## 2020-09-07 v1.1.2.2
+- Configuration hot cache time per source
+
 ## 2020-07-08 v1.1.2.1
 - [CB] By default only TLSv1.2 and TLSv1.3 are supported. If you need to downgrade to TLSv1.1 (not recommended) or support only TLSv1.3 update TLSVersion parameter in include/ioc2rpz.hrl
 
@@ -26,7 +29,7 @@
 - Bug with updating zones (broken packets after AXFR and wildcard rule after IXFR). It is recommended to upgrade to the newest release.
 
 ## 2019-09-28 v1.1.0.0
-- DoH (DNS over HTTPs) for SOA requests. 
+- DoH (DNS over HTTPs) for SOA requests.
 
 ## 2019-09-20 v1.0.0.4
 - [CB] Filtering out indicators with illegal chars (ioc2rpz:clean_labels). Performance should be validated.
@@ -35,7 +38,7 @@
 - Bug. Incremental update. Indicators w/o expiration date were not added to a zone.
 
 ## 2019-09-15 v1.0.0.3
-- Fixed bug #17 "Full zone update brakes a zone and next incremental updates do not add new indicators". 
+- Fixed bug #17 "Full zone update brakes a zone and next incremental updates do not add new indicators".
 
 ## 2019-07-21 v1.0.0.2
 -IPv4/IPv6 networks detection in IOCs for mixed zones
@@ -58,7 +61,7 @@
 	- #10 "redirect_domain add zone name"
 	- live zones, wrong records count in the hot cache
 - Rule generation code was optimized
-- Configuration can be split by multiple files using "include" 
+- Configuration can be split by multiple files using "include"
 - Key groups for RPZs and SRV
 
 ## 2019-03-11 v0.9.3.1
