@@ -1,16 +1,17 @@
 ## Bugs
-- [ ] Drop DNS responses (DNS response flag set) - we do not expect them
 - [ ] Take a look on the bugs mentioned in REST section
 
 ## Core / DNS
 - [ ] Migrate crypto:hmac/3 (depricated) to crypto:mac/4
+- [ ] Upgrade Cowboy
+- [ ] If IXFR source not set or equal AXFR - get removed records for IXFR
 - [ ] Force RPZ, Source refresh
 - [ ] RPZ from RPZs
 - [ ] simple permissions model
 - [ ] REST API rate limiting
 - [ ] DNS requests rate limiting
 - [ ] HotCache optimization if refresh time less than hotcache storage time
-- [ ] Zone update - flush hot cache 
+- [ ] Zone update - flush hot cache
 - [x] Enforce domain validation. Discard indicators with wrong chars
   - [ ] (ioc2rpz:clean_labels). Performance should be validated.
 - [ ] DoH https://tools.ietf.org/html/rfc8484
@@ -25,14 +26,14 @@ https://developers.cloudflare.com/1.1.1.1/dns-over-https/wireformat/
 
    When using the POST method, the data payload for this media type MUST
    NOT be encoded and is used directly as the HTTP message body.
-	 
+
    The first example request uses GET to request "www.example.com".
    :method = GET
    :scheme = https
    :authority = dnsserver.example.net
    :path = /dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB
    accept = application/dns-message	 
-	 
+
    The same DNS query for "www.example.com", using the POST method would
    be:
 
@@ -67,15 +68,14 @@ https://developers.cloudflare.com/1.1.1.1/dns-over-https/wireformat/
    07 65 78 61 6d 70 6c 65  03 63 6f 6d 00 00 1c 00
    01 c0 0c 00 1c 00 01 00  00 0e 7d 00 10 20 01 0d
    b8 ab cd 00 12 00 01 00  02 00 03 00 04
-	 
+
 ```
 - [ ] , A and AAAA requests. Optional A/AAAA support is added to be able to access the server via unique hostnames. In that case ioc2rpz behaves as an authoritative server
-- [ ] upgrade to tls1.3 (supported by Erlang)
+- [x] upgrade to tls1.3 (supported by Erlang)
 - [ ] RPZ storage type: ets, mnesia
 - [ ] Mnesia for storage (and auto creation)
 https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-for-mnesia
 
-- [ ] Force AXRF for a RPZ if a source doesn't have an IXFR url
 - [ ] Redo AXFR logs
 - [ ] Access to the hotcache and the cfg_table via FUNs
 - [ ] (1) Terminate updating zones during config reload
@@ -93,10 +93,10 @@ https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-
 - [ ] Handle RPZ update if one of a sources is not availble or a recent update returned significatnly low number of indicators
 
 ## Sources
-- [ ] Add a script for RPZ via "shell:"
+- [x] Add a script for RPZ via "shell:"
 - [ ] Simultanious source downloads
 - [ ] Add source PostreSQL, MySQL via "shell:"
-- [ ] Dedup IoC from different sources with different expiration dates
+- [/] Dedup IoC from different sources with different expiration dates
 - [ ] RPZ action per source
 - [ ] (2) Source based on files check by mod.date and size -> read by chunks
 
@@ -113,7 +113,7 @@ https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-
 
 
 ## RPZ
-- [ ] Monitor significant drop in # of IoCs and if detected - postpone an update to 1 - 3 IXF cycles or specified time 
+- [ ] Monitor significant drop in # of IoCs and if detected - postpone an update to 1 - 3 IXF cycles or specified time
 - [ ] RPZ by source intersection
 - [ ] Max # of IOCs
 - [ ] Catalog zones

@@ -46,6 +46,7 @@ msg_CEF(105)    -> "|000105|TSIG Bad MAC|5|src=~s spt=~p proto=~p qname=~p qtype
 msg_CEF(106)    -> "|000106|TSIG Bad time|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
 msg_CEF(107)    -> "|000107|Other TSIG error|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p msg2=~p~n";
 msg_CEF(108)    -> "|000108|Wrong TSIG position|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
+msg_CEF(109)    -> "|000109|Received DNS response|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p~n";
 
 msg_CEF(120)    -> "|000120|RPZ not found|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
 msg_CEF(121)    -> "|000121|RPZ not ready|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
@@ -136,7 +137,7 @@ read_local_actions([{Act,LData}|REST],Acc) when Act=="local_a";Act=="local_aaaa"
  read_local_actions(REST,[{list_to_binary(Act),ioc2rpz_fun:ip_to_bin(LData)}|Acc]);
 
 read_local_actions([{Act,LData}|REST],Acc) when Act=="local_cname" ->
- read_local_actions(REST,[{list_to_binary(Act),list_to_binary(LData)}|Acc]);
+ read_local_actions(REST,[{list_to_binary(Act),binary:split(list_to_binary(LData),<<".">>,[global])}|Acc]);
 
 read_local_actions([{Act,LData}|REST],Acc) when Act=="local_txt" ->
  LocD=list_to_binary(LData),
@@ -157,20 +158,27 @@ split_bin_bytes(Bin,_Size)  ->
 
 
 split_tail(String, Pattern) ->
-%  ioc2rpz_fun:logMessage("z_split ~p ~p ~n",[String, Pattern]),
-	case binary:split(String, Pattern) of %binary:split
-		[First, Second] -> [First | split_tail(Second, Pattern)];
-		[First] -> [First];
-		[] -> []
-	end.
+ binary:split(String,Pattern,[global]). %[<<"\r\n">>,<<"\n">>,<<"\r">>]
 
 rsplit_tail(String, Pattern) ->
-%  ioc2rpz_fun:logMessage("z_split ~p ~p ~n",[String, Pattern]),
-	case binary:split(String, Pattern) of %binary:split
-		[First, Second] -> rsplit_tail(Second, Pattern) ++ [First];
-		[First] -> [First];
-		[] -> []
-	end.
+ lists:reverse(split_tail(String, Pattern)).
+
+% Old split_tail/rsplit_tail slow, to remove 2020-08-05
+%split_tail(String, Pattern) ->
+%%  ioc2rpz_fun:logMessage("z_split ~p ~p ~n",[String, Pattern]),
+%	case binary:split(String, Pattern) of %binary:split
+%		[First, Second] -> [First | split_tail(Second, Pattern)];
+%		[First] -> [First];
+%		[] -> []
+%	end.
+
+%rsplit_tail(String, Pattern) ->
+%%  ioc2rpz_fun:logMessage("z_split ~p ~p ~n",[String, Pattern]),
+%	case binary:split(String, Pattern) of %binary:split
+%		[First, Second] -> rsplit_tail(Second, Pattern) ++ [First];
+%		[First] -> [First];
+%		[] -> []
+%	end.
 
 bin_to_lowcase(A) ->
  << << (b_to_lowcase(C)) >> || << C >> <= A >>.
@@ -180,10 +188,10 @@ b_to_lowcase(A) when A>=65,A=<90 ->
  A+32;
 b_to_lowcase(A) ->
  A.
- 
+
 ip_in_list(IP,LST) -> %TODO check CIDR as well
  lists:member(IP,LST).
- 
+
 intersection(L1,L2) -> lists:filter(fun(X) -> lists:member(X,L1) end, L2).
 
 bin_to_hexstr(<<Bin:128/big-unsigned-integer>>) ->
@@ -197,7 +205,7 @@ bin_to_hexstr(<<Bin:128/big-unsigned-integer>>) ->
 %    M when M > 1024 -> [integer_to_list(M div 1024),"/Kb"];
 %    M -> [integer_to_list(M),"/bytes"]
 %  end).
-  
+
 
 conv_to_Mb(Size) when Size >= 1024 -> conv_to_Mb(Size, ["B","KB","MB","GB","TB","PB"]);
 
@@ -207,8 +215,8 @@ conv_to_Mb(Size) ->
 conv_to_Mb(S, [_|[_|_] = L]) when S >= 1024 -> conv_to_Mb(S/1024, L);
 conv_to_Mb(S, [M|_]) ->
     list_to_binary(io_lib:format("~.2f/~s", [float(S), M])).
-    
-    
+
+
 q_class(?C_IN)    -> "IN";
 q_class(?C_CHAOS) -> "CHAOS";
 q_class(?C_ANY)   -> "ANY";
@@ -282,21 +290,21 @@ q_class_test() -> [
 	?assert(q_class(?C_IN) =:= "IN"),
 	?assert(q_class(42) =:= "42")
 ].
-	
+
 q_type_test() -> [
 	?assert(q_type(?T_CNAME) =:= "CNAME"),
 	?assert(q_type(42) =:= "42")
 ].
-	
+
 conv_to_Mb_test() -> [
 	?assert(conv_to_Mb(42) =:= <<"42/bytes">>),
 	?assert(conv_to_Mb(1536) =:= <<"1.50/KB">>),
 	?assert(conv_to_Mb(3221225472) =:= <<"3.00/GB">>)
 ].
-	
+
 msg_CEF_test() -> [
 	?assert(msg_CEF(138) =:= "|000138|Zone not found|7|src=~s spt=~p path=~p msg=~p~n"),
-	?assert(msg_CEF(424242) =:= "Not defined~n")	
+	?assert(msg_CEF(424242) =:= "Not defined~n")
 ].
 
 

@@ -68,7 +68,7 @@ sudo docker run -d --name ioc2rpz --log-driver=syslog --restart always --mount t
 
 ```
 where /home/ioc2rpz/cfg, /home/ioc2rpz/db directories on a host system.  
-You can pass a custom configuration file name via``-e`` parameter. E.g. ``./cfg/ioc2rpz2.conf`` 
+You can pass a custom configuration file name via``-e`` parameter. E.g. ``./cfg/ioc2rpz2.conf``
 
 ## Docker Compose
 You can deploy ioc2rpz and ioc2rpz.gui using docker compose. The docker-compose.yml file can be found in [ioc2rpz.dc](https://github.com/Homas/ioc2rpz.dc) repository.
@@ -94,7 +94,7 @@ dig +tcp -y dnsmkey_1:ayVnL+h2QKMszRVohrngagcEuIpN3RkecXKdwSa5WsHD5N4Y5R3NUMGM W
 - Reload configuration file. RR Name ``ioc2rpz-reload-cfg``, RR Class ``CHAOS``, RR Type ``TXT``
 - Update TSIG keys. RR Name ``ioc2rpz-update-tkeys``, RR Class ``CHAOS``, RR Type ``TXT``
 - Full refresh of all zones. RR Name ``ioc2rpz-update-all-rpz``, RR Class ``CHAOS``, RR Type ``TXT``
-- Full refresh a zone. RR Name ``zone_name``, RR Class ``CHAOS``, RR Type ``TXT``. E.g. full refresh of ``dga.ioc2rpz`` can be invoked by: 
+- Full refresh a zone. RR Name ``zone_name``, RR Class ``CHAOS``, RR Type ``TXT``. E.g. full refresh of ``dga.ioc2rpz`` can be invoked by:
 ```
 dig +tcp -y dnsmkey_1:ayVnL+h2QKMszRVohrngagcEuIpN3RkecXKdwSa5WsHD5N4Y5R3NUMGM W8sIGv36gPkAtWtgarqKzN9tmHqEnA== @127.0.0.1 dga.ioc2rpz TXT -c CHAOS
 ```
@@ -103,18 +103,18 @@ dig +tcp -y dnsmkey_1:ayVnL+h2QKMszRVohrngagcEuIpN3RkecXKdwSa5WsHD5N4Y5R3NUMGM W
 ### via REST
 REST API (port 8443/tcp) is the preffered management interface. For serurity reasons all management traffic must be encrypted and REST API interface is not started if there is no SSL certificate.
 Basic HTTP authentication is used to authenticate requests. ManagementTSIG keys are used for request authentication. A TSIG key name is used as the HTTP username and TSIG key as the password. Access to the REST API is restricted with the ACL.  
-The REST API supports json (default) and text as an output format based on the "Accept" header. E.g.: 
+The REST API supports json (default) and text as an output format based on the "Accept" header. E.g.:
 ```
 curl -i -u "dnsmkey_1:ayVnL+h2QKMszRVohrngagcEuIpN3RkecXKdwSa5WsHD5N4Y5R3NUMGM W8sIGv36gPkAtWtgarqKzN9tmHqEnA==" --insecure -H "Accept: text/plain" https://127.0.0.1:8443/api/mgmt/update_tkeys
 ```
 API requests:
 - GET ``/api/v1.0/update/all_rpz`` - full refresh of all zones.
-- GET ``/api/v1.0/update/:rpz`` - full refresh a zone, where ``:rpz`` is the zone name. 
+- GET ``/api/v1.0/update/:rpz`` - full refresh a zone, where ``:rpz`` is the zone name.
 - GET ``/api/v1.0/mgmt/reload_cfg`` - reload configuration file.
 - GET ``/api/v1.0/mgmt/update_tkeys`` - update TSIG keys.
 - GET ``/api/v1.0/mgmt/terminate`` - shutdown ioc2rpz server.
-- GET ``/api/v1.0/feed/:rpz`` - get content (indicators) of ``:rpz`` feed. 
-- GET ``/api/v1.0/ioc/:ioc?tkey=:tkey`` - check if indicator is blocked by RPZ feeds. An optional param ``:tkey`` allows to limit validation to a specific TSIG Key. W/o it the search will be done among all feeds. 
+- GET ``/api/v1.0/feed/:rpz`` - get content (indicators) of ``:rpz`` feed.
+- GET ``/api/v1.0/ioc/:ioc?tkey=:tkey`` - check if indicator is blocked by RPZ feeds. An optional param ``:tkey`` allows to limit validation to a specific TSIG Key. W/o it the search will be done among all feeds.
 
 ## Configuration file
 The configuration is an Erlang file. Every configuration option is an Erlang term so the configuration must comply with Erlang syntax. ioc2rpz does not check the configuration file for possible errors, typos etc.
@@ -192,6 +192,11 @@ A source is a feed of malicious indicators. FQDNs, IPv4 and IPv6-addresses are s
   - **[:FTimestamp:]** - timestamp when the source was last time updated  (e.g. 1507946281)
   - **[:ToTimestamp:]** - current timestamp;
 - REGEX which is used to extract indicators and their expiration time. The first match is an indicator, the second match is an expiration time. Expiration time is an optional parameter. A regular expression must be included in double quotes. If you specify an empty REGEX (`""`), a default REGEX will be used (`"^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$"`). `none` is used if no REGEX is required (the source already provides data in the required format).
+Optional parameters (all or none must be used):
+- UserID (used internally).
+- Maximum # of IoCs.
+- Full source update, hot cache time (in seconds).
+- Incremental source update, hot cache time (in seconds).
 
 Sample **source** record:
 ```
@@ -212,7 +217,7 @@ RPZ term defines a response policy zone.
 - Wildcards. Possible values: ``true`` or ``false``. Defines if wildcard rules should be generated;
 - Action. Supported actions: ``nxdomain``, ``nodata``, ``passthru``, ``drop``, ``tcp-only``, ``{"redirect_domain","example.com"}``, ``{"redirect_ip","127.0.0.1"}`` and list of local records ``[{"local_aaaa","fe80::1"}, {"local_a","127.0.0.1"}, {"local_cname","www.example.com"}, {"local_txt","Text Record"}]``. ``redirect_domain`` is an alias for ``local_cname``. ``redirect_ip`` is an alias for ``local_a``, ``local_aaaa``;
 - List of TSIG keys and key groups;
-- Type of IOCs used in the RPZ: ``mixed``, ``fqdn``, ``ip``. It is used for optimization. 
+- Type of IOCs used in the RPZ: ``mixed``, ``fqdn``, ``ip``. It is used for optimization.
 - Full zone update time in seconds (AXFR Time). Full Zone update and rebuild if MD5 for IOCs is different;
 - Incremental zone update time  (IXFR Time). Sources should support incremental updates. "0" means no incremental zone updates;
 - List of the sources;
@@ -312,38 +317,38 @@ options {
   #This is just options for RPZs. Add other options as required
   recursion yes;
   response-policy {
-    ####FQDN only zones 
-    ####Mixed zones 
+    ####FQDN only zones
+    ####Mixed zones
     zone "dns-bh.ioc2rpz" policy nxdomain;
     zone "notracking.ioc2rpz" policy nxdomain;
     zone "phishtank.ioc2rpz" policy nxdomain;
-    ####IP only zones 
+    ####IP only zones
   } qname-wait-recurse no break-dnssec yes;
 };
-          
+
 key "ioc2rpz-YOUR-UNIQUE-KEY-NAME"{
   algorithm hmac-sha256; secret "ioc2rpz-YOUR-UNIQUE-KEY";
 };
 
-            
+
 zone "dns-bh.ioc2rpz" {
   type slave;
   file "/var/cache/bind/dns-bh.ioc2rpz";
   masters {94.130.30.123  key "ioc2rpz-YOUR-UNIQUE-KEY-NAME";};
-}; 
+};
 
-          
+
 zone "notracking.ioc2rpz" {
   type slave;
   file "/var/cache/bind/notracking.ioc2rpz";
   masters {94.130.30.123  key "ioc2rpz-YOUR-UNIQUE-KEY-NAME";};
-}; 
-          
+};
+
 zone "phishtank.ioc2rpz" {
   type slave;
   file "/var/cache/bind/notracking.ioc2rpz";
   masters {94.130.30.123  key "ioc2rpz-YOUR-UNIQUE-KEY-NAME";};
-}; 
+};
 ```
 ### Sample PowerDNS configuration
 ```
@@ -374,7 +379,7 @@ kdig @94.130.30.123 -y hmac-sha256:ioc2rpz-YOUR-UNIQUE-KEY-NAME:ioc2rpz-YOUR-UNI
 - [Tor Exit Nodes](https://torstatus.blutmagie.de/ip_list_exit.php/Tor_ip_list_EXIT.csv)
 - [awesome-threat-intelligence list on GitHub](https://github.com/hslatman/awesome-threat-intelligence)
 
-You can find other IOC feeds on the wiki-page: https://github.com/Homas/ioc2rpz/wiki/IOC-Sources. 
+You can find other IOC feeds on the wiki-page: https://github.com/Homas/ioc2rpz/wiki/IOC-Sources.
 
 ## References
 - [RFC-6895 Domain Name System (DNS) IANA Considerations](https://tools.ietf.org/html/rfc6895)
@@ -403,7 +408,7 @@ Copyright 2017 - 2019 Vadim Pavlov ioc2rpz[at]gmail[.]com
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
 You may obtain a copy of the License at  
-  
+
     http://www.apache.org/licenses/LICENSE-2.0  
-  
+
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
