@@ -1122,7 +1122,7 @@ reverse_IP(OrigIP) ->
     {[IP1,IP2,IP3,IP4],[IMask]} ->
       list_to_binary([IMask,<<".">>,IP4,<<".">>,IP3,<<".">>,IP2,<<".">>,IP1]);
       _ ->
-        reverse_IP6(<<>>,ioc2rpz_fun:split_tail(IP, ":",all),Mask,[])
+        reverse_IP6(<<>>,string:split(IP, ":",all),Mask,[])
   end.
 
 reverse_IP6(<<>>,OrigIP,[],_) ->
