@@ -1312,7 +1312,7 @@ reverse_IP_test() ->[
 	?assert(reverse_IP(<<"fc00::01/64">>) =:= <<"64.01.zz.fc00">>),
 	?assert(reverse_IP(<<"fd00::/8">>) =:= <<"8.zz.fd00">>),
 	?assert(reverse_IP(<<"::1">>) =:= <<"128.1.zz">>),
-	?assert(reverse_IP(<<"::01/128">>) =:= <<"128.01.zz">>),
+	?assert(reverse_IP(<<"::01/128">>) =:= <<"128.01.zz">>)
 ].
 
 remove_WL_test() -> [
