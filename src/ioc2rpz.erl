@@ -21,7 +21,7 @@
 -include_lib("ioc2rpz.hrl").
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([start_ioc2rpz/2,send_notify/1,send_packets/20,domstr_to_bin/2,send_zone_live/9,mrpz_from_ioc/2,parse_dns_request/3,ip_to_str/1,dombin_to_str/1,reverse_IP/1]).
+-export([start_ioc2rpz/2,send_notify/1,send_notify/5,send_packets/20,domstr_to_bin/2,send_zone_live/9,mrpz_from_ioc/2,parse_dns_request/3,ip_to_str/1,dombin_to_str/1,reverse_IP/1]).
 
 
 %-compile([export_all]).
@@ -127,11 +127,11 @@ send_dns(Socket,Pkt,[Proto,Args]) when Proto#proto.proto == udp ->
 
 send_dns_tcp(Socket, Pkt, addlen) -> %used to send the first or an only packet
   gen_tcp:send(Socket, [<<(byte_size(Pkt)):16>>,Pkt]),
-  ok = inet:setopts(Socket, [{active, once}]);
+  ok = inet:setopts(Socket, [{active, once}]); %TODO validate the response, if dropped - pass back to remove cached zone
 
 send_dns_tcp(Socket, Pkt, []) -> %used to pass intermediate packets
   gen_tcp:send(Socket, Pkt),
-  ok = inet:setopts(Socket, [{active, once}]).
+  ok = inet:setopts(Socket, [{active, once}]). %TODO validate the response, if dropped - pass back to remove cached zone
 
 send_dns_tls(Socket, Pkt, addlen) -> %used to send the first or an only packet
   ssl:send(Socket, [<<(byte_size(Pkt)):16>>,Pkt]),
@@ -608,7 +608,7 @@ gen_txt_rec(TXT) ->
 send_notify(Zone) ->
   %TODO wait for the confirmation
   Pkt = <<0:1, ?OP_NOTIFY, 1:1, 0:6, ?NOERROR:4, 1:16,0:16,0:16,0:16,(Zone#rpz.zone)/binary,?T_SOA:16,?C_IN:16>>,
-  [ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(221),[IP,53,Proto,Zone#rpz.zone_str]) || {Proto,IP} <- Zone#rpz.notifylist ],
+  [ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(221),[inet:ntoa(IP),53,Proto,Zone#rpz.zone_str]) || {Proto,IP} <- Zone#rpz.notifylist ],
   [ spawn(ioc2rpz,send_notify,[IP,Pkt,Proto,0,Zone#rpz.zone_str]) || {Proto,IP} <- Zone#rpz.notifylist ].
 
 send_notify(Dst,Pkt,udp,NRuns,Zone) -> % TODO NRuns - will be used to resend Notify if not confirmation was not received
@@ -644,7 +644,7 @@ send_cached_zone(Socket, NSREC, SOAREC, TSIG, PktH, Questions, [{PktN,ANCOUNT,NS
     Pkt1 = list_to_binary([PktH, <<(ANCOUNT+Cnt1):16,NSCOUNT:16,(ARCOUNT+1):16>>, Questions, PktL, TSIGRR]);
     true -> Pkt1 = list_to_binary([PktH,<<(ANCOUNT+Cnt1):16,NSCOUNT:16,ARCOUNT:16>>, Questions, PktL]), TSIG1=TSIG
   end,
-  case send_dns(Socket,Pkt1, [Proto,addlen]) of
+  case send_dns(Socket,Pkt1, [Proto,addlen]) of %TODO analyze response, drop cached records and terminate if there were transmission errors
     ok -> send_cached_zone(Socket, NSREC, SOAREC, TSIG1, PktH, Questions, REST,PktNum+1, Proto);
   	{error, Reason} -> {error, Reason}
   end.
@@ -669,7 +669,7 @@ send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,RH,Rest,Zone,?T_IXFR,NSSe
     Pkt1 = list_to_binary([PktH, <<1:16,0:16,1:16>>, Questions, SOAREC, TSIGRR]);
     true -> Pkt1 = list_to_binary([PktH,<<1:16,0:16,0:16>>, Questions, SOAREC])
   end,
-  send_dns(Socket,Pkt1, [Proto,addlen]);
+  send_dns(Socket,Pkt1, [Proto,addlen]); %TODO analyze response, drop cached records and terminate if there were transmission errors
 
 
 send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,RH,Rest,Zone,?T_IXFR,NSServ,MailAddr,TSIG,SOA}, Proto) when Zone#rpz.serial==Zone#rpz.serial_ixfr,Zone#rpz.status == ready;Zone#rpz.serial==Zone#rpz.serial_ixfr,Zone#rpz.status == updating;SOA#dns_SOA_RR.serial<Zone#rpz.serial_ixfr,Zone#rpz.status == ready;SOA#dns_SOA_RR.serial<Zone#rpz.serial_ixfr,Zone#rpz.status == updating ->
@@ -711,7 +711,7 @@ send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,_RH,_Rest,Zone,QType,_NSS
 
 %Non cachable zones
 send_zone(_,Socket,{Questions,DNSId,OptB,OptE,_RH,_Rest,Zone,_QType,NSServ,MailAddr,TSIG,SOA}, Proto) ->
-  SOAR = <<NSServ/binary,MailAddr/binary,(ioc2rpz_fun:curr_serial()):32,(Zone#rpz.soa_timers)/binary>>,
+  SOAR = <<NSServ/binary,MailAddr/binary,(ioc2rpz_fun:curr_serial()):32,(Zone#rpz.soa_timers)/binary>>, %TODO get new serial and old serial use old serial if MD5 is the same
   SOAREC = <<?ZNameZip, ?T_SOA:16, ?C_IN:16, 604800:32, (byte_size(SOAR)):16, SOAR/binary>>, % 16#c00c:16 - Zone name/request is always at this location (10 bytes from DNSID)
   NSRec = <<?ZNameZip, ?T_NS:16, ?C_IN:16, 604800:32, (byte_size(NSServ)):16, NSServ/binary>>,
   CTime=ioc2rpz_fun:curr_serial_60(),
@@ -729,7 +729,7 @@ send_zone_live(Socket,Op,Zone,PktH,Questions, SOAREC,NSRec,TSIG,Proto) ->
   IOC = mrpz_from_ioc(Zone,axfr),
   MD5=crypto:hash(md5,term_to_binary(IOC)),
   case {Op, Zone#rpz.ioc_md5} of
-    {cache, MD5} -> {updateSOA, MD5, Zone#rpz.rule_count, Zone#rpz.max_ioc};
+    {cache, MD5} -> {updateSOA, MD5, Zone#rpz.rule_count, Zone#rpz.max_ioc}; %TODO looks like something was not finished
     _Else ->
 %      {ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3})$"), %
 			{ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}(\\/[0-9]{1,3})?)$|(:)"),
@@ -856,7 +856,7 @@ send_packets(Socket,Tail, Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec
   PktLen = byte_size(Pkt1),
   Pkt2 = [<<PktLen:16>>,Pkt1],
   if (DBOp == send) or (DBOp == sendNcache) or (DBOp == sendNhotcache) or (DBOp == ixfr) ->
-    send_dns(Socket,Pkt2, [Proto,[]]);
+    send_dns(Socket,Pkt2, [Proto,[]]); %TODO analyze response, drop cached records and terminate if there were transmission errors
     true -> ok
   end,
   if (DBOp == cache) or (DBOp == sendNcache) ->

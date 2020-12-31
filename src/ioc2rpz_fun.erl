@@ -18,7 +18,8 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("ioc2rpz.hrl").
 -export([logMessage/2,logMessageCEF/2,strs_to_binary/1,curr_serial/0,curr_serial_60/0,constr_ixfr_url/3,ip_to_bin/1,read_local_actions/1,split_bin_bytes/2,split_tail/2,rsplit_tail/2,
-         bin_to_lowcase/1,ip_in_list/2,intersection/2,bin_to_hexstr/1,conv_to_Mb/1,q_class/1,q_type/1,split/2,msg_CEF/1,base64url_decode/1,get_cipher_suites/1]).
+         bin_to_lowcase/1,ip_in_list/2,intersection/2,bin_to_hexstr/1,conv_to_Mb/1,q_class/1,q_type/1,split/2,msg_CEF/1,base64url_decode/1,get_cipher_suites/1,
+         str_to_ip/1]).
 
 logMessage(Message, Vars) ->
   logMessage(group_leader(), Message, Vars).
@@ -63,7 +64,7 @@ msg_CEF(202)    -> "|000202|DNS Query|3|src=~s spt=~p proto=~p qname=~p qtype=~p
 
 msg_CEF(230)    -> "|000230|MGMT request|7|src=~s spt=~p path=~p msg=~p~n";
 
-msg_CEF(221)    -> "|000221|DNS Notify|3|dst=~s dpt=~s proto=~p zone=~p~n";
+msg_CEF(221)    -> "|000221|DNS Notify|3|dst=~s dpt=~p proto=~p zone=~p~n";
 msg_CEF(222)    -> "|000222|DNS Notify error|5|dst=~s dpt=~s proto=~s zone=~p msg=~p~n";
 
 msg_CEF(301)    -> "|000301|MGMT request denied|7|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
@@ -129,6 +130,10 @@ ip_to_bin({ok,{IP1,IP2,IP3,IP4}}) ->
 ip_to_bin({ok,{IP1,IP2,IP3,IP4,IP5,IP6,IP7,IP8}}) ->
   <<IP1:16,IP2:16,IP3:16,IP4:16,IP5:16,IP6:16,IP7:16,IP8:16>>.
 
+str_to_ip(IPStr)->
+  %TODO Error handling
+  {ok,IP}= inet:parse_address(IPStr),
+  IP.
 
 read_local_actions(Actions) ->
  read_local_actions(Actions,[]).
