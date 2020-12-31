@@ -1,6 +1,9 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
 
+## 2020-12-31 v1.1.2.3
+- Fixed issue #35
+
 ## 2020-09-07 v1.1.2.2
 - Configuration hot cache time per source
 
