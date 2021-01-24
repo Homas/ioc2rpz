@@ -71,11 +71,9 @@ https://developers.cloudflare.com/1.1.1.1/dns-over-https/wireformat/
 
 ```
 - [ ] , A and AAAA requests. Optional A/AAAA support is added to be able to access the server via unique hostnames. In that case ioc2rpz behaves as an authoritative server
-- [x] upgrade to tls1.3 (supported by Erlang)
 - [ ] RPZ storage type: ets, mnesia
 - [ ] Mnesia for storage (and auto creation)
 https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-for-mnesia
-
 - [ ] Redo AXFR logs
 - [ ] Access to the hotcache and the cfg_table via FUNs
 - [ ] (1) Terminate updating zones during config reload
@@ -93,10 +91,8 @@ https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-
 - [ ] Handle RPZ update if one of a sources is not availble or a recent update returned significatnly low number of indicators
 
 ## Sources
-- [x] Add a script for RPZ via "shell:"
 - [ ] Simultanious source downloads
 - [ ] Add source PostreSQL, MySQL via "shell:"
-- [/] Dedup IoC from different sources with different expiration dates
 - [ ] RPZ action per source
 - [ ] (2) Source based on files check by mod.date and size -> read by chunks
 
@@ -120,13 +116,11 @@ https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-
 - [ ] Statistics per zone (# records, last update, # AXFR, # IXFR, last axfr update time, avg axfr update time, last ixfr update time, avg ixfr update time)
 - [ ] RPZ behavior: ignore unreachable sources, use old data for unreachable sources, do not update the zone
 - [ ] Additional local records: ptr, srv, mx etc
-- [X] Replaced by RPZ from RPZs ----- An action per source: {"",action,locdata} //default action ,{"source_name",action,locdata}
 - [ ] RPZ transfer rate limiting
 
 - [ ] (2) FDateTime,ToDateTime,FDateTimeZ,ToDateTimeZ + support them for AXFR  
 [:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z"  
 [:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z"
-
 
 ## Servers
 - [ ] Enforcement max # of IOCs
@@ -142,7 +136,7 @@ https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-
 
 ## Management
 - [ ] DNS health check requests
-- [ ] Disable MGMT via DNS (update ioc2rpz.gui first) - default behaviour
+- [/] Disable MGMT via DNS (update ioc2rpz.gui first) - default behaviour
 
 
 ## Unsorted
