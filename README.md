@@ -374,9 +374,7 @@ kdig @94.130.30.123 -y hmac-sha256:ioc2rpz-YOUR-UNIQUE-KEY-NAME:ioc2rpz-YOUR-UNI
 ```  
 
 ## Some free threat intelligence feeds
-- [DNS-BH – Malware Domain Blocklist by RiskAnalytics](http://www.malwaredomains.com/)
 - [Netlab](http://data.netlab.360.com)
-- [Tor Exit Nodes](https://torstatus.blutmagie.de/ip_list_exit.php/Tor_ip_list_EXIT.csv)
 - [awesome-threat-intelligence list on GitHub](https://github.com/hslatman/awesome-threat-intelligence)
 
 You can find other IOC feeds on the wiki-page: https://github.com/Homas/ioc2rpz/wiki/IOC-Sources.
