@@ -1,4 +1,4 @@
-%Copyright 2017-2019 Vadim Pavlov ioc2rpz[at]gmail[.]com
+%Copyright 2017-2021 Vadim Pavlov ioc2rpz[at]gmail[.]com
 %
 %Licensed under the Apache License, Version 2.0 (the "License");
 %you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ init(Req, Opts) ->
     [Op | _] = Opts,
     State = #state{op=Op},
     {cowboy_rest, Req, State}.
-	
+
 allowed_methods(Req, State) ->
     Methods = [<<"GET">>, <<"POST">>],
     {Methods, Req, State}.
@@ -37,7 +37,7 @@ content_types_provided(Req, State) ->
     {[
       {<<"application/dns-message">>, parse_dns}
      ], Req, State}.
-		 
+
 parse_dns(#{method := Method} = Req, State) when Method == <<"GET">> ->
 	DNSMessage = case cowboy_req:match_qs([{dns, [], <<>>}], Req) of
 	  #{dns := <<>>} -> {error,<<>>};
@@ -65,7 +65,7 @@ parse_dns(Req, State, {ok, DNSMessage}) ->
 		_ -> Req0=cowboy_req:reply(400,#{}, "Bad request\n", Req), {normal, Req0, State}
 	end,
 	Respond.
-		
+
 read_body(Req0, Acc) ->
     case cowboy_req:read_body(Req0) of
         {ok, Data, Req} -> {ok, << Acc/binary, Data/binary >>, Req};

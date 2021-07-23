@@ -1,4 +1,4 @@
-%Copyright 2017-2019 Vadim Pavlov ioc2rpz[at]gmail[.]com
+%Copyright 2017-2021 Vadim Pavlov ioc2rpz[at]gmail[.]com
 %
 %Licensed under the Apache License, Version 2.0 (the "License");
 %you may not use this file except in compliance with the License.
@@ -26,8 +26,8 @@ get_ioc(URL,REGEX,Source) ->
       %TODO spawn cleanup
       CTime=ioc2rpz_fun:curr_serial_60(),
       %L=[ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX) ],
-      L=p_clean_feed(ioc2rpz_fun:split_tail(Bin,[<<"\r\n">>,<<"\n">>,<<"\r">>]),REGEX,Source#source.max_ioc), 
-      
+      L=p_clean_feed(ioc2rpz_fun:split_tail(Bin,[<<"\r\n">>,<<"\n">>,<<"\r">>]),REGEX,Source#source.max_ioc),
+
       ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators, clean time ~p ~n",[Source#source.name, length(L), (ioc2rpz_fun:curr_serial_60()-CTime)]), %TODO debug
       L;
     _ ->
@@ -35,7 +35,7 @@ get_ioc(URL,REGEX,Source) ->
   end.
 
 w_clean_feed(PID) ->
-  receive 
+  receive
     { ok, PID, IOC } -> [ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- IOC ]
   end.
 
@@ -44,10 +44,10 @@ p_clean_feed(IOC,REGEX,Max) when Max == undefined; Max == 0 ->
 
 p_clean_feed(IOC,REGEX,Max) when Max /= undefined ->
   lists:sublist(p_clean_feed(IOC,REGEX,Max,0),Max).
-  
+
 p_clean_feed(IOC,REGEX,Max,Count)  ->
   ParentPID = self(),
-  [IOC1,IOC2]=ioc2rpz_fun:split(IOC,?IOCperProc),  
+  [IOC1,IOC2]=ioc2rpz_fun:split(IOC,?IOCperProc),
   PID=spawn_opt(fun() ->
       ParentPID ! {ok, self(), ioc2rpz_conn:clean_feed(IOC1,REGEX)  }
       end
@@ -57,8 +57,8 @@ p_clean_feed(IOC,REGEX,Max,Count)  ->
     true -> []
   end,
   w_clean_feed(PID) ++ L .
-  
-  
+
+
 
 %reads IOCs from a local file
 get_ioc(<<"file:",Filename/binary>> = URL, Retry) ->
@@ -70,7 +70,7 @@ get_ioc(<<"file:",Filename/binary>> = URL, Retry) ->
 			timer:sleep(?Src_Retry_TimeOut*1000),
 			get_ioc(URL, Retry-1);
     {error, Reason}  when Retry == 0->
-      ioc2rpz_fun:logMessage("Error reading file ~p reason ~p ~n",[Filename, Reason]), 
+      ioc2rpz_fun:logMessage("Error reading file ~p reason ~p ~n",[Filename, Reason]),
       {error, Reason}
   end;
 
@@ -85,7 +85,7 @@ get_ioc(<<Proto:5/bytes,_/binary>> = URL, Retry) when Proto == <<"http:">>;Proto
   {ok,{{_,200,_},_,Response}} ->
     {ok,Response};
   {ok,{{_,Code,_},Headers,Response}} ->
-    ioc2rpz_fun:logMessage("Unexpected response code ~p, headers ~p ~n",[Code, Headers]), 
+    ioc2rpz_fun:logMessage("Unexpected response code ~p, headers ~p ~n",[Code, Headers]),
 		{ok,<<>>};
   {error,Reason} when Retry > 0 ->
     ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p. Try ~p ~n",[URL, Reason, (?Src_Retry-Retry)]), %TODO timeout and add retry
@@ -94,7 +94,7 @@ get_ioc(<<Proto:5/bytes,_/binary>> = URL, Retry) when Proto == <<"http:">>;Proto
   {error,Reason} when Retry == 0 ->
     ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p ~n",[URL, Reason]), %TODO timeout and add retry
     {error,Reason}
-  end. 
+  end.
 
 %get_ioc reads IOCs from a local file
 %%%get_ioc(<<"file:",Filename/binary>> = _URL,REGEX,Source,stype) ->
@@ -183,11 +183,11 @@ clean_feed_bin(IOC,none) ->
   [ {X,0} || X <- IOC, X /= <<>>];
 
 clean_feed_bin(IOC,[]) ->
-  {ok,MP} = re:compile("^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$",[{newline, any}]), 
+  {ok,MP} = re:compile("^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$",[{newline, any}]),
   [ X || X <- clean_feed_bin(IOC,<<>>,MP), X /= <<>>];
 
 clean_feed_bin(IOC,REX) -> %REX - user's regular expression
-  {ok,MP} = re:compile(REX,[{newline, any}]), 
+  {ok,MP} = re:compile(REX,[{newline, any}]),
   [ X || X <- clean_feed_bin(IOC,<<>>,MP), X /= <<>>].
 
 clean_feed_bin([Head|Tail],CleanIOC,REX) ->

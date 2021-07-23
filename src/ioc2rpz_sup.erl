@@ -1,4 +1,4 @@
-%Copyright 2017-2019 Vadim Pavlov ioc2rpz[at]gmail[.]com
+%Copyright 2017-2021 Vadim Pavlov ioc2rpz[at]gmail[.]com
 %
 %Licensed under the Apache License, Version 2.0 (the "License");
 %you may not use this file except in compliance with the License.
@@ -408,6 +408,9 @@ validateCFGRPZ(RPZ,S,W) -> %Check: Sources, Whitelists
 
 gen_group_array(Value, Groups) ->
 	[{X, Value} || X <- Groups].
+
+parse_ixfr_url(AXFR,"") -> %empty IXFR
+  AXFR;
 
 parse_ixfr_url(AXFR,IXFR) ->
   [ if X == "[:AXFR:]" -> AXFR; true -> X end || X <- re:split(IXFR,"(\\[:[^:]+:\\])",[{return,list},trim]), X /=[]].

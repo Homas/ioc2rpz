@@ -405,7 +405,7 @@ Shout out to **craSH** who supports my projects on [GitHub Sponsor](https://gith
 You can contact us by email: feedback(at)ioc2rpz[.]net or in [Telegram](https://t.me/ioc2rpz).
 
 # License
-Copyright 2017 - 2019 Vadim Pavlov ioc2rpz[at]gmail[.]com
+Copyright 2017 - 2021 Vadim Pavlov ioc2rpz[at]gmail[.]com
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
 You may obtain a copy of the License at  

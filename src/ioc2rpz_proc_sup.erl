@@ -1,4 +1,4 @@
-%Copyright 2017-2019 Vadim Pavlov ioc2rpz[at]gmail[.]com
+%Copyright 2017-2021 Vadim Pavlov ioc2rpz[at]gmail[.]com
 %
 %Licensed under the Apache License, Version 2.0 (the "License");
 %you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@
 -include_lib("ioc2rpz.hrl").
 -export([start_ioc2rpz_proc_sup/1,stop_ioc2rpz_proc_sup/0, start_socket/1, empty_listeners/1]).
 -export([init/1]).
-	
+
 start_ioc2rpz_proc_sup([Proc,IP,Proto]) ->
 	supervisor:start_link({local, Proc}, ?MODULE, [Proc,IP,Proto]). %list_to_atom(atom_to_list(?MODULE) ++ atom_to_list(Proto))
 
@@ -27,14 +27,14 @@ stop_ioc2rpz_proc_sup() ->
   ioc2rpz_fun:logMessage("ioc2rpz tcp recieved stop message ~n", []),
   ioc2rpz_fun:logMessage("ioc2rpz tcp is terminating ~n", []),
   gen_server:stop(?MODULE).
-	
+
 init([Proc,IPStr,Proto]) when Proc == tcp_sup; Proc == tcp6_sup -> %DNS TCP
   Pid=self(),
   {ok, TCPSocket} = open_tcp_sockets(IPStr, Proto) ,
 	spawn_opt(ioc2rpz_proc_sup,empty_listeners,[Proc],[link,{fullsweep_after,0}]),
   ioc2rpz_fun:logMessage("ioc2rpz ~p started ~n", [Proc]),
   {ok, {{simple_one_for_one, 60, 3600}, [{ioc2rpz, {ioc2rpz, start_ioc2rpz, [TCPSocket, [Pid,Proc,no]]}, temporary, 1000, worker, [ioc2rpz]}]}};
-		
+
 
 init([Proc,IPStr,Proto]) when Proc == udp_sup; Proc == udp6_sup -> %DNS UDP
   ioc2rpz_fun:logMessage("ioc2rpz ~p started ~n", [udp_sup]),
@@ -61,6 +61,9 @@ init([Proc,_IPStr,_Proto]) when Proc == rest_tls_sup; Proc == rest_tls6_sup -> %
 				{"/api/[:api_ver]/update/:rpz", ioc2rpz_rest, [update_rpz]},
 				{"/api/[:api_ver]/mgmt/reload_cfg", ioc2rpz_rest, [reload_cfg]},
 				{"/api/[:api_ver]/mgmt/update_tkeys", ioc2rpz_rest, [update_tkeys]},
+				%%%load sources (if not cached)
+				%%%refresh sources (clear cache and load sources)
+				%%%refresh all RPZ
 				{"/api/[:api_ver]/mgmt/terminate", ioc2rpz_rest, [terminate]},
 				{"/api/[:api_ver]/feed/:rpz", ioc2rpz_rest, [get_rpz]},
 				{"/api/[:api_ver]/ioc/:ioc", ioc2rpz_rest, [get_ioc]},
@@ -73,7 +76,7 @@ init([Proc,_IPStr,_Proto]) when Proc == rest_tls_sup; Proc == rest_tls6_sup -> %
 
 init([Proc,_IPStr,_Proto]) when Proc == doh_sup; Proc == doh6_sup -> %DoH
 	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6','_'}),
-	Ciphers=ioc2rpz_fun:get_cipher_suites(?TLSVersion),	
+	Ciphers=ioc2rpz_fun:get_cipher_suites(?TLSVersion),
 	Dispatch = cowboy_router:compile([{'_', [
 				{"/", ioc2rpz_doh, [root]},
 				{"/dns-query", ioc2rpz_doh, [dns_query]},
@@ -92,7 +95,7 @@ open_tcp_sockets(IPStr,Proto) when IPStr /= "", IPStr /= [] ->
 open_tcp_sockets(_IPStr,Proto) ->
   {ok, TCPSocket} = gen_tcp:listen(?Port, [{active,once}, binary, Proto]),  %{ipv6_v6only,true}
   {ok, TCPSocket}.
-  
+
 
 open_tls_sockets(IPStr,Proto) when IPStr /= "", IPStr /= [] ->
   {ok,IP}=inet:parse_address(IPStr),

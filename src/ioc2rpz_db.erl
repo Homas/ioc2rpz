@@ -1,4 +1,4 @@
-%Copyright 2017-2019 Vadim Pavlov ioc2rpz[at]gmail[.]com
+%Copyright 2017-2021 Vadim Pavlov ioc2rpz[at]gmail[.]com
 %
 %Licensed under the Apache License, Version 2.0 (the "License");
 %you may not use this file except in compliance with the License.
@@ -136,7 +136,7 @@ write_db_record(ets,Zone,IOCs,ixfr) when IOCs /= [] ->
 	IOCDB=ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[],[{{'$1','$3'}}]}]),
 	?logDebugMSG("Finding new or updated records~n",[]),
 	IOCNEW=ordsets:subtract(ordsets:from_list(IOCs),ordsets:from_list(IOCDB)),
-	
+
 %	?logDebugMSG("Update ets. New ~p, DB ~p, Delta ~p~n IOCs ~p~n IOCDB ~p~n IOCNEW ~p~n",[ordsets:size(IOCs),ordsets:size(IOCDB),ordsets:size(IOCNEW),IOCs,IOCDB,IOCNEW]),
 	?logDebugMSG("Update ets. New ~p, DB ~p, Delta ~p~n",[length(IOCs),length(IOCDB),ordsets:size(IOCNEW)]),
   [update_db_record(?DBStorage,Zone#rpz.zone,Zone#rpz.serial,IOC,IOCExp,ets:lookup(rpz_ixfr_table, {ioc,Zone#rpz.zone,IOC}),CTime) || {IOC,IOCExp} <- IOCNEW],
@@ -149,7 +149,7 @@ write_db_record(ets,Zone,IOCs,ixfr) when IOCs == [] ->
 write_db_record(mnesia,Zone,IOCs,ixfr) ->
 	{ok,0};
 
-write_db_record(_DBStorage,_Zone,_IOCs,_XFR) ->	
+write_db_record(_DBStorage,_Zone,_IOCs,_XFR) ->
 	{ok,0}. %non cached zones
 
 update_db_record(ets, Zone, Serial, IOC, IOCExp, [], CTime) when IOCExp > 0,IOCExp =< CTime ->
@@ -168,18 +168,18 @@ update_db_record(ets, Zone, Serial, IOC, IOCExp, [], CTime) when IOCExp > CTime 
 
 update_db_record(ets, Zone, Serial, IOC, IOCExp, Update, CTime) -> %ok; %not new but IOCExp =< CTime, e.g. IOCExp=0 and we cached an indicator with a real expiration time (ExpTime)
 	?logDebugMSG("Not expected update ~p ~p ~p ~p ~p ~p ~n",[Zone, Serial, IOC, IOCExp, Update, CTime]);
-	
+
 update_db_record(mnesia, Zone, Serial, IOC, IOCExp, Update, CTime) -> ok.
 
 %%%
 %%% Lookup if an indicator is in the DB.
-%%% Recurs - validate hosts/fqdns if they are blocked by a wildcard rule or a subnet. 
+%%% Recurs - validate hosts/fqdns if they are blocked by a wildcard rule or a subnet.
 %%%
 lookup_db_record(IOC, Recurs) ->
 	lookup_db_record(?DBStorage, IOC, Recurs).
 
 lookup_db_record(ets, IOC, false) ->
-	{ok,[{IOC,ets:select(rpz_ixfr_table,[{{{ioc,'$0',IOC},'$2','$3'},[],[{{'$0','$2','$3'}}]}])}]}; 
+	{ok,[{IOC,ets:select(rpz_ixfr_table,[{{{ioc,'$0',IOC},'$2','$3'},[],[{{'$0','$2','$3'}}]}])}]};
 
 lookup_db_record(mnesia, IOC, false) ->
 	{ok,[{IOC,[]}]};
@@ -191,7 +191,7 @@ lookup_db_record(ets, IOC, true) ->
       case re:run(IOC,MP,[global,notempty,{capture,[1],binary}]) of
         {match,_} -> {ok,[{IOC,ets:select(rpz_ixfr_table,[{{{ioc,'$0',IOC},'$2','$3'},[],[{{'$0','$2','$3'}}]}])}]};
         _ ->  lookup_db_record(ets,IOC,<<"">>,ioc2rpz_fun:rsplit_tail(IOC, <<".">>),[])
-      end; 
+      end;
 
 lookup_db_record(mnesia, IOC, true) ->
 	{ok,[{IOC,[]}]}.
