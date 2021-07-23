@@ -344,9 +344,9 @@ send_TSIG_error(badtimegoodmac, Socket, DNSId, OptB, OptE, Question, TSIG, [MSG,
   Pkt = <<DNSId:2/binary,1:1,OptB:7, 0:1, OptE:3,?NOTAUTH:4,1:16,0:16,0:16,0:16, Question/binary>>,
   PKT = <<(TSIG#dns_TSIG_RR.mac_len):2/big-unsigned-unit:8,(TSIG#dns_TSIG_RR.mac)/binary,Pkt/binary,(TSIG#dns_TSIG_RR.name)/binary,0:8,255:8,0:32,(TSIG#dns_TSIG_RR.alg)/binary,(TSIG#dns_TSIG_RR.time):6/binary,(TSIG#dns_TSIG_RR.fudge)/binary,?TSIG_BADTIME:16/big-unsigned,6:16,CTime:48>>,
   MAC = case TSIG#dns_TSIG_RR.alg_str of %TODO вынести в функцию
-    "md5" -> crypto:hmac(md5,TSIG#dns_TSIG_RR.key,PKT);
-    "sha256" -> crypto:hmac(sha256,TSIG#dns_TSIG_RR.key,PKT);
-    "sha512" -> crypto:hmac(sha512,TSIG#dns_TSIG_RR.key,PKT)
+    "md5" -> crypto:mac(hmac,md5,TSIG#dns_TSIG_RR.key,PKT); %crypto:hmac(md5,TSIG#dns_TSIG_RR.key,PKT);
+    "sha256" -> crypto:mac(hmac,sha256,TSIG#dns_TSIG_RR.key,PKT); %crypto:hmac(sha256,TSIG#dns_TSIG_RR.key,PKT);
+    "sha512" -> crypto:mac(hmac,sha512,TSIG#dns_TSIG_RR.key,PKT) %crypto:hmac(sha512,TSIG#dns_TSIG_RR.key,PKT)
   end,
   MAC_LEN=byte_size(MAC),
   DATA = <<(TSIG#dns_TSIG_RR.alg)/binary,(TSIG#dns_TSIG_RR.time):6/binary,(TSIG#dns_TSIG_RR.fudge)/binary,MAC_LEN:2/big-unsigned-unit:8,MAC/binary,(TSIG#dns_TSIG_RR.oid):16,?TSIG_BADTIME:16/big-unsigned,6:16,CTime:48>>,
@@ -373,9 +373,9 @@ validate_REQ(PH,QDCOUNT,ANCOUNT,NSCOUNT,ARCOUNT,Question,DNSRR,TSIG, KEYS) when 
         LTime=erlang:system_time(seconds), RTimeL = binary:decode_unsigned(TSIG#dns_TSIG_RR.time) - binary:decode_unsigned(TSIG#dns_TSIG_RR.fudge), RTimeH = binary:decode_unsigned(TSIG#dns_TSIG_RR.time) + binary:decode_unsigned(TSIG#dns_TSIG_RR.fudge),
         PKT = <<PH/binary,QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/big-unsigned-unit:8,NSCOUNT:2/big-unsigned-unit:8,ARCOUNT:2/big-unsigned-unit:8,Question/binary,DNSRR/binary,(TSIG#dns_TSIG_RR.name)/binary,0,255,0,0,0,0,(TSIG#dns_TSIG_RR.alg)/binary,(TSIG#dns_TSIG_RR.time):6/binary,(TSIG#dns_TSIG_RR.fudge)/binary,(TSIG#dns_TSIG_RR.error)/binary,(TSIG#dns_TSIG_RR.olen):2/big-unsigned-unit:8,(TSIG#dns_TSIG_RR.odata)/binary>>,
         CH_MAC = case Alg of %TODO вынести в функцию
-          "md5" -> crypto:hmac(md5,KEY,PKT);
-          "sha256" -> crypto:hmac(sha256,KEY,PKT);
-          "sha512" -> crypto:hmac(sha512,KEY,PKT)
+          "md5" -> crypto:mac(hmac,md5,KEY,PKT); %crypto:hmac(md5,KEY,PKT);
+          "sha256" -> crypto:mac(hmac,sha256,KEY,PKT); %crypto:hmac(sha256,KEY,PKT);
+          "sha512" -> crypto:mac(hmac,sha512,KEY,PKT) %crypto:hmac(sha512,KEY,PKT)
         end,
         case CH_MAC == TSIG#dns_TSIG_RR.mac of
           true when LTime >= RTimeL, LTime =< RTimeH -> ?logDebugMSG("Good timestamp ... Valid MAC~n",[]),      {valid,TSIG#dns_TSIG_RR{alg_str=Alg,key=KEY}};
@@ -397,9 +397,9 @@ add_TSIG(Pkt, TSIG) ->
       PKT = <<(TSIG#dns_TSIG_RR.mac_len):2/big-unsigned-unit:8,(TSIG#dns_TSIG_RR.mac)/binary,Pkt/binary,(TSIG#dns_TSIG_RR.name)/binary,0:8,255:8,0:32,(TSIG#dns_TSIG_RR.alg)/binary,(TSIG#dns_TSIG_RR.time):6/binary,(TSIG#dns_TSIG_RR.fudge)/binary,0:16,0:16>>
   end,
   MAC = case TSIG#dns_TSIG_RR.alg_str of %TODO вынести в функцию
-    "md5" -> crypto:hmac(md5,TSIG#dns_TSIG_RR.key,PKT);
-    "sha256" -> crypto:hmac(sha256,TSIG#dns_TSIG_RR.key,PKT);
-    "sha512" -> crypto:hmac(sha512,TSIG#dns_TSIG_RR.key,PKT)
+    "md5" -> crypto:mac(hmac,md5,TSIG#dns_TSIG_RR.key,PKT); %crypto:hmac(md5,TSIG#dns_TSIG_RR.key,PKT);
+    "sha256" -> crypto:mac(hmac,sha256,TSIG#dns_TSIG_RR.key,PKT); %crypto:hmac(sha256,TSIG#dns_TSIG_RR.key,PKT);
+    "sha512" -> crypto:mac(hmac,sha512,TSIG#dns_TSIG_RR.key,PKT) %crypto:hmac(sha512,TSIG#dns_TSIG_RR.key,PKT)
   end,
   LTime = <<(erlang:system_time(seconds)):6/big-unsigned-unit:8>>, % why should we resend client's time?
   %LTime = <<(TSIG#dns_TSIG_RR.time):6/binary>>,

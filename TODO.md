@@ -2,8 +2,9 @@
 - [ ] Take a look on the bugs mentioned in REST section
 
 ## Core / DNS
-- [ ] Migrate crypto:hmac/3 (depricated) to crypto:mac/4
-- [ ] Upgrade Cowboy
+- [x] Migrate crypto:hmac/3 (depricated) to crypto:mac/4
+- [x] Upgrade Cowboy
+- [ ] Sample zone is broken
 - [ ] If IXFR source not set or equal AXFR - get removed records for IXFR
 - [ ] Force RPZ, Source refresh
 - [ ] RPZ from RPZs
@@ -113,6 +114,7 @@ https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-
 
 
 ## RPZ
+- [ ] warm cache in mnesia
 - [ ] Monitor significant drop in # of IoCs and if detected - postpone an update to 1 - 3 IXF cycles or specified time
 - [ ] RPZ by source intersection
 - [ ] Max # of IOCs
