@@ -157,6 +157,7 @@ clean_feed(IOC,none) ->
 %Default REFEX
 %Extract IOCs,remove unsupported chars using standard REGEX. Expiration date is not supported;
 clean_feed(IOC,[]) ->
+  %TODO update regex
   {ok,MP} = re:compile("^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$",[{newline, any}]),
   [ X || X <- clean_feed(IOC,[],MP), X /= <<>>];
 

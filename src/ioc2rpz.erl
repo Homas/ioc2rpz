@@ -127,26 +127,26 @@ send_dns(Socket,Pkt,[Proto,Args]) when Proto#proto.proto == udp ->
 
 send_dns_tcp(Socket, Pkt, addlen) -> %used to send the first or an only packet
   gen_tcp:send(Socket, [<<(byte_size(Pkt)):16>>,Pkt]),
-  ok = inet:setopts(Socket, [{active, once}]); %TODO validate the response, if dropped - pass back to remove cached zone
+  inet:setopts(Socket, [{active, once}]); %TODO validate the response, if dropped - pass back to remove cached zone
 
 send_dns_tcp(Socket, Pkt, []) -> %used to pass intermediate packets
   gen_tcp:send(Socket, Pkt),
-  ok = inet:setopts(Socket, [{active, once}]). %TODO validate the response, if dropped - pass back to remove cached zone
+  inet:setopts(Socket, [{active, once}]). %TODO validate the response, if dropped - pass back to remove cached zone
 
 send_dns_tls(Socket, Pkt, addlen) -> %used to send the first or an only packet
   ssl:send(Socket, [<<(byte_size(Pkt)):16>>,Pkt]),
 % The connection will not be reused and a child will be terminated
 % TODO check compliance with DoT
-  ok = ssl:setopts(Socket, [{active, once}]);
+  ssl:setopts(Socket, [{active, once}]);
 
 send_dns_tls(Socket, Pkt, []) -> %used to pass intermediate packets
   ssl:send(Socket, Pkt),
 % The connection will not be reused and a child will be terminated
 % TODO check compliance with DoT
-  ok = ssl:setopts(Socket, [{active, once}]).
+  ssl:setopts(Socket, [{active, once}]).
 
 send_dns_udp(Socket, Dst, Port, Pkt, _Args) ->
-  ok = gen_udp:send(Socket, Dst, Port, Pkt).
+  gen_udp:send(Socket, Dst, Port, Pkt).
 
 parse_dns_request(Socket, Data, Proto) when byte_size(Data) =< 12 ->
 %%% Bad DNS packet
@@ -856,8 +856,8 @@ send_packets(Socket,Tail, Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec
   PktLen = byte_size(Pkt1),
   Pkt2 = [<<PktLen:16>>,Pkt1],
   if (DBOp == send) or (DBOp == sendNcache) or (DBOp == sendNhotcache) or (DBOp == ixfr) ->
-    send_dns(Socket,Pkt2, [Proto,[]]); %TODO analyze response, drop cached records and terminate if there were transmission errors
-    true -> ok
+    SendStatus = send_dns(Socket,Pkt2, [Proto,[]]); %TODO analyze response, drop cached records and terminate if there were transmission errors
+    true -> SendStatus = ok
   end,
   if (DBOp == cache) or (DBOp == sendNcache) ->
     ioc2rpz_db:write_db_pkt(Zone, {PktN,ACount,0,0, Pkt});
@@ -871,7 +871,16 @@ send_packets(Socket,Tail, Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec
   ets:delete_all_objects(T_ZIP_L),
   %ets:delete(T_ZIP_L),
 	%T_ZIP_L1=init_T_ZIP_L(Zone),
-  send_packets(Socket,Tail, <<>> , 0, 0, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG1,PktN+1,DBOp,SOANSSize0,IXFRNewR,Proto);
+  if (SendStatus == ok) ->
+    send_packets(Socket,Tail, <<>> , 0, 0, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG1,PktN+1,DBOp,SOANSSize0,IXFRNewR,Proto);
+    true ->
+    % remove sources???
+        ioc2rpz_fun:logMessage("Communication error. Removing partily cached zone and stopping operations ~n",[]),
+        ets:match_delete(rpz_hotcache_table,{{pkthotcache,Zone#rpz.zone,'_'},'_','_'}),
+        ioc2rpz_db:delete_db_pkt(Zone),
+        erlang:exit(self(), normal)
+        %{ok, 0, 0}
+  end;
 
 send_packets(Socket,[{IOC,IOCExp}|Tail], Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto) when ((byte_size(IOC)+byte_size(Zone#rpz.zone))>=253) ->
   send_packets(Socket,Tail, Pkt , ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto);
@@ -951,12 +960,29 @@ remove_WL(IOC,WL) ->
 
   [X || {E,Exp} = X <- ordsets:to_list(ordsets:from_list(IOC)), not gb_sets:is_element(E, WLSet)]. % TODO duplicates gb_sets vs ordsets
 
+check_source_updating(Source, SRC,[]) ->
+  ets:update_element(cfg_table, [source,SRC], [{2, Source#source{pid=self()}}]);
+
+check_source_updating(Source, SRC, Pid) ->
+  check_source_updating(Source, SRC, Pid, is_process_alive(Pid)).
+
+check_source_updating(Source, SRC, Pid, true) -> % if the process is alive - wait 0.5 sec and validate after that
+  ioc2rpz_fun:logMessage("~p updates ~p source. ~p is waiting...~n",[Pid, SRC, self()]),
+  timer:sleep(500),
+  check_source_updating(Source, SRC, Pid, is_process_alive(Pid));
+
+check_source_updating(_Source, SRC, Pid, false) -> % if the proces is not alive - check config if someother process grab it and restart validation
+  [[Source]]=ets:match(cfg_table,{[source,SRC],'$2'}),
+  ioc2rpz_fun:logMessage("~p is dead. Got ~p in the config. ~p is waiting...~n",[Pid, Source#source.pid, self()]),
+  check_source_updating(Source, SRC, Source#source.pid).
+
 mrpz_from_ioc(Zone,UType) -> %Zone - RPZ zone
   remove_WL(mrpz_from_ioc(Zone#rpz.sources,Zone,UType,[]),mrpz_from_ioc(Zone#rpz.whitelist,Zone,axfr,[])).% -- WL.
 
 mrpz_from_ioc([SRC|REST], RPZ,UType, IOC) -> %List of the sources, RPZ zone, UType - AXFR/IXFR update type, IOC - list of accumulated IOCs
   CTime=RPZ#rpz.serial, %CTime=ioc2rpz_fun:curr_serial(),
   [[Source]]=ets:match(cfg_table,{[source,SRC],'$2'}),
+  check_source_updating(Source, SRC,Source#source.pid),
    case {ets:match(rpz_hotcache_table,{{SRC,UType},'$2','$3'}),UType} of
     {[[Timestamp,IOCZip]],axfr} when CTime=<(Timestamp+Source#source.hotcache_time) ->
       IOC1=binary_to_term(IOCZip),
@@ -992,7 +1018,7 @@ mrpz_from_ioc([SRC|REST], RPZ,UType, IOC) -> %List of the sources, RPZ zone, UTy
       ioc2rpz_fun:logMessage("Memory total ~p after garbage collector. processes ~p binary ~p ~n",[erlang:memory(total)/1024/1024,erlang:memory(processes)/1024/1024,erlang:memory(binary)/1024/1024]) %TODO debug
 
   end,
-  ets:update_element(cfg_table, [source,SRC], [{2, Source#source{ioc_count=length(IOC1)}}]),
+  ets:update_element(cfg_table, [source,SRC], [{2, Source#source{ioc_count=length(IOC1), pid=[]}}]),
   mrpz_from_ioc(REST,RPZ,UType,IOC1 ++ IOC);
 
 mrpz_from_ioc([],RPZ,_UType,IOC) ->
