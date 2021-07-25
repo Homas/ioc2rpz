@@ -105,6 +105,45 @@ srv_mgmt(Req, State, Format) when State#state.op == update_tkeys -> %Reload TSIG
 	end,
 	{Body, Req0, State};
 
+srv_mgmt(Req, State, Format) when State#state.op == cache_sources_clear_all -> % clear all sources from the hot cache
+	#{peer := {IP, Port}} = Req,
+  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(230),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
+  %SW=ets:match(cfg_table, {[source,'_'],'$2'}),
+  %[ ioc2rpz_fun:logMessage("deleting ~p source~n",[X#source.name]) || [X] <- SW ],
+  %[ ets:delete(rpz_hotcache_table, {X#source.name,Y}) || [X] <- SW, Y <-[axfr,ixfr] ],
+  [ ioc2rpz_fun:logMessage("deleting ~p ~p source from the hotcache~n",[X,Y]) || [X,Y] <- ets:match(rpz_hotcache_table,{{'$1','$2'},'_','_'})],
+  [ ets:delete(rpz_hotcache_table, {X,Y}) || [X,Y] <- ets:match(rpz_hotcache_table,{{'$1','$2'},'_','_'})],
+	Body = case Format of
+		json -> "{\"status\":\"ok\",\"msg\":\"All sources were removed from the hotcache\"}\n";
+		txt -> "status: ok\nmsg: All sources were removed from the hotcache\n"
+	end,
+	{Body, Req, State};
+
+srv_mgmt(Req, State, Format) when State#state.op == cache_sources_clear_one-> % clear a source from the hot cache
+	#{peer := {IP, Port}} = Req,
+  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(230),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
+  Source = binary_to_list(cowboy_req:binding(source, Req)),
+  %[ ioc2rpz_fun:logMessage("~p ~p source in cache~n",[X,Y]) || [X,Y] <- ets:match(rpz_hotcache_table,{{'$1','$2'},'_','_'})],
+  ioc2rpz_fun:logMessage("deleting ~p source from the hot cache~n",[Source]),
+  ets:delete(rpz_hotcache_table, {Source,axfr}), ets:delete(rpz_hotcache_table, {Source,ixfr}),
+  %[ ioc2rpz_fun:logMessage("~p ~p source in cache~n",[X,Y]) || [X,Y] <- ets:match(rpz_hotcache_table,{{'$1','$2'},'_','_'})],
+	Body = case Format of
+		json -> io_lib:format("{\"status\":\"ok\",\"msg\":\"~s source was removed from the hot cache\"}\n",[Source]);
+		txt -> io_lib:format("status: ok\nmsg: ~s source was removed from the hot cache\n",[Source])
+	end,
+	{Body, Req, State};
+
+srv_mgmt(Req, State, Format) when State#state.op == cache_sources_load_all -> % load all sources to the hotcache
+	#{peer := {IP, Port}} = Req,
+  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(230),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
+  SW=[X#source.name || [X] <- ets:match(cfg_table, {[source,'_'],'$2'})],
+  %ioc2rpz:mrpz_from_ioc(SW,#rpz{serial=ioc2rpz_fun:curr_serial()},axfr,[]),
+  spawn_opt(ioc2rpz,mrpz_from_ioc,[SW,#rpz{serial=ioc2rpz_fun:curr_serial()},axfr,[]],[{fullsweep_after,0}]),
+	Body = case Format of
+		json -> "{\"status\":\"ok\",\"msg\":\"All sources will loaded to the hot cache\"}\n";
+		txt -> "status: ok\nmsg: All sources will loaded to the hot cache\n"
+	end,
+	{Body, Req, State};
 
 srv_mgmt(Req, State, Format) when State#state.op == update_all_rpz -> % Force update all RPZ zones
 	#{peer := {IP, Port}} = Req,

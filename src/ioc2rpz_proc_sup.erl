@@ -61,7 +61,9 @@ init([Proc,_IPStr,_Proto]) when Proc == rest_tls_sup; Proc == rest_tls6_sup -> %
 				{"/api/[:api_ver]/update/:rpz", ioc2rpz_rest, [update_rpz]},
 				{"/api/[:api_ver]/mgmt/reload_cfg", ioc2rpz_rest, [reload_cfg]},
 				{"/api/[:api_ver]/mgmt/update_tkeys", ioc2rpz_rest, [update_tkeys]},
-				%%%load sources (if not cached)
+				{"/api/[:api_ver]/cache/sources/clear/all", ioc2rpz_rest, [cache_sources_clear_all]},
+				{"/api/[:api_ver]/cache/sources/clear/:source", ioc2rpz_rest, [cache_sources_clear_one]},
+				{"/api/[:api_ver]/cache/sources/load/all", ioc2rpz_rest, [cache_sources_load_all]},
 				%%%refresh sources (clear cache and load sources)
 				%%%refresh all RPZ
 				{"/api/[:api_ver]/mgmt/terminate", ioc2rpz_rest, [terminate]},

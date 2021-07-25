@@ -35,10 +35,19 @@ init_db(ets,DBDir,PID) ->
   ets:new(stat_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, ordered_set, public, named_table]),
   {ok,[]};
 
-init_db(mnesia,DBDir,PID) ->
-%TODO
+init_db(mnesia,_DBDir,PID) ->
 %init schema
 %create tables
+  case mnesia:create_schema([node()]) of % local node only. TODO Update to multinode
+    ok -> %Create new DB
+      mnesia:start(),
+      mnesia:create_table(rpz_axfr_table, []),
+%    ets:new(rpz_axfr_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, ordered_set, public, named_table]); %because labels are shortened
+%    ets:new(rpz_ixfr_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, duplicate_bag, public, named_table]); %set
+      ok;
+    _Else -> %DB was already created, starting mnesia
+      mnesia:start()
+  end,
   ets:new(cfg_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, ordered_set, public, named_table]),
   ets:new(rpz_hotcache_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, ordered_set, public, named_table]),
   ets:new(stat_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, ordered_set, public, named_table]),
