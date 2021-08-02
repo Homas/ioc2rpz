@@ -15,8 +15,8 @@
 %ioc2rpz application
 {application, ioc2rpz,
  [
-  {description, ""},
-  {vsn, "1.1.3.0"},
+  {description, "ioc2rpz custom DNS server"},
+  {vsn, "1.2.0.0"},
   {modules, [
              ioc2rpz_app,
              ioc2rpz_sup,

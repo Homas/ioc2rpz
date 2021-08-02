@@ -16,7 +16,7 @@
 
 -module(ioc2rpz_conn).
 -include_lib("ioc2rpz.hrl").
--export([get_ioc/3,clean_feed_bin/2,clean_feed/2]).
+-export([get_ioc/3,clean_feed_bin/2,clean_feed/3]).
 
 get_ioc(URL,REGEX,Source) ->
   case get_ioc(URL,?Src_Retry) of
@@ -26,7 +26,7 @@ get_ioc(URL,REGEX,Source) ->
       %TODO spawn cleanup
       CTime=ioc2rpz_fun:curr_serial_60(),
       %L=[ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- clean_feed(ioc2rpz_fun:split_tail(Bin,<<"\n">>),REGEX) ],
-      L=p_clean_feed(ioc2rpz_fun:split_tail(Bin,[<<"\r\n">>,<<"\n">>,<<"\r">>]),REGEX,Source#source.max_ioc),
+      L=p_clean_feed(ioc2rpz_fun:split_tail(Bin,[<<"\r\n">>,<<"\n">>,<<"\r">>]),REGEX,Source#source.max_ioc,Source#source.ioc_type),
 
       ioc2rpz_fun:logMessage("Source: ~p, got ~p indicators, clean time ~p ~n",[Source#source.name, length(L), (ioc2rpz_fun:curr_serial_60()-CTime)]), %TODO debug
       L;
@@ -36,24 +36,24 @@ get_ioc(URL,REGEX,Source) ->
 
 w_clean_feed(PID) ->
   receive
-    { ok, PID, IOC } -> [ {ioc2rpz_fun:bin_to_lowcase(X),Y} || {X,Y} <- IOC ]
+    { ok, PID, IOC } -> [ {ioc2rpz_fun:bin_to_lowcase(X),Y,Z} || {X,Y,Z} <- IOC ]
   end.
 
-p_clean_feed(IOC,REGEX,Max) when Max == undefined; Max == 0 ->
-  p_clean_feed(IOC,REGEX,Max,0);
+p_clean_feed(IOC,REGEX,Max,IoCType) when Max == undefined; Max == 0 ->
+  p_clean_feed(IOC,REGEX,Max,0,IoCType);
 
-p_clean_feed(IOC,REGEX,Max) when Max /= undefined ->
-  lists:sublist(p_clean_feed(IOC,REGEX,Max,0),Max).
+p_clean_feed(IOC,REGEX,Max,IoCType) when Max /= undefined ->
+  lists:sublist(p_clean_feed(IOC,REGEX,Max,0,IoCType),Max).
 
-p_clean_feed(IOC,REGEX,Max,Count)  ->
+p_clean_feed(IOC,REGEX,Max,Count,IoCType)  ->
   ParentPID = self(),
   [IOC1,IOC2]=ioc2rpz_fun:split(IOC,?IOCperProc),
   PID=spawn_opt(fun() ->
-      ParentPID ! {ok, self(), ioc2rpz_conn:clean_feed(IOC1,REGEX)  }
+      ParentPID ! {ok, self(), ioc2rpz_conn:clean_feed(IOC1,REGEX,IoCType)  }
       end
       ,[{fullsweep_after,0}]),
   L = if IOC2 /= [] , Count+?IOCperProc < Max ; IOC2 /= [],Max == undefined; IOC2 /= [],Max == 0 ->
-    p_clean_feed(IOC2,REGEX,Max,Count+?IOCperProc);
+    p_clean_feed(IOC2,REGEX,Max,Count+?IOCperProc,IoCType);
     true -> []
   end,
   w_clean_feed(PID) ++ L .
@@ -75,7 +75,7 @@ get_ioc(<<"file:",Filename/binary>> = URL, Retry) ->
   end;
 
 %IOCs are provided by a local script
-get_ioc(<<"shell:",CMD/binary>> = _URL, Retry) ->
+get_ioc(<<"shell:",CMD/binary>> = _URL, _Retry) ->
   {ok, list_to_binary(os:cmd(binary_to_list(CMD)))};
 
 %download IOCs from http/https/ftp
@@ -84,7 +84,7 @@ get_ioc(<<Proto:5/bytes,_/binary>> = URL, Retry) when Proto == <<"http:">>;Proto
   case httpc:request(get,{binary_to_list(URL),[{"User-Agent", "Mozilla"}]},[{timeout, ?SourcePullTimeout}],[{body_format,binary},{sync,true}]) of %,{socket_opts,[{cookies,enabled}]}
   {ok,{{_,200,_},_,Response}} ->
     {ok,Response};
-  {ok,{{_,Code,_},Headers,Response}} ->
+  {ok,{{_,Code,_},Headers,_Response}} ->
     ioc2rpz_fun:logMessage("Unexpected response code ~p, headers ~p ~n",[Code, Headers]),
 		{ok,<<>>};
   {error,Reason} when Retry > 0 ->
@@ -151,33 +151,51 @@ get_ioc(<<Proto:5/bytes,_/binary>> = URL, Retry) when Proto == <<"http:">>;Proto
 
 %No clean REGEX
 %Read IOCs. One IOC per a line. Do not perform any modifications. Expiration date is not supported. During a next full zone update (AXFR update). All IOCs are refreshed;
-clean_feed(IOC,none) ->
-  [ {X,0} || X <- IOC, X /= <<>>];
+clean_feed(IOC,none, "mixed") ->
+  {ok,IPREX} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}(\\/[0-9]{1,3})?)$|(:)"), %regex to check ip/fqdn
+  [ {X,0,check_if_ip(X, "mixed", IPREX)} || X <- IOC, X /= <<>>];
+
+clean_feed(IOC,none,IoCType) ->
+  [ {X,0,IoCType} || X <- IOC, X /= <<>>];
 
 %Default REFEX
 %Extract IOCs,remove unsupported chars using standard REGEX. Expiration date is not supported;
-clean_feed(IOC,[]) ->
+clean_feed(IOC,[],IoCType) ->
   %TODO update regex
   {ok,MP} = re:compile("^([A-Za-z0-9][A-Za-z0-9\-\._]+)[^A-Za-z0-9\-\._]*.*$",[{newline, any}]),
-  [ X || X <- clean_feed(IOC,[],MP), X /= <<>>];
+  {ok,IPREX} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}(\\/[0-9]{1,3})?)$|(:)"), %regex to check ip/fqdn
+  [ X || X <- clean_feed(IOC,[],MP, IoCType, IPREX), X /= <<>>];
 
 
 %Extract IOCs,remove unsupported chars using user's defined REGEX. Expiration date is supported. First value - IOC, second - Exp. Date;
-clean_feed(IOC,REX) -> %REX - user's regular expression
+clean_feed(IOC,REX,IoCType) -> %REX - user's regular expression
   {ok,MP} = re:compile(REX,[{newline, any}]),
-  [ X || X <- clean_feed(IOC,[],MP), X /= <<>>].
+  {ok,IPREX} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}(\\/[0-9]{1,3})?)$|(:)"), %regex to check ip/fqdn
+  [ X || X <- clean_feed(IOC,[],MP,IoCType, IPREX), X /= <<>>].
 
-clean_feed([Head|Tail],CleanIOC,REX) ->
+clean_feed([Head|Tail],CleanIOC,REX,IoCType, IPREX) ->
   IOC2 = case re:run(Head,REX,[global,notempty,{capture,[1,2],binary}]) of
-    {match,[[IOC,<<>>]]} -> {IOC,0};
-    {match,[[IOC,EXP]]} -> {IOC,conv_t2i(EXP)};
+    {match,[[IOC,<<>>]]} -> {IOC,0, check_if_ip(IOC, IoCType, IPREX)};
+    {match,[[IOC,EXP]]} -> {IOC, conv_t2i(EXP), check_if_ip(IOC, IoCType, IPREX)};
     _Else -> <<>>
   end,
-  clean_feed(Tail, [IOC2 | CleanIOC], REX);
+  clean_feed(Tail, [IOC2 | CleanIOC], REX, IoCType, IPREX);
 
-clean_feed([],CleanIOC,_REX) ->
+
+clean_feed([],CleanIOC,_REX,_IoCType, _IPREX) ->
   CleanIOC.
 
+%%%
+%%% Check if FQDN or IP
+%%%
+check_if_ip(IOC, "mixed", IPREX) ->
+  case re:run(IOC,IPREX,[global,notempty,{capture,[1],binary}]) of
+   {match,_} ->"ip";
+   _ -> "fqdn"
+  end;
+
+check_if_ip(_IOC, IoCType, _IPREX) ->
+  IoCType.
 
 %%%Check memory consumtion
 clean_feed_bin(IOC,none) ->

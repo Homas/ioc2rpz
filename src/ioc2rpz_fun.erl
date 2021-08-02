@@ -270,9 +270,9 @@ base64url_decode(Str) ->
 	end,
 	try {ok, base64:decode(<<StrURL/binary, Pad/binary>>)}
 	catch
-			throw:Term -> {error,<<>>};
-			exit:Reason -> {error,<<>>};
-			error:Reason:Stk -> {error,<<>>}
+			throw: _Term -> {error,<<>>};
+			exit: _Reason -> {error,<<>>};
+			error: _Reason:_Stk -> {error,<<>>}
 	end.
 
 

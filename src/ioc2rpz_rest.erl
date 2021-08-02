@@ -285,7 +285,7 @@ srv_mgmt(Req, State, Format) when State#state.op == catch_all -> % Catch all uns
 %    end,
 %	{false, Req0, State}.
 
-rest_terminate(Req, State) ->
+rest_terminate(_Req, _State) ->
 	ok.
 
 format_ioc({ok,Results},Req,Format) ->
@@ -304,7 +304,7 @@ format_ioc([{El,Feeds}|Results],Req,json,"") ->
 	Ind=io_lib:format("{\"ioc\": \"~s\", \"feeds\": ~s}",[El, parse_feeds(Feeds,Req,"",json)]),
 	format_ioc(Results,Req,json, Ind);
 
-format_ioc([{El,Feeds}|Results],Req,Format,Result) ->
+format_ioc([{El,Feeds}|Results],Req,_Format,Result) ->
 	Ind=io_lib:format("{\"ioc\": \"~s\", \"feeds\": ~s}",[El, parse_feeds(Feeds,Req,"",json)]),
 	format_ioc(Results,Req,json, Result ++","++ Ind).
 
@@ -327,10 +327,10 @@ parse_feeds([{Feed, Serial, Exp}|REST],{_IOC,_TKEY,Zones}=Req,Result,json) ->
 %%%
 get_tkey_zones(TKey) ->
 	{ok, TKeyBin} = ioc2rpz:domstr_to_bin(TKey,0),
-	Groups = [ X || [X,Y] <- ets:match(cfg_table,{[key_group,'$1',TKeyBin],'$3'}) ],
+	Groups = [ X || [X,_Y] <- ets:match(cfg_table,{[key_group,'$1',TKeyBin],'$3'}) ],
 	get_tkey_zones(TKeyBin, Groups, [ X || [X] <- ets:match(cfg_table,{[rpz,'_'],'_','$4'}) ], []). %{X#rpz.zone, X#rpz.zone_str, X#rpz.wildcards, X#rpz.akeys, X#rpz.ioc_type, X#rpz.key_groups}
 
-get_tkey_zones(TKeyBin, _Groups,[], Zones) ->
+get_tkey_zones(_TKeyBin, _Groups,[], Zones) ->
 	Recur = [ X || {_,{_,_,X}} <- Zones, X == <<"true">> ] /= [],
 %	ZNames = [ X || {X,{_,_,_}} <- Zones ],
 	{Recur, maps:from_list(lists:flatten(Zones))};
