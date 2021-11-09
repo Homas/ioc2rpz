@@ -2,8 +2,9 @@
 - [ ] Take a look on the bugs mentioned in REST section
 
 ## Core / DNS
-- [ ] Migrate crypto:hmac/3 (depricated) to crypto:mac/4
-- [ ] Upgrade Cowboy
+- [x] Migrate crypto:hmac/3 (depricated) to crypto:mac/4
+- [x] Upgrade Cowboy
+- [ ] Sample zone is broken
 - [ ] If IXFR source not set or equal AXFR - get removed records for IXFR
 - [ ] Force RPZ, Source refresh
 - [ ] RPZ from RPZs
@@ -14,62 +15,6 @@
 - [ ] Zone update - flush hot cache
 - [x] Enforce domain validation. Discard indicators with wrong chars
   - [ ] (ioc2rpz:clean_labels). Performance should be validated.
-- [ ] DoH https://tools.ietf.org/html/rfc8484
-https://developers.google.com/speed/public-dns/docs/secure-transports
-https://developers.cloudflare.com/1.1.1.1/dns-over-https/wireformat/
-
-```
-   When using the GET method, the data payload for this media type MUST
-   be encoded with base64url [RFC4648] and then provided as a variable
-   named "dns" to the URI Template expansion.  Padding characters for
-   base64url MUST NOT be included.
-
-   When using the POST method, the data payload for this media type MUST
-   NOT be encoded and is used directly as the HTTP message body.
-
-   The first example request uses GET to request "www.example.com".
-   :method = GET
-   :scheme = https
-   :authority = dnsserver.example.net
-   :path = /dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB
-   accept = application/dns-message	 
-
-   The same DNS query for "www.example.com", using the POST method would
-   be:
-
-   :method = POST
-   :scheme = https
-   :authority = dnsserver.example.net
-   :path = /dns-query
-   accept = application/dns-message
-   content-type = application/dns-message
-   content-length = 33
-
-   <33 bytes represented by the following hex encoding>
-   00 00 01 00 00 01 00 00  00 00 00 00 03 77 77 77
-   07 65 78 61 6d 70 6c 65  03 63 6f 6d 00 00 01 00
-   01
-
-
-4.2.2.  HTTP Response Example
-
-   This is an example response for a query for the IN AAAA records for
-   "www.example.com" with recursion turned on.  The response bears one
-   answer record with an address of 2001:db8:abcd:12:1:2:3:4 and a TTL
-   of 3709 seconds.
-
-   :status = 200
-   content-type = application/dns-message
-   content-length = 61
-   cache-control = max-age=3709
-
-   <61 bytes represented by the following hex encoding>
-   00 00 81 80 00 01 00 01  00 00 00 00 03 77 77 77
-   07 65 78 61 6d 70 6c 65  03 63 6f 6d 00 00 1c 00
-   01 c0 0c 00 1c 00 01 00  00 0e 7d 00 10 20 01 0d
-   b8 ab cd 00 12 00 01 00  02 00 03 00 04
-
-```
 - [ ] , A and AAAA requests. Optional A/AAAA support is added to be able to access the server via unique hostnames. In that case ioc2rpz behaves as an authoritative server
 - [ ] RPZ storage type: ets, mnesia
 - [ ] Mnesia for storage (and auto creation)
@@ -109,6 +54,8 @@ https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-
 
 
 ## RPZ
+- [ ] warm cache in mnesia
+- [x] validate if source is downloading before trying to get it again
 - [ ] Monitor significant drop in # of IoCs and if detected - postpone an update to 1 - 3 IXF cycles or specified time
 - [ ] RPZ by source intersection
 - [ ] Max # of IOCs

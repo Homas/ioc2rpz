@@ -1,4 +1,4 @@
-%Copyright 2017-2019 Vadim Pavlov ioc2rpz[at]gmail[.]com
+%Copyright 2017-2021 Vadim Pavlov ioc2rpz[at]gmail[.]com
 %
 %Licensed under the Apache License, Version 2.0 (the "License");
 %you may not use this file except in compliance with the License.
@@ -270,9 +270,9 @@ base64url_decode(Str) ->
 	end,
 	try {ok, base64:decode(<<StrURL/binary, Pad/binary>>)}
 	catch
-			throw:Term -> {error,<<>>};
-			exit:Reason -> {error,<<>>};
-			error:Reason:Stk -> {error,<<>>}
+			throw: _Term -> {error,<<>>};
+			exit: _Reason -> {error,<<>>};
+			error: _Reason:_Stk -> {error,<<>>}
 	end.
 
 

@@ -1,5 +1,9 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## 2021-07-31 v1.1.3.0
+- new REST API calls
+- source types
+- keep source in the hot cache
 
 ## 2020-12-31 v1.1.2.3
 - Fixed issue #35

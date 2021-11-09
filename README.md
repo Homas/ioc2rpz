@@ -115,6 +115,9 @@ API requests:
 - GET ``/api/v1.0/mgmt/terminate`` - shutdown ioc2rpz server.
 - GET ``/api/v1.0/feed/:rpz`` - get content (indicators) of ``:rpz`` feed.
 - GET ``/api/v1.0/ioc/:ioc?tkey=:tkey`` - check if indicator is blocked by RPZ feeds. An optional param ``:tkey`` allows to limit validation to a specific TSIG Key. W/o it the search will be done among all feeds.
+- GET ``/api/v1.0/cache/sources/clear/all`` - remove all sources from the hot cache
+- GET ``/api/v1.0/cache/sources/clear/:source`` - remove ``:source`` source from the hot cache
+- GET ``/api/v1.0/cache/sources/load/all`` - load all sources to the hot cache
 
 ## Configuration file
 The configuration is an Erlang file. Every configuration option is an Erlang term so the configuration must comply with Erlang syntax. ioc2rpz does not check the configuration file for possible errors, typos etc.
@@ -405,7 +408,7 @@ Shout out to **craSH** who supports my projects on [GitHub Sponsor](https://gith
 You can contact us by email: feedback(at)ioc2rpz[.]net or in [Telegram](https://t.me/ioc2rpz).
 
 # License
-Copyright 2017 - 2019 Vadim Pavlov ioc2rpz[at]gmail[.]com
+Copyright 2017 - 2021 Vadim Pavlov ioc2rpz[at]gmail[.]com
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
 You may obtain a copy of the License at  

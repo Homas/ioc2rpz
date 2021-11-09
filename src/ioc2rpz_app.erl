@@ -1,4 +1,4 @@
-%Copyright 2017-2019 Vadim Pavlov ioc2rpz[at]gmail[.]com
+%Copyright 2017-2021 Vadim Pavlov ioc2rpz[at]gmail[.]com
 %
 %Licensed under the Apache License, Version 2.0 (the "License");
 %you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ start(_StartType, _Start_Args) ->
 
 stop(_State) ->
     ok.
-    
+
 
 get_env(App, Param, Default) ->
   case application:get_env(App, Param) of

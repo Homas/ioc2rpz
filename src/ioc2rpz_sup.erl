@@ -1,4 +1,4 @@
-%Copyright 2017-2019 Vadim Pavlov ioc2rpz[at]gmail[.]com
+%Copyright 2017-2021 Vadim Pavlov ioc2rpz[at]gmail[.]com
 %
 %Licensed under the Apache License, Version 2.0 (the "License");
 %you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@
 -include_lib("kernel/include/file.hrl").
 -include_lib("ioc2rpz.hrl").
 -export([start_ioc2rpz_sup/1,stop_ioc2rpz_sup/0,update_all_zones/1,update_zone_full/1,
-        update_zone_inc/1,reload_config3/1,read_config3/1]).
+        update_zone_inc/1,reload_config3/1,read_config3/1,load_hotsources/1]).
 -export([init/1]).
 
 %-compile([export_all]).
@@ -48,7 +48,15 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
   inets:start(), ssl:start(),
 %  spawn(ioc2rpz_sup,update_all_zones,[false]), %load zones to cache
 %  spawn_opt(ioc2rpz_sup,update_all_zones,[false],[link,{fullsweep_after,0}]), %load zones to cache
+
+  %load hot sources (which should be always in the hot cache)
+  spawn_opt(ioc2rpz_sup,load_hotsources,[true],[{fullsweep_after,0}]),
+
+  %load cached RPZ zones
   update_all_zones(false),
+
+  %update sources and zones when expired
+  timer:apply_interval(?ZoneRefTime,ioc2rpz_sup,load_hotsources,[false]),
   timer:apply_interval(?ZoneRefTime,ioc2rpz_sup,update_all_zones,[false]),
 
   ioc2rpz_fun:logMessage("ioc2rpz supervisor started ~n", []),
@@ -150,6 +158,24 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
 %  update_all_zones(false),
 %  ok.
 
+load_hotsources(true)->
+  SW=[X#source.name || [X] <- ets:match(cfg_table, {[source,'_'],'$2'}), X#source.keep_in_cache == true],
+  ioc2rpz_fun:logMessage("loading hot sources ~p ~n", [SW]),
+  ioc2rpz:mrpz_from_ioc(SW,#rpz{serial=ioc2rpz_fun:curr_serial()},axfr,[]);
+
+load_hotsources(_LoadAllSources)->
+
+  SW3=[X || [X] <- ets:match(cfg_table, {[source,'_'],'$2'}), X#source.keep_in_cache == true],
+  SW2=[ lists:flatten(ets:select(rpz_hotcache_table,[{{{X#source.name,axfr},'$2','_'},[{'=<', {'+', X#source.hotcache_time, '$2'},ioc2rpz_fun:curr_serial()}],[[X#source.name]]}])) || X <- SW3 ],
+  SW=[X|| X <-SW2, X /= []],
+
+  %spawn_opt(ioc2rpz,mrpz_from_ioc,[SW,#rpz{serial=ioc2rpz_fun:curr_serial()},axfr,[]],[{fullsweep_after,0}]).
+  ioc2rpz_fun:logMessage("loading hot sources ~p ~n", [SW]),
+  ioc2rpz:mrpz_from_ioc(SW,#rpz{serial=ioc2rpz_fun:curr_serial()},axfr,[]).
+
+%%%
+%%% Read configuration file
+%%%
 reload_config3(Action)->
   [[Filename]] = ets:match(cfg_table,{cfg_file,'$1'}),
   ioc2rpz_fun:logMessage("ioc2rpz reloading configuration from ~p action ~p~n", [Filename, Action]),
@@ -210,21 +236,26 @@ read_config3([{key_group,{GName,Keys}}|REST],RType,Srv,Keys,Key_Groups,WhiteList
 
 %%% No UserId, max count
 read_config3([{whitelist,{Name,AXFR,REGEX}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
-  read_config3(REST,RType,Srv,Keys,Key_Groups,[#source{name=Name,axfr_url=AXFR,regex=REGEX,hotcache_time=?HotCacheTime,hotcacheixfr_time=?HotCacheTimeIXFR}|WhiteLists],Sources,RPZ);
+  read_config3(REST,RType,Srv,Keys,Key_Groups,[#source{name=Name,axfr_url=AXFR,regex=REGEX,hotcache_time=?HotCacheTime,hotcacheixfr_time=?HotCacheTimeIXFR,pid=[]}|WhiteLists],Sources,RPZ);
 read_config3([{source,{Name,AXFR,IXFR,REGEX}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
-  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX,hotcache_time=?HotCacheTime,hotcacheixfr_time=?HotCacheTimeIXFR}|Sources],RPZ);
-
+  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX,hotcache_time=?HotCacheTime,hotcacheixfr_time=?HotCacheTimeIXFR,pid=[],ioc_type="mixed",keep_in_cache=false}|Sources],RPZ);
 %%% With UserId, max count
 read_config3([{whitelist,{Name,AXFR,REGEX,UserID,Max_Count}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
-  read_config3(REST,RType,Srv,Keys,Key_Groups,[#source{name=Name,axfr_url=AXFR,regex=REGEX,userid=UserID,max_ioc=Max_Count,hotcache_time=?HotCacheTime,hotcacheixfr_time=?HotCacheTimeIXFR}|WhiteLists],Sources,RPZ);
+  read_config3(REST,RType,Srv,Keys,Key_Groups,[#source{name=Name,axfr_url=AXFR,regex=REGEX,userid=UserID,max_ioc=Max_Count,hotcache_time=?HotCacheTime,hotcacheixfr_time=?HotCacheTimeIXFR,pid=[],ioc_type="mixed",keep_in_cache=false}|WhiteLists],Sources,RPZ);
 read_config3([{source,{Name,AXFR,IXFR,REGEX,UserID,Max_Count}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
-  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX,userid=UserID,max_ioc=Max_Count,hotcache_time=?HotCacheTime,hotcacheixfr_time=?HotCacheTimeIXFR}|Sources],RPZ);
-
+  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX,userid=UserID,max_ioc=Max_Count,hotcache_time=?HotCacheTime,hotcacheixfr_time=?HotCacheTimeIXFR,pid=[],ioc_type="mixed",keep_in_cache=false}|Sources],RPZ);
 %%% With UserId, max count, hotcache_time, hotcacheixfr_time
 read_config3([{whitelist,{Name,AXFR,REGEX,UserID,Max_Count,HotCacheTime,HotCacheTimeIXFR}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
-  read_config3(REST,RType,Srv,Keys,Key_Groups,[#source{name=Name,axfr_url=AXFR,regex=REGEX,userid=UserID,max_ioc=Max_Count,hotcache_time=HotCacheTime,hotcacheixfr_time=HotCacheTimeIXFR}|WhiteLists],Sources,RPZ);
+  read_config3(REST,RType,Srv,Keys,Key_Groups,[#source{name=Name,axfr_url=AXFR,regex=REGEX,userid=UserID,max_ioc=Max_Count,hotcache_time=HotCacheTime,hotcacheixfr_time=HotCacheTimeIXFR,pid=[]}|WhiteLists],Sources,RPZ);
 read_config3([{source,{Name,AXFR,IXFR,REGEX,UserID,Max_Count,HotCacheTime,HotCacheTimeIXFR}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
-  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX,userid=UserID,max_ioc=Max_Count,hotcache_time=HotCacheTime,hotcacheixfr_time=HotCacheTimeIXFR}|Sources],RPZ);
+  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX,userid=UserID,max_ioc=Max_Count,hotcache_time=HotCacheTime,hotcacheixfr_time=HotCacheTimeIXFR,pid=[],ioc_type="mixed",keep_in_cache=false}|Sources],RPZ);
+
+%%% TODO remove old configs
+%%% with ioc_type, keep_in_cache added on 2021-08-31
+read_config3([{whitelist,{Name,AXFR,REGEX,UserID,Max_Count,HotCacheTime,HotCacheTimeIXFR,IocType,KeepInCache}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
+  read_config3(REST,RType,Srv,Keys,Key_Groups,[#source{name=Name,axfr_url=AXFR,regex=REGEX,userid=UserID,max_ioc=Max_Count,hotcache_time=HotCacheTime,hotcacheixfr_time=HotCacheTimeIXFR,pid=[],ioc_type=IocType,keep_in_cache=KeepInCache}|WhiteLists],Sources,RPZ);
+read_config3([{source,{Name,AXFR,IXFR,REGEX,UserID,Max_Count,HotCacheTime,HotCacheTimeIXFR,IocType,KeepInCache}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
+  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX,userid=UserID,max_ioc=Max_Count,hotcache_time=HotCacheTime,hotcacheixfr_time=HotCacheTimeIXFR,pid=[],ioc_type=IocType,keep_in_cache=KeepInCache}|Sources],RPZ);
 
 
 read_config3([{rpz,{Zone, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards, Action, AKeys, IOCType, AXFR_Time, IXFR_Time, Sources, NotifyList, Whitelist}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,RPZ) ->
@@ -249,7 +280,7 @@ read_config3([{rpz,{Zone, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards,
   end,
   read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,[#rpz{zone=ZoneB, zone_str=Zone, soa_timers=SOATimers, cache=list_to_binary(Cache), wildcards=list_to_binary(Wildcards), action=ZAction, akeys=AKeysB, ioc_type=list_to_binary(IOCType), axfr_time=AXFR_Time, ixfr_time=IXFR_Time, sources=Sources, notifylist=NotifyListIP, whitelist=Whitelist, serial=Serial, status=Status, update_time=Update_time, ixfr_update_time=IXFR_Update_time, ixfr_nz_update_time=NZ_Update_Time, serial_ixfr=Serial_IXFR, key_groups=KeyGroups, ioc_count=IOC_count, rule_count=Rules_count}|RPZ]);
 
-read_config3([],startup,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)  ->
+read_config3([],startup,Srv,Keys,_Key_Groups,WhiteLists,Sources,RPZ)  ->
 	Keys_V = [ validateCFGKeys(Y) || Y <- Keys ],
   [ ets:insert_new(cfg_table, {[key,X#key.name_bin],X#key.name,X#key.alg,X#key.key}) || X <- Keys_V ],
 	[ ets:insert_new(cfg_table, {[key_group,Y,Z],Z}) || {Y,Z} <- lists:flatten([ gen_group_array(Y#key.name_bin,Y#key.key_groups) || Y <- Keys_V ]) ],
@@ -269,7 +300,7 @@ read_config3([],startup,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)  ->
   {ok,RPZ,Keys,Srv};
 
 % Update TSIG Keys w/o refreshing zones.
-read_config3([],updTkeys,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)  -> %Simplify key management with key_groups
+read_config3([],updTkeys,Srv,Keys,_Key_Groups,_WhiteLists,_Sources,RPZ)  -> %Simplify key management with key_groups
 % update TKEYs
   Keys_C=ets:match(cfg_table, {[key,'$1'],'$2','$3','$4'}),
   Keys_V=[ validateCFGKeys(Y) || Y <- Keys ],
@@ -287,7 +318,7 @@ read_config3([],updTkeys,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)  -> %Simpli
   [ ets:update_element(cfg_table, [rpz,X#rpz.zone], [{3, X#rpz{akeys=(lists:keyfind(X#rpz.zone,3,RPZ))#rpz.akeys}}]) || X <- RPZ_C ],
   ok;
 
-read_config3([],reload,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)  ->
+read_config3([],reload,Srv,Keys,_Key_Groups,WhiteLists,Sources,RPZ)  ->
   RPZ_C=[ X || [X] <- ets:match(cfg_table, {[rpz,'_'],'_','$3'})],
   [ ets:update_element(cfg_table, [rpz,X#rpz.zone], [{3, X#rpz{serial_new=-1, status=updating, update_time=-1}}]) || X <- RPZ_C ],
 
@@ -377,7 +408,7 @@ read_config3([UTerm|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
 checkRPZEq(R1,R2) when R1#rpz.zone == R2#rpz.zone,R1#rpz.soa_timers == R2#rpz.soa_timers,R1#rpz.cache == R2#rpz.cache,R1#rpz.wildcards == R2#rpz.wildcards,R1#rpz.action == R2#rpz.action,R1#rpz.ioc_type == R2#rpz.ioc_type,R1#rpz.sources == R2#rpz.sources,R1#rpz.whitelist == R2#rpz.whitelist ->
   true;
 
-checkRPZEq(R1,R2) ->
+checkRPZEq(_R1,_R2) ->
   false.
 
 checkSrcRec(Rec) when Rec#source.name /= undefined ->
@@ -408,6 +439,9 @@ validateCFGRPZ(RPZ,S,W) -> %Check: Sources, Whitelists
 
 gen_group_array(Value, Groups) ->
 	[{X, Value} || X <- Groups].
+
+parse_ixfr_url(AXFR,"") -> %empty IXFR
+  AXFR;
 
 parse_ixfr_url(AXFR,IXFR) ->
   [ if X == "[:AXFR:]" -> AXFR; true -> X end || X <- re:split(IXFR,"(\\[:[^:]+:\\])",[{return,list},trim]), X /=[]].
@@ -513,7 +547,7 @@ update_zone_inc(Zone) ->
   %io:fwrite(group_leader(),"Zone ~p IOC  ~p ~n",[Zone#rpz.zone_str,IOC]),
   Pid=self(),
 	ioc2rpz_fun:logMessage("Process PID ~p incremental update ~p started ~n",[Pid, Zone#rpz.zone_str]),
-  NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[],['true']}]),
+  NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','_'},'$2','$3'},[],['true']}]),
   CTime=ioc2rpz_fun:curr_serial_60(), %erlang:system_time(seconds),
   ioc2rpz_fun:logMessage("Updating zone ~p inc. Last IXFR update ~p seconds ago, last non-zero update ~p seconds ago~n",[Zone#rpz.zone_str,(CTime - Zone#rpz.ixfr_update_time),(CTime-Zone#rpz.ixfr_nz_update_time)]),
   ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=updating, ixfr_update_time=CTime, pid=Pid}}]),
@@ -529,7 +563,7 @@ update_zone_inc(Zone) ->
 					?logDebugMSG("Rebuilding AXFR zone ~p. New IOCs ~p~n",[Zone#rpz.zone_str,NewIOCs]),
           {ok, NRules, NIOCs} = rebuild_axfr_zone(Zone#rpz{serial=CTime}),
 					?logDebugMSG("AXFR zone ~p was rebuilded. ~p rules ~p indicators. Parsed ~p indicators.~n",[Zone#rpz.zone_str, NRules, NIOCs,length(IOC)]),
-          NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[],['true']}]),
+          NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','_'},'$2','$3'},[],['true']}]),
           ioc2rpz_fun:logMessage("Zone ~p records before ~p after ~p. ~n",[Zone#rpz.zone_str, NRbefore, NRafter]),
           ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, serial=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, pid=undefined, ioc_count=NIOCs, rule_count=NRules}}]),
           ioc2rpz_db:delete_db_pkt(Zone),
@@ -544,7 +578,8 @@ update_zone_inc(Zone) ->
 
 rebuild_axfr_zone(Zone) ->
   IOCs = ioc2rpz_db:read_db_record(Zone,0,active),
-  IOC = [{X,Exp} || [X,_,Exp] <- IOCs],
+  %ioc2rpz_fun:logMessage("rebuild AXFR IOCs ~p ~n",[IOCs]),
+  IOC = [{X,Exp,IoCType} || [X,_,Exp,IoCType] <- IOCs],
   [[NSServ,MailAddr|_Rest]] = ets:match(cfg_table,{srv,'$2','$3','$4','$5','$6','$7'}),
   SOA = <<NSServ/binary,MailAddr/binary,(ioc2rpz_fun:curr_serial()):32,(Zone#rpz.soa_timers)/binary>>,
   SOAREC = <<?ZNameZip, ?T_SOA:16, ?C_IN:16, 604800:32, (byte_size(SOA)):16, SOA/binary>>, % 16#c00c:16 - Zone name/request is always at this location (10 bytes from DNSID)
