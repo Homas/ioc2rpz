@@ -764,12 +764,13 @@ send_packets(Socket,[], [], 0, _ACount, _Zip, PktH, Questions, SOAREC,NSRec,Zone
     end,
     %PktLen = byte_size(Pkt1),
     %Pkt2 = [<<PktLen:16>>,Pkt1], %send, cache, sendNcache, sendNhotcache
+    ioc2rpz_fun:logMessage("Empty zone. CNT ~p ~n", [Cnt]),
     send_dns(Socket,Pkt1, [Proto,addlen]);
     true -> ok
   end,
   %if IXFR -> пустой зоны должно не быть, но на всякий случай можно предусмотреть передачу только SOA
   if (DBOp == cache) or (DBOp == sendNcache) ->
-    ioc2rpz_db:write_db_pkt(Zone, {0,3,0,0, []});
+    ioc2rpz_db:write_db_pkt(Zone, {0,0,0,0, []}); % was 0,3,0,0 <- 3 was wrong here because we didn't add SOA/NS/SOA to the empty zone
     true -> ok
   end,
   if DBOp == sendNhotcache ->
@@ -824,7 +825,7 @@ send_packets(Socket,[], Pkt, ACount, _PSize, _Zip, PktH, Questions, SOAREC,NSREC
     {0, true} -> PktF=[SOAREC,NSREC,Pkt], Cnt=3;
     _Else -> PktF=Pkt, Cnt=1
   end,
-  %ioc2rpz_fun:logMessage("Zone ~p, Last packet ACOUNT ~p, packets ~p ~n",[Zone#rpz.zone_str,ACount,(PktN+1)]), %TODO Debug
+  %ioc2rpz_fun:logMessage("Zone ~p, Last packet ACOUNT ~p, packets ~p, Cnt ~p ~n",[Zone#rpz.zone_str,ACount,(PktN+1),Cnt]), %TODO Debug
   if (DBOp == send) or (DBOp == sendNcache) or (DBOp == sendNhotcache) or (DBOp == ixfr) ->
     if TSIG /= [] ->
       {ok,TSIGRR,_}=add_TSIG(list_to_binary([PktH, <<(ACount+Cnt):16,0:16,0:16>>, Questions, PktF, SOAREC]),TSIG),

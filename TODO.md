@@ -1,22 +1,22 @@
 ## Bugs
+- [ ] Check zone refresh time when the SOA record is requested (different vs axfr)
 - [ ] Take a look on the bugs mentioned in REST section
+- [x] Validate an empty zone response - wrong RR count 6 vs 3
+- [ ] If a TSIG is not auth. different responses on SOA and AXFR
 
 ## Core / DNS
-- [x] Migrate crypto:hmac/3 (depricated) to crypto:mac/4
-- [x] Upgrade Cowboy
+- [ ] DNS requests rate limiting
 - [ ] Sample zone is broken
 - [ ] If IXFR source not set or equal AXFR - get removed records for IXFR
 - [ ] Force RPZ, Source refresh
 - [ ] RPZ from RPZs
 - [ ] simple permissions model
 - [ ] REST API rate limiting
-- [ ] DNS requests rate limiting
 - [ ] HotCache optimization if refresh time less than hotcache storage time
 - [ ] Zone update - flush hot cache
 - [x] Enforce domain validation. Discard indicators with wrong chars
   - [ ] (ioc2rpz:clean_labels). Performance should be validated.
 - [ ] , A and AAAA requests. Optional A/AAAA support is added to be able to access the server via unique hostnames. In that case ioc2rpz behaves as an authoritative server
-- [x] upgrade to tls1.3 (supported by Erlang)
 - [ ] RPZ storage type: ets, mnesia
 - [ ] Mnesia for storage (and auto creation)
 https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-for-mnesia
@@ -38,7 +38,6 @@ https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-
 - [ ] Handle RPZ update if one of a sources is not availble or a recent update returned significatnly low number of indicators
 
 ## Sources
-- [x] Add a script for RPZ via "shell:"
 - [ ] Simultanious source downloads
 - [ ] Add source PostreSQL, MySQL via "shell:"
 - [/] Dedup IoC from different sources with different expiration dates
@@ -59,7 +58,6 @@ https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-
 
 ## RPZ
 - [ ] warm cache in mnesia
-- [x] validate if source is downloading before trying to get it again
 - [ ] Monitor significant drop in # of IoCs and if detected - postpone an update to 1 - 3 IXF cycles or specified time
 - [ ] RPZ by source intersection
 - [ ] Max # of IOCs
@@ -67,7 +65,6 @@ https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-
 - [ ] Statistics per zone (# records, last update, # AXFR, # IXFR, last axfr update time, avg axfr update time, last ixfr update time, avg ixfr update time)
 - [ ] RPZ behavior: ignore unreachable sources, use old data for unreachable sources, do not update the zone
 - [ ] Additional local records: ptr, srv, mx etc
-- [X] Replaced by RPZ from RPZs ----- An action per source: {"",action,locdata} //default action ,{"source_name",action,locdata}
 - [ ] RPZ transfer rate limiting
 
 - [ ] (2) FDateTime,ToDateTime,FDateTimeZ,ToDateTimeZ + support them for AXFR  
@@ -91,17 +88,7 @@ https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-
 - [ ] DNS health check requests
 - [ ] Disable MGMT via DNS (update ioc2rpz.gui first) - default behaviour
 
-
 ## Unsorted
-- [ ] Performance testing vs bind:
-  - [ ] 1 core/8GB RAM: start time, zone transfer time, zone size, CPU, Memory
-    - [ ] 100k rules
-    - [ ] 1M rules
-    - [ ] 10M rules
-  - [ ] 4 cores/32 GB RAM: start time, zone transfer time, zone size
-    - [ ] 100k rules
-    - [ ] 1M rules
-    - [ ] 10M rules
 - [ ] Switch from IXFR cache to Sources cache. IXFR cache allows you to support less zone updates but IOCs can be stored multiple times. Sources cache will contain duplicate IOCs from the same source but RPZs will be updated more frequently (looks like it is not bad).
   - [ ] (3) Share IOC between the feeds in IXFR table (do not forget about different whitelists)
 
