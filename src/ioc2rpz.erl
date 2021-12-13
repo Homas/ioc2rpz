@@ -775,7 +775,7 @@ send_packets(Socket,[], [], 0, _ACount, _Zip, PktH, Questions, SOAREC,NSRec,Zone
   end,
   if DBOp == sendNhotcache ->
     CTime=ioc2rpz_fun:curr_serial_60(),%erlang:system_time(seconds),
-    ets:insert(rpz_hotcache_table, {{pkthotcache,Zone#rpz.zone,PktN},CTime, term_to_binary({0,3,0,0, []},[{compressed,?Compression}])});
+    ets:insert(rpz_hotcache_table, {{pkthotcache,Zone#rpz.zone,PktN},CTime, term_to_binary({0,0,0,0, []},[{compressed,?Compression}])}); %looks like the same issue as above was 0,3,0,0
     true -> ok
   end,
 	{ok, 0, 0};
