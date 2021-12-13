@@ -19,7 +19,7 @@
 -include_lib("ioc2rpz.hrl").
 -export([logMessage/2,logMessageCEF/2,strs_to_binary/1,curr_serial/0,curr_serial_60/0,constr_ixfr_url/3,ip_to_bin/1,read_local_actions/1,split_bin_bytes/2,split_tail/2,rsplit_tail/2,
          bin_to_lowcase/1,ip_in_list/2,intersection/2,bin_to_hexstr/1,conv_to_Mb/1,q_class/1,q_type/1,split/2,msg_CEF/1,base64url_decode/1,get_cipher_suites/1,
-         str_to_ip/1]).
+         str_to_ip/1,requests_rate_limit/1]).
 
 logMessage(Message, Vars) ->
   logMessage(group_leader(), Message, Vars).
@@ -287,6 +287,22 @@ get_cipher_suites(TLSVersion) when TLSVersion=="tlsv1.2";TLSVersion=="tlsv1.3";T
 get_cipher_suites(TLSVersion) when TLSVersion=="tlsv1.2";TLSVersion=="tlsv1.3";TLSVersion=="dtlsv1.2";TLSVersion=="tlsv1.1" -> %'tlsv1.2', 'tlsv1.3'
   logMessage("unsuported TLS version ~s ~n", [TLSVersion]),
   ssl:cipher_suites(default, 'tlsv1.2').
+
+%%%
+%%%rate limit requests
+%%%
+requests_rate_limit({Tsig,Zone,axfr,_Proto}=Request) ->
+  %pull atomic ref by id (tsig+zone+axfr)  from a table ets.new(@ets_table, [:named_table, :ordered_set, :public]) atomics monotonic_time(:millisecond)
+  %update and calculate atomic 1m, 5m, 1h, 1d
+  %ets:insert_new(cfg_table, {cfg_file,Filename}),
+  %TODO 1. save atomic in state variables, if not found - check ets cfg_table
+  %response if there are violations with the violation type
+  ok;
+requests_rate_limit({Tsig,Zone,_Type,_Proto}=Request) ->
+  ok.
+%%%
+%%%END rate limit requests
+%%%
 
 %%%%
 %%%% EUnit tests

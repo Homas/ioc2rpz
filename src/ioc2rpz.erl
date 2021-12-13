@@ -687,9 +687,9 @@ send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,_RH,_Rest,Zone,?T_IXFR,NS
   SOARCL = <<NSServ/binary,MailAddr/binary,(SOA#dns_SOA_RR.serial):32,(Zone#rpz.soa_timers)/binary>>,
   SOAREC = <<?ZNameZip, ?T_SOA:16, ?C_IN:16, 604800:32, (byte_size(SOAR)):16, SOAR/binary>>, % 16#c00c:16 - Zone name/request is always at this location (10 bytes from DNSID)
   SOARECCL = <<?ZNameZip, ?T_SOA:16, ?C_IN:16, 604800:32, (byte_size(SOARCL)):16, SOARCL/binary>>, % 16#c00c:16 - Zone name/request is always at this location (10 bytes from DNSID)
-  IOCexp=[ {X,Z} || [X,_Y,Z] <- ioc2rpz_db:read_db_record(Zone,SOA#dns_SOA_RR.serial,expired) ],
-  IOCnew=[ {X,Z} || [X,_Y,Z] <- ioc2rpz_db:read_db_record(Zone,SOA#dns_SOA_RR.serial,new)],
-%  ioc2rpz_fun:logMessage("Serial ~p /= Serial IXFR ~p Zone ~p Expired IOC ~p, New IOC ~p ~n",[Zone#rpz.serial,Zone#rpz.serial_ixfr,Zone#rpz.zone_str,IOCexp,IOCnew]),
+  IOCexp=[ {X,Exp,Z} || [X,_,Exp,Z] <- ioc2rpz_db:read_db_record(Zone,SOA#dns_SOA_RR.serial,expired) ],
+  IOCnew=[ {X,Exp,Z} || [X,_,Exp,Z] <- ioc2rpz_db:read_db_record(Zone,SOA#dns_SOA_RR.serial,new)],
+%  ioc2rpz_fun:logMessage("Serial ~p /= Serial IXFR ~p, IXFR=~p Zone ~p Expired IOC ~p, New IOC ~p ~n",[Zone#rpz.serial,Zone#rpz.serial_ixfr,SOA#dns_SOA_RR.serial,Zone#rpz.zone_str,IOCexp,IOCnew]),
 
 % {ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3})$"), %
 	{ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}(\\/[0-9]{1,3})?)$|(:)"),
