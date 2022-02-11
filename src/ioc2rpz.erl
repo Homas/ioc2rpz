@@ -44,7 +44,11 @@ handle_cast(accept, State = #state{socket=ListenSocket, tls=no, params=[Pid,Proc
 %%%TLS accept
 handle_cast(accept, State = #state{socket=ListenSocket, tls=yes, params=[Pid,Proc]}) ->
   {ok, TLSTransportSocket} = ssl:transport_accept(ListenSocket),
-  {ok, AcceptSocket} = ssl:handshake(TLSTransportSocket),
+  {Respond, AcceptSocket} = case ssl:handshake(TLSTransportSocket) of
+    {ok, ASocket} -> {noreply, ASocket};
+    {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. TLS accept error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, Reason]),
+                       {stop, ListenSocket}
+  end,
   %% Boot a new listener to replace this one.
   ioc2rpz_proc_sup:start_socket(Proc),
   {noreply, State#state{socket=AcceptSocket, tls=yes, params=[Pid,Proc]}};
