@@ -36,22 +36,26 @@ init([Socket,[Pid,Proc,TLS]]) ->
 
 %%%TCP accept
 handle_cast(accept, State = #state{socket=ListenSocket, tls=no, params=[Pid,Proc]}) ->
-  {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
-  %% Boot a new listener to replace this one.
+  {Respond, AcceptSocket} = case gen_tcp:accept(ListenSocket) of
+    {ok, ASocket} -> {noreply, ASocket};
+    {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. TCP accept error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, Reason]), {stop, ListenSocket}
+  end,
   ioc2rpz_proc_sup:start_socket(Proc),
-  {noreply, State#state{socket=AcceptSocket, tls=no, params=[Pid,Proc]}};
+  {Respond, State#state{socket=AcceptSocket, tls=no, params=[Pid,Proc]}};
 
 %%%TLS accept
 handle_cast(accept, State = #state{socket=ListenSocket, tls=yes, params=[Pid,Proc]}) ->
-  {ok, TLSTransportSocket} = ssl:transport_accept(ListenSocket),
-  {Respond, AcceptSocket} = case ssl:handshake(TLSTransportSocket) of
-    {ok, ASocket} -> {noreply, ASocket};
-    {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. TLS accept error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, Reason]),
-                       {stop, ListenSocket}
+  case ssl:transport_accept(ListenSocket) of
+    {ok, TLSTransportSocket} ->
+        {Respond, AcceptSocket} = case ssl:handshake(TLSTransportSocket) of
+          {ok, ASocket} -> {noreply, ASocket};
+          {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. TLS accept error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, Reason]), {stop, ListenSocket}
+        end;
+    {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. TLS accept error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, Reason]), {Respond, AcceptSocket} = {stop, ListenSocket}
   end,
   %% Boot a new listener to replace this one.
   ioc2rpz_proc_sup:start_socket(Proc),
-  {noreply, State#state{socket=AcceptSocket, tls=yes, params=[Pid,Proc]}};
+  {Respond, State#state{socket=AcceptSocket, tls=yes, params=[Pid,Proc]}};
 
 handle_cast(_, State) ->
   {noreply, State}.
