@@ -7,3 +7,7 @@
 ## Mozilla/FireFox canary domain
 use-application-dns.net
 
+# Apple's iCloud Private Relay
+# https://developer.apple.com/support/prepare-your-network-for-icloud-private-relay/
+mask.icloud.com
+mask-h2.icloud.com
