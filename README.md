@@ -402,7 +402,7 @@ You can find other IOC feeds on the wiki-page: https://github.com/Homas/ioc2rpz/
 You can support ioc2rpz project and ioc2rpz community (https://ioc2rpz.net)  via [GitHub Sponsor](https://github.com/sponsors/Homas) (recurring payments). To make one time donation you can use [PayPal](https://paypal.me/ioc2rpz) or Zelle (our email: zelle [at] ioc2rpz [.] net).
 
 # Supporters
-Shout out to **craSH** who supports my projects on [GitHub Sponsor](https://github.com/sponsors/Homas).
+Shout out to **craSH** and **rrbone** who support my projects on [GitHub Sponsor](https://github.com/sponsors/Homas).
 
 # Contact us
 You can contact us by email: feedback(at)ioc2rpz[.]net or in [Telegram](https://t.me/ioc2rpz).
