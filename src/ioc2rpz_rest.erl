@@ -163,7 +163,17 @@ srv_mgmt(Req, State, Format) when State#state.op == update_rpz -> %Update an RPZ
 	RPZ = binary_to_list(cowboy_req:binding(rpz, Req)),
 	Zones = ets:match(cfg_table,{[rpz,'_'],'_','$4'}),
 	ZoneS = case [ X || [X] <- Zones, X#rpz.zone_str == RPZ ] of
-		[X] -> spawn_opt(ioc2rpz_sup,update_zone_full,[X],[{fullsweep_after,0}]), true;
+		[X] ->
+      %X#rpz.sources
+      %ioc2rpz_fun:logMessage("deleting ~p source from the hot cache~n",[Source]),
+      %ets:delete(rpz_hotcache_table, {Source,axfr}), ets:delete(rpz_hotcache_table, {Source,ixfr}),
+
+      ioc2rpz_fun:logMessage("debugging ~p ~n",[X#rpz.sources]),
+
+      [ ioc2rpz_fun:logMessage("deleting ~p source~n",[Z]) || Z <- X#rpz.sources ],
+      [ ets:delete(rpz_hotcache_table, {Z,Y}) || Z <- X#rpz.sources, Y <-[axfr,ixfr] ],
+
+      spawn_opt(ioc2rpz_sup,update_zone_full,[X],[{fullsweep_after,0}]), true;
 		[] -> false
 	end,
 	{Body,Req0} = case {ZoneS, Format} of

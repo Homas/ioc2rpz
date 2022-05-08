@@ -3,6 +3,7 @@
 - [ ] Take a look on the bugs mentioned in REST section
 - [x] Validate an empty zone response - wrong RR count 6 vs 3
 - [ ] If a TSIG is not auth. different responses on SOA and AXFR
+- [ ] If a source was removed, RPZ will fail - add validation/clean up
 
 ## Core / DNS
 - [ ] DNS requests rate limiting
