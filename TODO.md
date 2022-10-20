@@ -21,7 +21,6 @@
 - [ ] RPZ storage type: ets, mnesia
 - [ ] Mnesia for storage (and auto creation)
 https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-for-mnesia
-
 - [ ] Redo AXFR logs
 - [ ] Access to the hotcache and the cfg_table via FUNs
 - [ ] (1) Terminate updating zones during config reload
@@ -41,7 +40,6 @@ https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-
 ## Sources
 - [ ] Simultanious source downloads
 - [ ] Add source PostreSQL, MySQL via "shell:"
-- [/] Dedup IoC from different sources with different expiration dates
 - [ ] RPZ action per source
 - [ ] (2) Source based on files check by mod.date and size -> read by chunks
 
@@ -72,7 +70,6 @@ https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-
 [:FDateTime:] = "2017-10-13 13:13:13", [:FDateTimeZ:] = "2017-10-13T13:13:13Z"  
 [:ToDateTime:] = "2017-10-13 13:13:13", [:ToDateTimeZ:] = "2017-10-13T13:13:13Z"
 
-
 ## Servers
 - [ ] Enforcement max # of IOCs
 - [ ] Secondary DNS via MNESIA and distributed
@@ -87,7 +84,7 @@ https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-
 
 ## Management
 - [ ] DNS health check requests
-- [ ] Disable MGMT via DNS (update ioc2rpz.gui first) - default behaviour
+- [/] Disable MGMT via DNS (update ioc2rpz.gui first) - default behaviour
 
 ## Unsorted
 - [ ] Switch from IXFR cache to Sources cache. IXFR cache allows you to support less zone updates but IOCs can be stored multiple times. Sources cache will contain duplicate IOCs from the same source but RPZs will be updated more frequently (looks like it is not bad).
