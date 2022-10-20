@@ -36,18 +36,26 @@ init([Socket,[Pid,Proc,TLS]]) ->
 
 %%%TCP accept
 handle_cast(accept, State = #state{socket=ListenSocket, tls=no, params=[Pid,Proc]}) ->
-  {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
-  %% Boot a new listener to replace this one.
+  {Respond, AcceptSocket} = case gen_tcp:accept(ListenSocket) of
+    {ok, ASocket} -> {noreply, ASocket};
+    {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. TCP accept error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, Reason]), {stop, ListenSocket}
+  end,
   ioc2rpz_proc_sup:start_socket(Proc),
-  {noreply, State#state{socket=AcceptSocket, tls=no, params=[Pid,Proc]}};
+  {Respond, State#state{socket=AcceptSocket, tls=no, params=[Pid,Proc]}};
 
 %%%TLS accept
 handle_cast(accept, State = #state{socket=ListenSocket, tls=yes, params=[Pid,Proc]}) ->
-  {ok, TLSTransportSocket} = ssl:transport_accept(ListenSocket),
-  {ok, AcceptSocket} = ssl:handshake(TLSTransportSocket),
+  case ssl:transport_accept(ListenSocket) of
+    {ok, TLSTransportSocket} ->
+        {Respond, AcceptSocket} = case ssl:handshake(TLSTransportSocket) of
+          {ok, ASocket} -> {noreply, ASocket};
+          {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. TLS accept error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, Reason]), {stop, ListenSocket}
+        end;
+    {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. TLS accept error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, Reason]), {Respond, AcceptSocket} = {stop, ListenSocket}
+  end,
   %% Boot a new listener to replace this one.
   ioc2rpz_proc_sup:start_socket(Proc),
-  {noreply, State#state{socket=AcceptSocket, tls=yes, params=[Pid,Proc]}};
+  {Respond, State#state{socket=AcceptSocket, tls=yes, params=[Pid,Proc]}};
 
 handle_cast(_, State) ->
   {noreply, State}.
@@ -492,7 +500,9 @@ send_REQST(Socket, DNSId, Opt, RH, Question, TSIG, Proto) ->
 
 %Send SOA
 send_SOA(Socket, Zone, DNSId, OptB, OptE, Question, MailAddr, NSServ, TSIG, Proto) ->
-  SOA = <<NSServ/binary,MailAddr/binary,(Zone#rpz.serial):32,7200:32,3600:32,259001:32,7200:32>>,
+
+  SOA = <<NSServ/binary,MailAddr/binary,(Zone#rpz.serial):32,(Zone#rpz.soa_timers)/binary>>,
+%%%  SOA = <<NSServ/binary,MailAddr/binary,(Zone#rpz.serial):32,7200:32,3600:32,259001:32,7200:32>>,
   SOAREC = <<?ZNameZip, ?T_SOA:16, ?C_IN:16, 604800:32, (byte_size(SOA)):16, SOA/binary>>,
   <<Opcode:4,_:1,TCRD:2>> = <<OptB:7>>,
   if TSIG /= [] ->
@@ -687,9 +697,9 @@ send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,_RH,_Rest,Zone,?T_IXFR,NS
   SOARCL = <<NSServ/binary,MailAddr/binary,(SOA#dns_SOA_RR.serial):32,(Zone#rpz.soa_timers)/binary>>,
   SOAREC = <<?ZNameZip, ?T_SOA:16, ?C_IN:16, 604800:32, (byte_size(SOAR)):16, SOAR/binary>>, % 16#c00c:16 - Zone name/request is always at this location (10 bytes from DNSID)
   SOARECCL = <<?ZNameZip, ?T_SOA:16, ?C_IN:16, 604800:32, (byte_size(SOARCL)):16, SOARCL/binary>>, % 16#c00c:16 - Zone name/request is always at this location (10 bytes from DNSID)
-  IOCexp=[ {X,Z} || [X,_Y,Z] <- ioc2rpz_db:read_db_record(Zone,SOA#dns_SOA_RR.serial,expired) ],
-  IOCnew=[ {X,Z} || [X,_Y,Z] <- ioc2rpz_db:read_db_record(Zone,SOA#dns_SOA_RR.serial,new)],
-%  ioc2rpz_fun:logMessage("Serial ~p /= Serial IXFR ~p Zone ~p Expired IOC ~p, New IOC ~p ~n",[Zone#rpz.serial,Zone#rpz.serial_ixfr,Zone#rpz.zone_str,IOCexp,IOCnew]),
+  IOCexp=[ {X,Exp,Z} || [X,_,Exp,Z] <- ioc2rpz_db:read_db_record(Zone,SOA#dns_SOA_RR.serial,expired) ],
+  IOCnew=[ {X,Exp,Z} || [X,_,Exp,Z] <- ioc2rpz_db:read_db_record(Zone,SOA#dns_SOA_RR.serial,new)],
+%  ioc2rpz_fun:logMessage("Serial ~p /= Serial IXFR ~p, IXFR=~p Zone ~p Expired IOC ~p, New IOC ~p ~n",[Zone#rpz.serial,Zone#rpz.serial_ixfr,SOA#dns_SOA_RR.serial,Zone#rpz.zone_str,IOCexp,IOCnew]),
 
 % {ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3})$"), %
 	{ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}(\\/[0-9]{1,3})?)$|(:)"),
@@ -764,17 +774,18 @@ send_packets(Socket,[], [], 0, _ACount, _Zip, PktH, Questions, SOAREC,NSRec,Zone
     end,
     %PktLen = byte_size(Pkt1),
     %Pkt2 = [<<PktLen:16>>,Pkt1], %send, cache, sendNcache, sendNhotcache
+    ioc2rpz_fun:logMessage("Empty zone. CNT ~p ~n", [Cnt]),
     send_dns(Socket,Pkt1, [Proto,addlen]);
     true -> ok
   end,
   %if IXFR -> пустой зоны должно не быть, но на всякий случай можно предусмотреть передачу только SOA
   if (DBOp == cache) or (DBOp == sendNcache) ->
-    ioc2rpz_db:write_db_pkt(Zone, {0,3,0,0, []});
+    ioc2rpz_db:write_db_pkt(Zone, {0,0,0,0, []}); % was 0,3,0,0 <- 3 was wrong here because we didn't add SOA/NS/SOA to the empty zone
     true -> ok
   end,
   if DBOp == sendNhotcache ->
     CTime=ioc2rpz_fun:curr_serial_60(),%erlang:system_time(seconds),
-    ets:insert(rpz_hotcache_table, {{pkthotcache,Zone#rpz.zone,PktN},CTime, term_to_binary({0,3,0,0, []},[{compressed,?Compression}])});
+    ets:insert(rpz_hotcache_table, {{pkthotcache,Zone#rpz.zone,PktN},CTime, term_to_binary({0,0,0,0, []},[{compressed,?Compression}])}); %looks like the same issue as above was 0,3,0,0
     true -> ok
   end,
 	{ok, 0, 0};
@@ -824,7 +835,7 @@ send_packets(Socket,[], Pkt, ACount, _PSize, _Zip, PktH, Questions, SOAREC,NSREC
     {0, true} -> PktF=[SOAREC,NSREC,Pkt], Cnt=3;
     _Else -> PktF=Pkt, Cnt=1
   end,
-  %ioc2rpz_fun:logMessage("Zone ~p, Last packet ACOUNT ~p, packets ~p ~n",[Zone#rpz.zone_str,ACount,(PktN+1)]), %TODO Debug
+  %ioc2rpz_fun:logMessage("Zone ~p, Last packet ACOUNT ~p, packets ~p, Cnt ~p ~n",[Zone#rpz.zone_str,ACount,(PktN+1),Cnt]), %TODO Debug
   if (DBOp == send) or (DBOp == sendNcache) or (DBOp == sendNhotcache) or (DBOp == ixfr) ->
     if TSIG /= [] ->
       {ok,TSIGRR,_}=add_TSIG(list_to_binary([PktH, <<(ACount+Cnt):16,0:16,0:16>>, Questions, PktF, SOAREC]),TSIG),
