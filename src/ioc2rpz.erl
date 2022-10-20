@@ -500,7 +500,9 @@ send_REQST(Socket, DNSId, Opt, RH, Question, TSIG, Proto) ->
 
 %Send SOA
 send_SOA(Socket, Zone, DNSId, OptB, OptE, Question, MailAddr, NSServ, TSIG, Proto) ->
-  SOA = <<NSServ/binary,MailAddr/binary,(Zone#rpz.serial):32,7200:32,3600:32,259001:32,7200:32>>,
+
+  SOA = <<NSServ/binary,MailAddr/binary,(Zone#rpz.serial):32,(Zone#rpz.soa_timers)/binary>>,
+%%%  SOA = <<NSServ/binary,MailAddr/binary,(Zone#rpz.serial):32,7200:32,3600:32,259001:32,7200:32>>,
   SOAREC = <<?ZNameZip, ?T_SOA:16, ?C_IN:16, 604800:32, (byte_size(SOA)):16, SOA/binary>>,
   <<Opcode:4,_:1,TCRD:2>> = <<OptB:7>>,
   if TSIG /= [] ->
