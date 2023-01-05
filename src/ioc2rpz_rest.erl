@@ -227,18 +227,23 @@ srv_mgmt(Req, State, Format) when State#state.op == stats_source -> % Statistics
 
 srv_mgmt(Req, State, Format) when State#state.op == get_rpz -> % Get RPZ
 	#{peer := {IP, Port}} = Req,
-    ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(230),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
+  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(230),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
 	RPZ = binary_to_list(cowboy_req:binding(rpz, Req)),
 	Zones = ets:match(cfg_table,{[rpz,'_'],'_','$4'}),
   Data = case [ X || [X] <- Zones, X#rpz.zone_str == RPZ ] of
 		[] -> [];
     [Zone] -> ioc2rpz_db:read_db_record(Zone,0,active)
 	end,
-	{Body,Req0} = case {Data, Format} of
-		{[],json} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(138),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {io_lib:format("{\"status\":\"error\",\"msg\":\"RPZ ~s not found\"}\n",[RPZ]),cowboy_req:reply(520, Req)};
-		{[],txt} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(138),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {io_lib:format("status: error\nmsg: RPZ ~s not found\n",[RPZ]),cowboy_req:reply(520, Req)};
-		{_,json} -> {io_lib:format("{\"status\":\"ok\",\"rpz\":\"~s\",\"iocs\":[~s]}\n",[RPZ,ioc2jsonarr(Data)]),Req};
-		{_,txt} -> {lists:flatten([ io_lib:format("~s\n",[binary_to_list(X)]) || [X,_Ser,_Exp,_Type] <- Data]),Req}
+  #{type := Type} = cowboy_req:match_qs([{type, [], <<"both">>}], Req),
+%  erlang:display(Type),
+	{Body,Req0} = case {Data, Format, Type} of
+		{[],json,_} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(138),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {io_lib:format("{\"status\":\"error\",\"msg\":\"RPZ ~s not found\"}\n",[RPZ]),cowboy_req:reply(520, Req)};
+		{[],txt,_} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(138),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {io_lib:format("status: error\nmsg: RPZ ~s not found\n",[RPZ]),cowboy_req:reply(520, Req)};
+		{_,json,_} -> {io_lib:format("{\"status\":\"ok\",\"rpz\":\"~s\",\"iocs\":[~s]}\n",[RPZ,ioc2jsonarr(Data,binary_to_list(Type))]),Req};
+%		{_,txt} -> {lists:flatten([ io_lib:format("~s,~s\n",[binary_to_list(X),Type]) || [X,_Ser,_Exp,Type] <- Data]),Req}
+    {_,txt,<<"fqdn">>} -> {lists:flatten([ io_lib:format("~s\n",[binary_to_list(X)]) || [X,_Ser,_Exp,"fqdn"] <- Data]),Req};
+    {_,txt,<<"ip">>} -> {lists:flatten([ io_lib:format("~s\n",[binary_to_list(X)]) || [X,_Ser,_Exp,"ip"] <- Data]),Req};
+    {_,txt,_} -> {lists:flatten([ io_lib:format("~s\n",[binary_to_list(X)]) || [X,_Ser,_Exp,_Type] <- Data]),Req}
 	end,
 	{Body, Req0, State};
 
@@ -415,17 +420,24 @@ mtuple_to_json(Val,[{Name,Value}|REST]) ->
 mtuple_to_json(Val,[]) ->
     Val.
 
-ioc2jsonarr(IOCs) ->
-    %ioc2rpz_fun:logMessage("~p\n\n",[IOCs]),
-    ioc2jsonarr([],IOCs).
+ioc2jsonarr(IOCs,Type) ->
+%    ioc2rpz_fun:logMessage("~p\n\n",[IOCs]),
+%    erlang:display(IOCs),
+    ioc2jsonarr([],IOCs,Type).
 
-ioc2jsonarr([],[[IOC|_]|REST]) ->
-    ioc2jsonarr(io_lib:format("\"~s\"",[binary_to_list(IOC)]),REST);
+ioc2jsonarr([],[[IOC,_,_,IType]|REST],Type) ->
+  if (IType == Type) or (Type == "both") ->
+    ioc2jsonarr(io_lib:format("\"~s\"",[binary_to_list(IOC)]),REST,Type);
+    true -> ioc2jsonarr([],REST,Type)
+  end;
 
-ioc2jsonarr(Resp,[[IOC|_]|REST]) ->
-    ioc2jsonarr(io_lib:format("\"~s\",",[binary_to_list(IOC)])++Resp,REST);
+ioc2jsonarr(Resp,[[IOC,_,_,IType]|REST],Type) ->
+  if (IType == Type) or (Type == "both") ->
+    ioc2jsonarr(io_lib:format("\"~s\",",[binary_to_list(IOC)])++Resp,REST,Type);
+    true -> ioc2jsonarr(Resp,REST,Type)
+  end;
 
-ioc2jsonarr(Resp,[]) ->
+ioc2jsonarr(Resp,[],_) ->
     Resp.
 
 

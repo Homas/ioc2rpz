@@ -67,8 +67,8 @@ init([Proc,_IPStr,_Proto]) when Proc == rest_tls_sup; Proc == rest_tls6_sup -> %
 				%%%refresh sources (clear cache and load sources)
 				%%%refresh all RPZ
 				{"/api/[:api_ver]/mgmt/terminate", ioc2rpz_rest, [terminate]},
-				{"/api/[:api_ver]/feed/:rpz", ioc2rpz_rest, [get_rpz]},
-				{"/api/[:api_ver]/ioc/:ioc", ioc2rpz_rest, [get_ioc]},
+				{"/api/[:api_ver]/feed/:rpz", ioc2rpz_rest, [get_rpz]}, %pull feed
+				{"/api/[:api_ver]/ioc/:ioc", ioc2rpz_rest, [get_ioc]}, %check ioc
 				{'_', ioc2rpz_rest, [catch_all]}
 					]}]),
 	{ok, _} = cowboy:start_tls(https, [{port, ?PortREST},{certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile}, {ciphers, Ciphers}], #{env => #{dispatch => Dispatch}}),
