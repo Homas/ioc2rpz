@@ -75,11 +75,11 @@ is_authorized(Req, State) ->
 
 
 to_json(Req, State) ->
-  ioc2rpz_fun:logMessage("Req:\n~p\n\nState:\n~p\n\n",[Req,State]),
+%  ioc2rpz_fun:logMessage("Req:\n~p\n\nState:\n~p\n\n",[Req,State]),
 	srv_mgmt(Req, State, json).
 
 to_txt(Req, State) ->
-  ioc2rpz_fun:logMessage("Req:\n~p\n\nState:\n~p\n\n",[Req,State]),
+%  ioc2rpz_fun:logMessage("Req:\n~p\n\nState:\n~p\n\n",[Req,State]),
 	srv_mgmt(Req, State, txt).
 
 %	ioc2rpz_fun:logMessage("Req:\n~p\n\nState:\n~p\n\n",[Req,State]),
