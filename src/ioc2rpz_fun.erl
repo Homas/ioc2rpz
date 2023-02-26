@@ -52,6 +52,10 @@ msg_CEF(109)    -> "|000109|Received DNS response|3|src=~s spt=~p proto=~p qname
 msg_CEF(120)    -> "|000120|RPZ not found|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
 msg_CEF(121)    -> "|000121|RPZ not ready|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
 
+msg_CEF(130)    -> "|000130|RPZ transfer error|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p error=~p~n";
+msg_CEF(131)    -> "|000131|RPZ transfer error. Remote server closed connection|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p~n";
+
+
 msg_CEF(130)    -> "|000130|REST API Basic authentication failed|7|src=~s spt=~p username=~p path=~p msg=~p~n";
 msg_CEF(131)    -> "|000131|REST API Authentication failed|7|src=~s spt=~p path=~p msg=~p~n";
 msg_CEF(135)    -> "|000135|REST MGMT request denied|7|src=~s spt=~p path=~p msg=~p~n";
