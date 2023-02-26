@@ -114,7 +114,7 @@ code_change(_OldVersion, Tab, _Extra) ->
 %% Send a message back to the client
 send_dns(Socket,Pkt,[Proto,Args]) when Proto#proto.proto == tcp, Proto#proto.tls == no ->
   case send_dns_tcp(Socket,Pkt, Args) of
-   {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. send_dns_tcp. error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, Reason]),
+   {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. send_dns_tcp. remote IP ~p error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, ip_to_str(Proto#proto.rip), Reason]),
                       {error, Reason};
    ok -> ok
   end;
@@ -134,12 +134,16 @@ send_dns(Socket,Pkt,[Proto,Args]) when Proto#proto.proto == udp ->
   send_dns_udp(Socket, Proto#proto.rip, Proto#proto.rport, Pkt, Args).
 
 send_dns_tcp(Socket, Pkt, addlen) -> %used to send the first or an only packet
-  gen_tcp:send(Socket, [<<(byte_size(Pkt)):16>>,Pkt]),
-  inet:setopts(Socket, [{active, once}]); %TODO validate the response, if dropped - pass back to remove cached zone
+case gen_tcp:send(Socket, [<<(byte_size(Pkt)):16>>,Pkt]) of
+  ok -> inet:setopts(Socket, [{active, once}]); %TODO validate the response, if dropped - pass back to remove cached zone
+  {error, Reason} -> {error, Reason} %passing a reason if send was failed
+end;
 
 send_dns_tcp(Socket, Pkt, []) -> %used to pass intermediate packets
-  gen_tcp:send(Socket, Pkt),
-  inet:setopts(Socket, [{active, once}]). %TODO validate the response, if dropped - pass back to remove cached zone
+  case gen_tcp:send(Socket, Pkt) of
+    ok -> inet:setopts(Socket, [{active, once}]); %TODO validate the response, if dropped - pass back to remove cached zone
+    {error, Reason} -> {error, Reason} %passing a reason if send was failed
+end.
 
 send_dns_tls(Socket, Pkt, addlen) -> %used to send the first or an only packet
   ssl:send(Socket, [<<(byte_size(Pkt)):16>>,Pkt]),

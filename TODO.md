@@ -6,6 +6,7 @@
 - [ ] If a source was removed, RPZ will fail - add validation/clean up
 
 ## Core / DNS
+- [ ] If connection was closed by remote server - log that instead of "success"
 - [ ] DNS requests rate limiting
 - [ ] Sample zone is broken
 - [ ] If IXFR source not set or equal AXFR - get removed records for IXFR
