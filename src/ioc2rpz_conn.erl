@@ -65,7 +65,7 @@ get_ioc(<<"file:",Filename/binary>> = URL, Retry) ->
   case file:read_file(Filename) of
     {ok, Bin} ->
       {ok, Bin};
-	  {error,Reason} when Retry > 0 ->
+    {error,Reason} when Retry > 0 ->
 	    ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p. Try ~p ~n",[URL, Reason, (?Src_Retry-Retry)]), %TODO timeout and add retry
 			timer:sleep(?Src_Retry_TimeOut*1000),
 			get_ioc(URL, Retry-1);
@@ -76,7 +76,7 @@ get_ioc(<<"file:",Filename/binary>> = URL, Retry) ->
 
 %IOCs are provided by a local script
 get_ioc(<<"shell:",CMD/binary>> = _URL, _Retry) ->
-  {ok, list_to_binary(os:cmd(binary_to_list(CMD)))};
+  {ok, unicode:characters_to_binary(os:cmd(binary_to_list(CMD)))}; %fix for https://github.com/Homas/ioc2rpz/issues/47
 
 %download IOCs from http/https/ftp
 get_ioc(<<Proto:5/bytes,_/binary>> = URL, Retry) when Proto == <<"http:">>;Proto == <<"https">>;Proto == <<"ftp:/">> ->

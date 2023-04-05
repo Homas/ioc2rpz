@@ -492,6 +492,10 @@ load_ixfr_zone_info(ets,Zone) ->
 load_ixfr_zone_info(mnesia,_Zone) ->
   ok.
 
+my_process_is_alive(undefined)->
+  true;
+my_process_is_alive(Pid)->
+  is_process_alive(Pid).
 
 update_all_zones(true) -> %force update all zones
   AllRPZ = ets:match(cfg_table,{[rpz,'_'],'_','$4'}),
@@ -500,7 +504,7 @@ update_all_zones(true) -> %force update all zones
 update_all_zones(false) -> %update expired zones
   CTime=ioc2rpz_fun:curr_serial(),%erlang:system_time(seconds),
   AllRPZ = ets:match(cfg_table,{[rpz,'_'],'_','$4'}),
-  [ spawn_opt(ioc2rpz_sup,update_zone_full,[X],[{fullsweep_after,0}]) || [X] <- AllRPZ,((((X#rpz.update_time + X#rpz.axfr_time) < CTime) and (X#rpz.status /= updating)) or (X#rpz.status == forceAXFR)) and (X#rpz.cache == <<"true">>) ],
+  [ spawn_opt(ioc2rpz_sup,update_zone_full,[X],[{fullsweep_after,0}]) || [X] <- AllRPZ,((((X#rpz.update_time + X#rpz.axfr_time) < CTime) and ((X#rpz.status /= updating) or ((X#rpz.status == updating) and not my_process_is_alive(X#rpz.pid)) )) or (X#rpz.status == forceAXFR)) and (X#rpz.cache == <<"true">>) ],
   [ioc2rpz_fun:logMessage("Start incremental update Zone ~p serial ~p full refresh time ~p, Ctime ~p cache ~p status ~p ~n",[X#rpz.zone_str,X#rpz.ixfr_update_time, X#rpz.ixfr_time,CTime, X#rpz.cache, X#rpz.status]) || [X] <- AllRPZ, ((X#rpz.update_time + X#rpz.axfr_time) > CTime) and ((X#rpz.ixfr_update_time + X#rpz.ixfr_time) < CTime) and (X#rpz.cache == <<"true">>) and (X#rpz.status /= updating) and (X#rpz.ixfr_time /= 0)],
   [ spawn_opt(ioc2rpz_sup,update_zone_inc,[X],[{fullsweep_after,0}]) || [X] <- AllRPZ, ((X#rpz.update_time + X#rpz.axfr_time) > CTime) and ((X#rpz.ixfr_update_time + X#rpz.ixfr_time) < CTime) and (X#rpz.cache == <<"true">>) and (X#rpz.status /= updating) and (X#rpz.ixfr_time /= 0) ],
 	ok.

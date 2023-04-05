@@ -999,13 +999,19 @@ check_source_updating(Source, SRC, Pid) ->
 
 check_source_updating(Source, SRC, Pid, true) -> % if the process is alive - wait 0.5 sec and validate after that
   ioc2rpz_fun:logMessage("~p updates ~p source. ~p is waiting...~n",[Pid, SRC, self()]),
-  timer:sleep(500),
+  timer:sleep(500+rand:uniform(100)),
   check_source_updating(Source, SRC, Pid, is_process_alive(Pid));
 
 check_source_updating(_Source, SRC, Pid, false) -> % if the proces is not alive - check config if someother process grab it and restart validation
+  timer:sleep(500+rand:uniform(100)),
   [[Source]]=ets:match(cfg_table,{[source,SRC],'$2'}),
-  ioc2rpz_fun:logMessage("~p is dead. Got ~p in the config. ~p is waiting...~n",[Pid, Source#source.pid, self()]),
-  check_source_updating(Source, SRC, Source#source.pid).
+  if Pid == Source#source.pid ->
+    ioc2rpz_fun:logMessage("~p is dead. no other process is pulling it. ~p will download it.~n",[Pid, self()]),
+    ets:update_element(cfg_table, [source,SRC], [{2, Source#source{pid=self()}}]);
+    true ->
+      ioc2rpz_fun:logMessage("~p is dead. Got ~p in the config. ~p is waiting...~n",[Pid, Source#source.pid, self()]),
+      check_source_updating(Source, SRC, Source#source.pid)
+  end.
 
 mrpz_from_ioc(Zone,UType) -> %Zone - RPZ zone
   remove_WL(mrpz_from_ioc(Zone#rpz.sources,Zone,UType,[]),mrpz_from_ioc(Zone#rpz.whitelist,Zone,axfr,[])).% -- WL.
