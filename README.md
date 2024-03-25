@@ -1,5 +1,8 @@
-#  ioc2rpz makes your threat intelligence actionable
+#  ioc2rpz™ makes your threat intelligence actionable
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)  
+
+## Short summary
+ioc2rpz™: The DNS Security Solution - ioc2rpz™ is a powerful DNS server that transforms threat indicators into actionable Response Policy Zone (RPZ) feeds. It automates the update process, ensuring your network is protected against the latest threats, including malicious domains and IP addresses. By converting IOC feeds into RPZs, ioc2rpz™ acts as a crucial link between threat intelligence and DNS security, compatible with RPZ-supporting DNS servers like ISC Bind or PowerDNS. Learn more about how ioc2rpz™ can secure your network at ioc2rpz™ official website.
 
 ## Overview
 
@@ -18,51 +21,51 @@ In comparing with traditional network protection solutions a DNS server can hand
 
 Usually indicators of compromise are distributed in plain text but in different formats and only a few providers of IOCs make them available via RPZ.
 
-ioc2rpz is a custom DNS server which automatically converts indicators (e.g. malicious FQDNs, IPs) from various sources into RPZ feeds and automatically maintains/updates them. The feeds can be distributed to any open source and/or commercial DNS servers which support RPZ, e.g. ISC Bind, PowerDNS. You can run your own DNS server with RPZ filtering on a router, desktop, server and even Raspberry Pi. System memory is the only limitation.
+ioc2rpz™ is a custom DNS server which automatically converts indicators (e.g. malicious FQDNs, IPs) from various sources into RPZ feeds and automatically maintains/updates them. The feeds can be distributed to any open source and/or commercial DNS servers which support RPZ, e.g. ISC Bind, PowerDNS. You can run your own DNS server with RPZ filtering on a router, desktop, server and even Raspberry Pi. System memory is the only limitation.
 
-With ioc2rpz you can define your own feeds, actions and prevent undesired communications.
+With ioc2rpz™ you can define your own feeds, actions and prevent undesired communications.
 
-## ioc2rpz is a place where threat intelligence meets DNS
+## ioc2rpz™ is a place where threat intelligence meets DNS
 
-ioc2rpz transforms IOC feeds into response policy zones (RPZ). You can mix feeds to generate a single RPZ or multiple RPZs. Trusted domains and IPs can be whitelisted. ioc2rpz supports expiration of indicators and accordingly rebuilds zones.  
-![Alt ioc2rpz](https://github.com/Homas/ioc2rpz/blob/master/IOC2RPZ.jpg)
+ioc2rpz™ transforms IOC feeds into response policy zones (RPZ). You can mix feeds to generate a single RPZ or multiple RPZs. Trusted domains and IPs can be whitelisted. ioc2rpz™ supports expiration of indicators and accordingly rebuilds zones.  
+![Alt ioc2rpz™](https://github.com/Homas/ioc2rpz/blob/master/IOC2RPZ.jpg)
 The current release supports: local files, files/requests via http/https/ftp and shell scripts to access other resource types. You can use any file format if you can write a REGEX to extract indicators and indicators are separated by newline or/and return carriage chars (/n, /r, /r/n).
 
-## How to use ioc2rpz
-You can use ioc2rpz with any DNS server which supports Response Policy Zones e.g. recent versions of ISC BIND, PowerDNS and any commertial DNS server based on these products (e.g. Infoblox, Blue Cat, Efficient IP). A sample bind's configuration file (named.conf) is provided in the cfg folder.
+## How to use ioc2rpz™
+You can use ioc2rpz™ with any DNS server which supports Response Policy Zones e.g. recent versions of ISC BIND, PowerDNS and any commertial DNS server based on these products (e.g. Infoblox, Blue Cat, Efficient IP). A sample bind's configuration file (named.conf) is provided in the cfg folder.
 <p align="center"><a href="http://www.youtube.com/watch?feature=player_embedded&v=bvhyMFa_mBM" target="_blank"><img src="https://github.com/Homas/ioc2rpz/blob/master/ioc2rpz_demo.png"></a></p>
 
-## ioc2rpz web interface
-[ioc2rpz.gui](https://github.com/Homas/ioc2rpz.gui) is a Management Web interface which is developed as a separate project. It is not required to run ioc2rpz.
+## ioc2rpz™ web interface
+[ioc2rpz.gui](https://github.com/Homas/ioc2rpz.gui) is a Management Web interface which is developed as a separate project. It is not required to run ioc2rpz™.
 
 ## DNS over TLS (DoT)
-ioc2rpz supports RPZ distribution over DoT. The SSL listener service is automatically started on port 853 (PortTLS) if a certificate is provided in the configuration (``cert``). Current implementation has following limitations:
+ioc2rpz™ supports RPZ distribution over DoT. The SSL listener service is automatically started on port 853 (PortTLS) if a certificate is provided in the configuration (``cert``). Current implementation has following limitations:
 - TLS 1.2 only;
 - single request per session;
 - TLS PIN is not supported;
 - DNS Notify messages are unencrypted.
 When a certificate is expired or is going to expire soon there is no need to restart service if new certificates were saved in the same file. Erlang automatically updates certificates if files were replaced. The delay may be up to 2 minutes because of caching. It is recommended do not let the certificate to expire for service continuity.
 
-## ioc2rpz vs ISC BIND vs other DNS:
-- ioc2rpz was built to handle RPZ distribution only;
-- ioc2rpz supports DoT (DNS over TLS) so nobody can easily eavesdrop on your RPZs/indicators;
-- ioc2rpz supports as many RPZs as you need;
-- ioc2rpz supports live/non cached zones. It creates zones by an incoming request;
+## ioc2rpz™ vs ISC BIND vs other DNS:
+- ioc2rpz™ was built to handle RPZ distribution only;
+- ioc2rpz™ supports DoT (DNS over TLS) so nobody can easily eavesdrop on your RPZs/indicators;
+- ioc2rpz™ supports as many RPZs as you need;
+- ioc2rpz™ supports live/non cached zones. It creates zones by an incoming request;
 - indicators can be pulled from different sources and via different protocols (e.g. via REST API calls);
 - RPZs are automatically updated;
 - IOC expiration time is used to remove expired indicators in a timely manner;
 - Performance and zone transfer time/size/packets optimizations.
 
 ## Installation
-The easiest way to deploy the service is using docker containers on the docker hub. [Deployment on Docker How-To](https://github.com/Homas/ioc2rpz/wiki/Deployment-on-Docker) you can find in ioc2rpz wiki.
+The easiest way to deploy the service is using docker containers on the docker hub. [Deployment on Docker How-To](https://github.com/Homas/ioc2rpz/wiki/Deployment-on-Docker) you can find in ioc2rpz™ wiki.
 
 ## Docker container
-ioc2rpz is available on the Docker Hub. Just look for ioc2rpz.
+ioc2rpz™ is available on the Docker Hub. Just look for ioc2rpz™.
 Prerequisites:
-- ioc2rpz doesn't contain a configuration file, you need to mount /opt/ioc2rpz/cfg to a directory on a host system with the configuration file (ioc2rpz.conf);
-- ioc2rpz uses 53/udp (SOA requests only), 53/tcp (AXFRP, IXFR, SOA, MGMT), 853/tcp (AXFRP, IXFR, SOA, MGMT) and 8443/tcp (REST API) ports. The ports should be exposed to a host system;
-- ioc2rpz saves ETS database into files for faster boot. You may mount /opt/ioc2rpz/db to a directory on a host system to preserve DB over restarts;
-You can start ioc2rpz with the following command:
+- ioc2rpz™ doesn't contain a configuration file, you need to mount /opt/ioc2rpz/cfg to a directory on a host system with the configuration file (ioc2rpz.conf);
+- ioc2rpz™ uses 53/udp (SOA requests only), 53/tcp (AXFRP, IXFR, SOA, MGMT), 853/tcp (AXFRP, IXFR, SOA, MGMT) and 8443/tcp (REST API) ports. The ports should be exposed to a host system;
+- ioc2rpz™ saves ETS database into files for faster boot. You may mount /opt/ioc2rpz/db to a directory on a host system to preserve DB over restarts;
+You can start ioc2rpz™ with the following command:
 ```
 sudo docker run -d --name ioc2rpz --log-driver=syslog --restart always --mount type=bind,source=/home/ioc2rpz/cfg,target=/opt/ioc2rpz/cfg --mount type=bind,source=/home/ioc2rpz/db,target=/opt/ioc2rpz/db -p53:53 -p53:53/udp -p853:853 -p8443:8443 pvmdel/ioc2rpz
 
@@ -71,23 +74,23 @@ where /home/ioc2rpz/cfg, /home/ioc2rpz/db directories on a host system.
 You can pass a custom configuration file name via``-e`` parameter. E.g. ``./cfg/ioc2rpz2.conf``
 
 ## Docker Compose
-You can deploy ioc2rpz and ioc2rpz.gui using docker compose. The docker-compose.yml file can be found in [ioc2rpz.dc](https://github.com/Homas/ioc2rpz.dc) repository.
+You can deploy ioc2rpz™ and ioc2rpz.gui using docker compose. The docker-compose.yml file can be found in [ioc2rpz.dc](https://github.com/Homas/ioc2rpz.dc) repository.
 
-## ioc2rpz on AWS
-You can run ioc2rpz and ioc2rpz.gui on AWS. For relatively small deployments (several hundreds thousands indicators) even free tier is enough.
-The video below shows how to setup ioc2rpz and ioc2rpz.gui on AWS using ECS.
+## ioc2rpz™ on AWS
+You can run ioc2rpz™ and ioc2rpz.gui on AWS. For relatively small deployments (several hundreds thousands indicators) even free tier is enough.
+The video below shows how to setup ioc2rpz™ and ioc2rpz.gui on AWS using ECS.
 <p align="center"><a href="http://www.youtube.com/watch?feature=player_embedded&v=C-y4p5TXt8s" target="_blank"><img src="https://github.com/Homas/ioc2rpz/blob/master/ioc2rpz_aws_setup.png"></a></p>
 
-## How to start ioc2rpz service (w/o docker)
-ioc2rpz by default reads configuration from ./cfg/ioc2rpz.conf, listens on all network interfaces and saves DB backup in ./db directory. You can change the default values in ``include/ioc2rpz.hrl``.  
-If you downloaded sources, before running ioc2rpz you have to compile the code with the following command: ``rebar3 release``.  
+## How to start ioc2rpz™ service (w/o docker)
+ioc2rpz™ by default reads configuration from ./cfg/ioc2rpz.conf, listens on all network interfaces and saves DB backup in ./db directory. You can change the default values in ``include/ioc2rpz.hrl``.  
+If you downloaded sources, before running ioc2rpz™ you have to compile the code with the following command: ``rebar3 release``.  
 You can start the application by evoking ``_build/default/rel/ioc2rpz/bin/ioc2rpz start``.  
 
-## ioc2rpz management
+## ioc2rpz™ management
 ### via DNS
-ioc2rpz supports management over DNS/TCP or DoT. It is recommended to use DoT or REST API over DNS/TCP. The current version of ioc2rpz does not support a separate management IP/interface. In any case it is highly recommended to create a designated TSIG key (or keys) which will be used for management only. You can turn off management over DNS.  
+ioc2rpz™ supports management over DNS/TCP or DoT. It is recommended to use DoT or REST API over DNS/TCP. The current version of ioc2rpz™ does not support a separate management IP/interface. In any case it is highly recommended to create a designated TSIG key (or keys) which will be used for management only. You can turn off management over DNS.  
 Supported actions:
-- ioc2rpz current status. Request ``ioc2rpz-status``, class ``CHAOS``, record ``TXT``. e.g.:  
+- ioc2rpz™ current status. Request ``ioc2rpz-status``, class ``CHAOS``, record ``TXT``. e.g.:  
 ```
 dig +tcp -y dnsmkey_1:ayVnL+h2QKMszRVohrngagcEuIpN3RkecXKdwSa5WsHD5N4Y5R3NUMGM W8sIGv36gPkAtWtgarqKzN9tmHqEnA== @127.0.0.1 ioc2rpz-status TXT -c CHAOS
 ```
@@ -98,7 +101,7 @@ dig +tcp -y dnsmkey_1:ayVnL+h2QKMszRVohrngagcEuIpN3RkecXKdwSa5WsHD5N4Y5R3NUMGM W
 ```
 dig +tcp -y dnsmkey_1:ayVnL+h2QKMszRVohrngagcEuIpN3RkecXKdwSa5WsHD5N4Y5R3NUMGM W8sIGv36gPkAtWtgarqKzN9tmHqEnA== @127.0.0.1 dga.ioc2rpz TXT -c CHAOS
 ```
-- Stop ioc2rpz. RR Name ``ioc2rpz-terminate``, RR Class ``CHAOS``, RR Type ``TXT``
+- Stop ioc2rpz™. RR Name ``ioc2rpz-terminate``, RR Class ``CHAOS``, RR Type ``TXT``
 - Request a sample zone. RR Name ``sample-zone.ioc2rpz``, RR Class ``IN``, RR Type ``AXFR``
 ### via REST
 REST API (port 8443/tcp) is the preffered management interface. For serurity reasons all management traffic must be encrypted and REST API interface is not started if there is no SSL certificate.
@@ -112,7 +115,7 @@ API requests:
 - GET ``/api/v1.0/update/:rpz`` - full refresh a zone, where ``:rpz`` is the zone name.
 - GET ``/api/v1.0/mgmt/reload_cfg`` - reload configuration file.
 - GET ``/api/v1.0/mgmt/update_tkeys`` - update TSIG keys.
-- GET ``/api/v1.0/mgmt/terminate`` - shutdown ioc2rpz server.
+- GET ``/api/v1.0/mgmt/terminate`` - shutdown ioc2rpz™ server.
 - GET ``/api/v1.0/feed/:rpz`` - get content (indicators) of ``:rpz`` feed.
 - GET ``/api/v1.0/ioc/:ioc?tkey=:tkey`` - check if indicator is blocked by RPZ feeds. An optional param ``:tkey`` allows to limit validation to a specific TSIG Key. W/o it the search will be done among all feeds.
 - GET ``/api/v1.0/cache/sources/clear/all`` - remove all sources from the hot cache
@@ -120,8 +123,8 @@ API requests:
 - GET ``/api/v1.0/cache/sources/load/all`` - load all sources to the hot cache
 
 ## Configuration file
-The configuration is an Erlang file. Every configuration option is an Erlang term so the configuration must comply with Erlang syntax. ioc2rpz does not check the configuration file for possible errors, typos etc.
-ioc2rpz supports the following configuration parameters:
+The configuration is an Erlang file. Every configuration option is an Erlang term so the configuration must comply with Erlang syntax. ioc2rpz™ does not check the configuration file for possible errors, typos etc.
+ioc2rpz™ supports the following configuration parameters:
 - a single **srv** record (required);
 - a single **cert** record (optional);
 - zero or more **key** records (optional);
@@ -150,14 +153,14 @@ Sample **cert** record:
 {cert,{"cfg/cert.pem", "cfg/key.pem",	"cfg/cacerts.pem"}}.
 ```
 ### **include** record
-**include** record allows to split ioc2rpz configuration into multiple files.
+**include** record allows to split ioc2rpz™ configuration into multiple files.
 
 Sample **include** record:  
 ```
 {cert,"cfg/tkeys.include.cfg"}.
 ```
 ### **key** record
-TSIG keys are used for authentication and authorization. It is recommended to use different TSIG keys for ioc2rpz management and zones transfers.  
+TSIG keys are used for authentication and authorization. It is recommended to use different TSIG keys for ioc2rpz™ management and zones transfers.  
 **key** record consist of:
 - TSIG key name;
 - algorithm. ``md5``, ``sha256`` and ``sha512`` are supported;
@@ -175,7 +178,7 @@ dnssec-keygen -a HMAC-MD5 -b512 -n USER tsig-key
 ```
 Please refer "dnssec-keygen" documentation for details.
 ### **whitelist** record
-Whitelists are used to prevent possible errors and blocking trusted domains and IP addresses. The whitelisted IOCs are removed from response policy zones. ioc2rpz does check only exact match, so it will not split or discard a network if a whitelisted IP address is included into a blocked subnet and vice versa. A whitelist is a text file or a feed of text data. Indicators should be separated by newline characters (/n,/r or both /n/r).  Whitelists must contain valid FQDNs and/or IP addresses. ioc2rpz supports unlimited count of indicators.  
+Whitelists are used to prevent possible errors and blocking trusted domains and IP addresses. The whitelisted IOCs are removed from response policy zones. ioc2rpz™ does check only exact match, so it will not split or discard a network if a whitelisted IP address is included into a blocked subnet and vice versa. A whitelist is a text file or a feed of text data. Indicators should be separated by newline characters (/n,/r or both /n/r).  Whitelists must contain valid FQDNs and/or IP addresses. ioc2rpz™ supports unlimited count of indicators.  
 **whitelists** record consist of:
 - whitelist name;
 - whitelist path. URLs(http/https/ftp) and local files are supported. Prefix "file:" is used for local files;
@@ -186,7 +189,7 @@ Sample **whitelist** record:
 {whitelist,{"whitelist_1","file:cfg/whitelist1.txt",none}}.
 ```
 ### **source** record
-A source is a feed of malicious indicators. FQDNs, IPv4 and IPv6-addresses are supported. A source is a text file or a feed of text data. Indicators should be separated by newline/carriage return characters (/n,/r or both /r/n). ioc2rpz supports unlimited count of indicators.  
+A source is a feed of malicious indicators. FQDNs, IPv4 and IPv6-addresses are supported. A source is a text file or a feed of text data. Indicators should be separated by newline/carriage return characters (/n,/r or both /r/n). ioc2rpz™ supports unlimited count of indicators.  
 **source** record consist of:
 - source name;
 - source path for full source transfer (AXFR). URLs(http/https/ftp), local files and scripts are supported. Prefix **file:** is used for local files. Prefix **shell:** is used to execute a local script/comand on a host/container which should return indicators and optional expiration date to STDOUT;
@@ -206,7 +209,7 @@ Sample **source** record:
 {source,{"blackhole_exp","http://data.netlab.360.com/feeds/dga/blackhole.txt","[:AXFR:]","^([A-Za-z0-9][A-Za-z0-9\-\._]+)\t.*:00\t([0-9: -]+)$"}}.
 {source,{"base.rpz1","shell:/usr/bin/dig -y KEYNAME:TSIGKEY @54.69.93.185 base.rpz.infoblox.local axfr | /bin/grep -e CNAME | /bin/grep -v '*.' | /usr/bin/awk -F '.base.rpz' '{print $1}'","",none}}.
 ```
-Source **shell:** is used to extend ioc2rpz connectivity options which are natively a bit limited. The ioc2rpz container includes dig, grep, awk and python. E.g. you can mix different RPZ feeds or fetch data from a database.
+Source **shell:** is used to extend ioc2rpz™ connectivity options which are natively a bit limited. The ioc2rpz™ container includes dig, grep, awk and python. E.g. you can mix different RPZ feeds or fetch data from a database.
 
 ### **rpz** record
 RPZ term defines a response policy zone.  
@@ -304,12 +307,12 @@ Optimization parameters:
 ## Hot cache
 All IOCs, Rules, Packets including live RPZs are stored in the hot cache. Pre-compiled parameters ``HotCacheTime``, ``HotCacheTimeIXFR`` define storage time.
 
-## How to try ioc2rpz (or sample and free RPZ feeds hosted by ioc2rpz)
+## How to try ioc2rpz™ (or sample and free RPZ feeds hosted by ioc2rpz™)
 ### Disclaimer
-The author assumes no responsibility or liability for any errors or omissions in the content of these RPZ feeds. The feeds are provided on an “as is” basis with no guarantees of completeness, accuracy, usefulness or timelines to demonstrate ioc2rpz technology only. The RPZ feeds service distirbution may be interrupted or stopped w/o any advance notice. The author is not lialable for any direct or inderect damages caused by using this service.
+The author assumes no responsibility or liability for any errors or omissions in the content of these RPZ feeds. The feeds are provided on an “as is” basis with no guarantees of completeness, accuracy, usefulness or timelines to demonstrate ioc2rpz™ technology only. The RPZ feeds service distirbution may be interrupted or stopped w/o any advance notice. The author is not lialable for any direct or inderect damages caused by using this service.
 
 ### RPZ Feeds
-You may test ioc2rpz technology if you register on the [ioc2rpz community](https://ioc2rpz.net) with the following feeds:
+You may test ioc2rpz™ technology if you register on the [ioc2rpz™ community](https://ioc2rpz.net) with the following feeds:
 - [DNS-BH - Malware Domain Blocklist by RiskAnalytics](http://www.malwaredomains.com/);
 - [notracking](https://github.com/notracking/hosts-blocklists);
 - [Phishtank](https://www.phishtank.com/).
@@ -323,7 +326,6 @@ options {
     ####FQDN only zones
     ####Mixed zones
     zone "dns-bh.ioc2rpz" policy nxdomain;
-    zone "notracking.ioc2rpz" policy nxdomain;
     zone "phishtank.ioc2rpz" policy nxdomain;
     ####IP only zones
   } qname-wait-recurse no break-dnssec yes;
@@ -341,12 +343,6 @@ zone "dns-bh.ioc2rpz" {
 };
 
 
-zone "notracking.ioc2rpz" {
-  type slave;
-  file "/var/cache/bind/notracking.ioc2rpz";
-  masters {94.130.30.123  key "ioc2rpz-YOUR-UNIQUE-KEY-NAME";};
-};
-
 zone "phishtank.ioc2rpz" {
   type slave;
   file "/var/cache/bind/notracking.ioc2rpz";
@@ -363,14 +359,12 @@ rpzMaster("94.130.30.123", "phishtank.ioc2rpz", {defpol=Policy.NXDOMAIN, tsignam
 ```
 header-responsepolicyzone,fqdn*,zone_format*,rpz_policy,substitute_name,view,zone_type,external_primaries,grid_secondaries,priority
 responsepolicyzone,dns-bh.ioc2rpz,FORWARD,Nxdomain,,default,responsepolicy,srv_1/94.130.30.123/FALSE/FALSE/TRUE/ioc2rpz-YOUR-UNIQUE-KEY-NAME/ioc2rpz-YOUR-UNIQUE-KEY/HMAC-SHA256,infoblox.localdomain/False/False/False,0
-responsepolicyzone,notracking.ioc2rpz,FORWARD,Nxdomain,,default,responsepolicy,srv_1/94.130.30.123/FALSE/FALSE/TRUE/ioc2rpz-YOUR-UNIQUE-KEY-NAME/ioc2rpz-YOUR-UNIQUE-KEY/HMAC-SHA256,infoblox.localdomain/False/False/False,1
 responsepolicyzone,phishtank.ioc2rpz,FORWARD,Nxdomain,,default,responsepolicy,srv_1/94.130.30.123/FALSE/FALSE/TRUE/ioc2rpz-YOUR-UNIQUE-KEY-NAME/ioc2rpz-YOUR-UNIQUE-KEY/HMAC-SHA256,infoblox.localdomain/False/False/False,1
 ```
 
 ### Sample DIG (to get SOA)
 ```
 dig  @94.130.30.123 -y hmac-sha256:ioc2rpz-YOUR-UNIQUE-KEY-NAME:ioc2rpz-YOUR-UNIQUE-KEY dns-bh.ioc2rpz SOA
-dig  @94.130.30.123 -y hmac-sha256:ioc2rpz-YOUR-UNIQUE-KEY-NAME:ioc2rpz-YOUR-UNIQUE-KEY notracking.ioc2rpz SOA
 dig  @94.130.30.123 -y hmac-sha256:ioc2rpz-YOUR-UNIQUE-KEY-NAME:ioc2rpz-YOUR-UNIQUE-KEY phishtank.ioc2rpz SOA
 
 kdig @94.130.30.123 -y hmac-sha256:ioc2rpz-YOUR-UNIQUE-KEY-NAME:ioc2rpz-YOUR-UNIQUE-KEY dns-bh.ioc2rpz SOA +tls
@@ -399,7 +393,7 @@ You can find other IOC feeds on the wiki-page: https://github.com/Homas/ioc2rpz/
 - [Rebar3](https://www.rebar3.org)
 
 # Do you want to support to the project?
-You can support ioc2rpz project and ioc2rpz community (https://ioc2rpz.net)  via [GitHub Sponsor](https://github.com/sponsors/Homas) (recurring payments). To make one time donation you can use [PayPal](https://paypal.me/ioc2rpz) or Zelle (our email: zelle [at] ioc2rpz [.] net).
+You can support ioc2rpz™ project and ioc2rpz™ community (https://ioc2rpz.net)  via [GitHub Sponsor](https://github.com/sponsors/Homas) (recurring payments). To make one time donation you can use [PayPal](https://paypal.me/ioc2rpz) or Zelle (our email: zelle [at] ioc2rpz [.] net).
 
 # Supporters
 Shout out to **craSH** and **rrbone** who support my projects on [GitHub Sponsor](https://github.com/sponsors/Homas).
@@ -408,7 +402,7 @@ Shout out to **craSH** and **rrbone** who support my projects on [GitHub Sponsor
 You can contact us by email: feedback(at)ioc2rpz[.]net or in [Telegram](https://t.me/ioc2rpz).
 
 # License
-Copyright 2017 - 2021 Vadim Pavlov ioc2rpz[at]gmail[.]com
+Copyright 2017 - 2024 Vadim Pavlov ioc2rpz[at]gmail[.]com
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
 You may obtain a copy of the License at  
