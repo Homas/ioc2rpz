@@ -127,7 +127,7 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
 			%DoT
       #{id => ioc2rpz_tls_sup_v6,
       start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[tls6_sup,IPStr6,inet6]]},
-      restart => transient,
+      restart => permanent,
       shutdown => 1000,
       type => supervisor,
       modules => [ioc2rpz_proc_sup]},
@@ -144,7 +144,7 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
       %REST
       #{id => ioc2rpz_rest_tls_sup_v6,
       start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[rest_tls6_sup,IPStr6,inet6]]},
-      restart => transient,
+      restart => permanent,
       shutdown => 1000,
       type => supervisor,
       modules => [ioc2rpz_proc_sup]}
@@ -165,7 +165,7 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
 		%DNS TCP
     #{id => ioc2rpz_tcp_sup_v6,
     start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[tcp6_sup,IPStr6,inet6]]},
-    restart => transient,
+    restart => permanent,
     shutdown => 1000,
     type => supervisor,
     modules => [ioc2rpz_proc_sup]},

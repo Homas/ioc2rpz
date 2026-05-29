@@ -89,10 +89,16 @@ handle_cast(accept, State = #state{socket=ListenSocket, tls=no, params=[Pid,Proc
       {ok, AcceptSocket} ->
           ioc2rpz_proc_sup:start_socket(Proc), % Start a new listener immediately
           {noreply, State#state{socket=AcceptSocket, tls=no, params=[Pid,Proc]}};
+      {error, closed} ->
+          %% Listen socket is dead — do NOT spawn a replacement worker.
+          ioc2rpz_fun:logMessage("~p:~p:~p. TCP listen socket closed, worker exiting ~n",
+                               [?MODULE, ?FUNCTION_NAME, ?LINE]),
+          {stop, {shutdown, listen_socket_closed}, State};
       {error, Reason} ->
           ioc2rpz_fun:logMessage("~p:~p:~p. TCP accept error: ~p ~n",
                                [?MODULE, ?FUNCTION_NAME, ?LINE, Reason]),
-          {stop, Reason, State} % Stop the worker process
+          ioc2rpz_proc_sup:start_socket(Proc),
+          {stop, normal, State}
   end;
 
 %%%TLS accept
@@ -107,22 +113,28 @@ handle_cast(accept, State = #state{socket=ListenSocket, tls=no, params=[Pid,Proc
 handle_cast(accept, State = #state{socket=ListenSocket, tls=yes, params=[Pid,Proc]}) ->
   case ssl:transport_accept(ListenSocket) of
       {ok, TLSTransportSocket} ->
-          case ssl:handshake(TLSTransportSocket) of
+          case ssl:handshake(TLSTransportSocket, 5000) of
               {ok, AcceptSocket} ->
                   ioc2rpz_proc_sup:start_socket(Proc),
                   {noreply, State#state{socket=AcceptSocket, tls=yes, params=[Pid,Proc]}};
               {error, HandshakeReason} ->
                   ioc2rpz_fun:logMessage("~p:~p:~p. TLS handshake error: ~p ~n",
                                         [?MODULE, ?FUNCTION_NAME, ?LINE, HandshakeReason]),
-                  ssl:close(TLSTransportSocket), % Close the transport socket
+                  ssl:close(TLSTransportSocket),
                   ioc2rpz_proc_sup:start_socket(Proc),
-                  {stop, HandshakeReason, State} % Stop the worker
+                  {stop, normal, State}
           end;
+      {error, closed} ->
+          %% Listen socket is dead — do NOT spawn a replacement worker.
+          %% Let this worker die so the supervisor chain can restart the listener.
+          ioc2rpz_fun:logMessage("~p:~p:~p. TLS listen socket closed, worker exiting ~n",
+                                [?MODULE, ?FUNCTION_NAME, ?LINE]),
+          {stop, {shutdown, listen_socket_closed}, State};
       {error, AcceptReason} ->
           ioc2rpz_fun:logMessage("~p:~p:~p. TLS accept error: ~p ~n",
                                 [?MODULE, ?FUNCTION_NAME, ?LINE, AcceptReason]),
           ioc2rpz_proc_sup:start_socket(Proc),
-          {stop, AcceptReason, State} % Stop the worker
+          {stop, normal, State}
   end;
 
 handle_cast(_, State) ->
