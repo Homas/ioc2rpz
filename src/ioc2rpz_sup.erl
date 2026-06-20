@@ -769,7 +769,7 @@ update_zone_full(Zone) ->
     true ->
       %if Zone#rpz.serial_ixfr == 0 -> Serial_IXFR=CTime; true -> Serial_IXFR=Zone#rpz.serial_ixfr end,
       ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{serial=CTime, status=ready, serial_new=0, ioc_md5=MD5, update_time=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, serial_ixfr=CTime, pid=undefined,ioc_count=NIOCs, rule_count=NRules}}]),
-      ioc2rpz_db:delete_db_pkt(Zone),
+      ioc2rpz_db:delete_old_db_pkt(Zone#rpz{serial=CTime}),
       %erlang:garbage_collect(), %TODO check if need
       ioc2rpz:send_notify(Zone),
       ioc2rpz_fun:logMessage("Zone ~p updated in ~p seconds, new serial ~p, ~p rules, ~p indicators.~n",[Zone#rpz.zone_str, (ioc2rpz_fun:curr_serial_60() - CTime), CTime, NRules, NIOCs])
@@ -825,7 +825,7 @@ update_zone_inc(Zone) ->
           NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','_'},'$2','$3'},[],['true']}]),
           ioc2rpz_fun:logMessage("Zone ~p records before ~p after ~p. ~n",[Zone#rpz.zone_str, NRbefore, NRafter]),
           ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, serial=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, pid=undefined, ioc_count=NIOCs, rule_count=NRules}}]),
-          ioc2rpz_db:delete_db_pkt(Zone),
+          ioc2rpz_db:delete_old_db_pkt(Zone#rpz{serial=CTime}),
           ioc2rpz_db:saveZones(),
           ioc2rpz:send_notify(Zone);
         {Error,Msg} ->

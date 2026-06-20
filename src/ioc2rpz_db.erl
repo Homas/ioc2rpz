@@ -41,7 +41,7 @@
 %% @end
 -module(ioc2rpz_db).
 -include_lib("ioc2rpz.hrl").
--export([init_db/3,db_table_info/2,read_db_pkt/1,write_db_pkt/2,delete_db_pkt/1,read_db_record/3,write_db_record/3,delete_old_db_record/1,saveZones/0,loadZones/0,loadZones/1,
+-export([init_db/3,db_table_info/2,read_db_pkt/1,write_db_pkt/2,delete_db_pkt/1,delete_old_db_pkt/1,read_db_record/3,write_db_record/3,delete_old_db_record/1,saveZones/0,loadZones/0,loadZones/1,
         get_zone_info/2,clean_DB/1,save_zone_info/1,get_allzones_info/2, lookup_db_record/2]).
 
 
@@ -131,9 +131,15 @@ read_db_pkt(ets,Zone) ->
 %  [binary_to_term(X) || [X] <- Pkt];
 
 % 2025-01-11 There is a bug that multiple processes can save the zone at the same time. The following validation is done only as a saveguard. It may be removed when the bug is fixed
+% An empty result must not crash the caller: it can happen if cfg_table advertises
+% a serial for which no packets are cached (e.g. a partially completed/cleaned up
+% update). Return [] in that case so send_zone can fall back gracefully.
   Pkt = ets:match(rpz_axfr_table,{{rpz,Zone#rpz.zone,Zone#rpz.serial,'_','$1'},'$2'}),
-  [[PID, _] | _]=Pkt,
-  [binary_to_term(X) || [PPID, X] <- Pkt, PPID == PID];
+  case Pkt of
+    [] -> [];
+    [[PID, _] | _] ->
+      [binary_to_term(X) || [PPID, X] <- Pkt, PPID == PID]
+  end;
 
 read_db_pkt(mnesia,_Zone) ->
   ok.
@@ -181,6 +187,30 @@ delete_db_pkt(ets,Zone) ->
   ets:select_delete(rpz_axfr_table,[{{{rpz,Zone#rpz.zone,Zone#rpz.serial,'$1','_'},'_'},[{'=<','$1',Zone#rpz.serial}],[true]}]);
 
 delete_db_pkt(mnesia,_Zone) ->
+  ok.
+
+%% @doc Deletes only the stale cached AXFR packets for a zone.
+%%
+%% Removes every cached packet for the zone whose serial is strictly older than
+%% `Zone#rpz.serial' (the just-written generation). Unlike {@link delete_db_pkt/1},
+%% this never removes packets for the current serial, so it is safe to call right
+%% after writing a new generation even when the previous serial collides with the
+%% new one (serials have 60-second resolution, see {@link ioc2rpz_fun:curr_serial_60/0}).
+%%
+%% This avoids a race where a cleanup deletes the packets that were just cached,
+%% leaving `cfg_table' advertising a ready zone with an empty packet cache and
+%% crashing AXFR/IXFR transfers in {@link read_db_pkt/1}.
+%%
+%% @param Zone An `#rpz{}' record whose `serial' is the new (current) generation.
+%% @returns The number of deleted objects, or `ok' for mnesia (not implemented).
+%% @end
+delete_old_db_pkt(Zone) -> %axfr
+  delete_old_db_pkt(?DBStorage,Zone).
+
+delete_old_db_pkt(ets,Zone) ->
+  ets:select_delete(rpz_axfr_table,[{{{rpz,Zone#rpz.zone,'$1','_','_'},'_'},[{'<','$1',Zone#rpz.serial}],[true]}]);
+
+delete_old_db_pkt(mnesia,_Zone) ->
   ok.
 
 %% @doc Reads IOC (Indicator of Compromise) records from the IXFR cache.
