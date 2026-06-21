@@ -181,12 +181,18 @@ curl -X POST -H "Content-Type: application/dns-message" \
 
 ### Rate Limiting
 
-DNS queries are rate-limited per client IP address. When the limit is exceeded, the server returns a DNS `REFUSED` response.
+DNS queries are rate-limited using an intelligent (hybrid) key so legitimate multi-zone clients are not penalized while query-name-variation abuse is blocked:
+
+- **Provisioned zone + supported QTYPE** (`SOA`/`AXFR`/`IXFR`, class `IN`) and **recognized management commands** (class `CHAOS`/`TXT`) are tracked per `{client_IP, query_name, query_type}` — so a secondary polling/transferring several zones (e.g. `rpz1`, `rpz2`, `rpz3`) plus management from one IP is counted independently per zone+type.
+- **Everything else** (unknown/unprovisioned zone, unsupported query type, wrong class, or an unrecognized management name) is aggregated per `{client_IP}`, so an attacker cannot bypass the limit by varying the query name.
+
+When the limit is exceeded, the server returns a DNS `REFUSED` response.
 
 | Parameter | Default | Macro |
 |-----------|---------|-------|
 | Window | 10 seconds | `?RATE_LIMIT_WINDOW` (10000 ms) |
-| Max requests per window | 1 | `?MAX_REQUESTS_PER_WINDOW` |
+| Max requests per window (granular: known zone+type / management) | 1 | `?MAX_REQUESTS_PER_WINDOW` |
+| Max requests per window (aggregate: unknown zone / unsupported type) | 1 | `?MAX_UNKNOWN_REQUESTS_PER_WINDOW` |
 
 Rate limiting applies to all DNS query transports (UDP, TCP, TLS, DoH). The window and threshold are configurable via macros in `include/ioc2rpz.hrl`.
 
@@ -331,6 +337,8 @@ cp /etc/letsencrypt/live/ns1.rpz-proxy.com/privkey.pem cfg/ioc2rpz_dot.key
 0 3 * * * root certbot renew --quiet --deploy-hook "cp /etc/letsencrypt/live/ns1.rpz-proxy.com/fullchain.pem /opt/ioc2rpz/cfg/ioc2rpz_dot.crt && cp /etc/letsencrypt/live/ns1.rpz-proxy.com/privkey.pem /opt/ioc2rpz/cfg/ioc2rpz_dot.key"
 ```
 
+Certificates are also reloaded explicitly during a configuration reload (`ioc2rpz-reload-cfg`): when ioc2rpz detects that the certificate files changed, it restarts the TLS listeners with the new certificate immediately, instead of waiting for the ~2 minute Erlang SSL cache. Add an `ioc2rpz-reload-cfg` step to your renewal hook to apply new certificates without downtime.
+
 ### Docker Volume Mounting
 
 When running in Docker, mount the certificate directory from the host:
@@ -348,9 +356,83 @@ Reference in `ioc2rpz.conf`:
 Erlang automatically picks up replaced certificate files within ~2 minutes. Certificates are also explicitly reloaded during config reload (`ioc2rpz-reload-cfg`). Do not let certificates expire — renew before expiration for uninterrupted service.
 
 ## Building from Source
-ioc2rpz™ by default reads configuration from ./cfg/ioc2rpz.conf, listens on all network interfaces and saves DB backup in ./db directory. You can change the default values in ``include/ioc2rpz.hrl``.  
-If you downloaded sources, before running ioc2rpz™ you have to compile the code with the following command: ``rebar3 release``.  
-You can start the application by evoking ``_build/default/rel/ioc2rpz/bin/ioc2rpz start``.  
+
+> **Note:** Building from source is intended for **development and testing**. For production, **Docker is the recommended deployment method** — see [Docker Compose](#docker-compose) and the [ioc2rpz.dc](https://github.com/Homas/ioc2rpz.dc) repository.
+
+### Prerequisites
+
+- **Erlang/OTP 24 or newer** (`erl -version` to check) and a matching [rebar3](https://www.rebar3.org).
+- A C toolchain (for building dependencies) and `git`.
+
+### Build & Run
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/Homas/ioc2rpz.git
+cd ioc2rpz
+
+# 2. Build a release
+rebar3 release
+
+# 3. Edit the configuration (see the minimal example below)
+$EDITOR cfg/ioc2rpz.conf
+
+# 4. Start the server (foreground console, or 'start' for background)
+_build/default/rel/ioc2rpz/bin/ioc2rpz console
+# or: _build/default/rel/ioc2rpz/bin/ioc2rpz start
+```
+
+By default ioc2rpz™ reads its configuration from `./cfg/ioc2rpz.conf`, listens on all network interfaces, and writes its DB backup to `./db`. Compile-time defaults (ports, paths, timers) live in [`include/ioc2rpz.hrl`](include/ioc2rpz.hrl).
+
+### Minimal Configuration
+
+A minimal `cfg/ioc2rpz.conf` with one TSIG key, one file source, and one RPZ zone:
+
+```erlang
+%% Server NS record, admin mailbox, management key(s), and management ACL
+{srv,{"ns1.example.com","hostmaster.example.com",["mgmtkey"],["127.0.0.1","::1"]}}.
+
+%% A TSIG key (name, algorithm, base64 secret) used for management / zone transfers
+{key,{"mgmtkey","sha256","5Yvt70eJnf95+LJeI8H3TgKGeVparmMB7udA0pv/JRE="}}.
+
+%% An IOC source: a local file parsed as a full (AXFR) feed of domains
+{source,{"sample","file:cfg/small_ioc.txt","[:AXFR:]","^([0-9A-Za-z\.\-]+\\.[0-9A-Za-z\.\-]+)$","",0,0,0,"mixed",true}}.
+
+%% An RPZ zone built from the source, served with the nxdomain action
+{rpz,{"rpz.example.com",86400,3600,2592000,7200,"true","true","nxdomain",["mgmtkey"],"mixed",604800,86400,["sample"],[],[]}}.
+```
+
+See [docs/configuration.md](docs/configuration.md) for the authoritative field-by-field reference (source/RPZ tuple layout, SOA timers, key groups, certificates, etc.). To enable DoT (port 853), DoH, and the HTTPS REST API, add a `{cert,{...}}` entry — see [Certificate Setup](#certificate-setup).
+
+### Development Shell (development/testing only)
+
+The following commands are for local development and testing — not for production use:
+
+```bash
+# Compile only (no release)
+rebar3 compile
+
+# Run the EUnit test suite
+rebar3 eunit
+# Run tests for a single module
+rebar3 eunit --module=ioc2rpz_fun
+
+# Start an interactive shell with the application and all deps loaded
+rebar3 shell
+```
+
+In `rebar3 shell` you can exercise the running system directly, for example:
+
+```erlang
+%% Inspect the listener pools and ETS tables
+supervisor:which_children(ioc2rpz_sup).
+ets:info(cfg_table, size).
+ets:info(rpz_hotcache_table, size).
+
+%% Trigger a configuration reload / forced zone update
+ioc2rpz_sup:reload_config3(reload).
+ioc2rpz_sup:update_all_zones(true).
+```
 
 ## ioc2rpz™ management
 ### via DNS

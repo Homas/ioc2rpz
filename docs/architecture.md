@@ -49,6 +49,8 @@ ioc2rpz_app (application)
    - Sets up periodic timers:
      - `load_hotsources/1` every 60 seconds
      - `update_all_zones/1` every 60 seconds
+     - `ioc2rpz_fun:cleanup_rate_limit_table/0` every `?RATE_LIMIT_WINDOW` (10 seconds) — removes expired `rate_limits` entries
+     - `ioc2rpz_db:cleanup_hotcache/0` every `?HotCacheTime` (900 seconds) — removes expired `rpz_hotcache_table` packet entries
    - Returns child specs for TCP, UDP, TLS, and REST supervisors
 
 ### Listener Pool Model
@@ -116,7 +118,7 @@ TCP and TLS supervisors use `simple_one_for_one` strategy. On startup, `empty_li
 - AXFR zone packet storage and retrieval (`read_db_pkt/1`, `write_db_pkt/2`)
 - IXFR individual record storage (`read_db_record/3`, `write_db_record/3`)
 - Zone metadata persistence (`saveZones/0`, `loadZones/0`)
-- Hot cache packet management
+- Hot cache packet management; periodic eviction of expired packet entries via `cleanup_hotcache/0`
 - Record lookup for live zone serving (`lookup_db_record/2`)
 
 ### ioc2rpz_db_sup.erl — Database Process (ETS Heir)
@@ -128,8 +130,9 @@ TCP and TLS supervisors use `simple_one_for_one` strategy. On startup, `empty_li
 - Logging: standard messages (`logMessage/2`) and CEF format (`logMessageCEF/2`)
 - CEF event message definitions (`msg_CEF/1`) for security event logging
 - DNS utilities: IP conversion, domain name handling, query type/class names
-- Rate limiting: `check_rate_limit/1` using the `rate_limits` ETS table
+- Rate limiting: `check_rate_limit/1` (and `check_rate_limit/2`) using the `rate_limits` ETS table; periodic cleanup via `cleanup_rate_limit_table/0`
 - Binary/string conversions, base64url decoding
+- JSON string escaping for REST responses (`json_escape/1`)
 - TLS cipher suite selection (`get_cipher_suites/1`)
 - IP ACL matching (`ip_in_list/2`)
 - Local action parsing for RPZ responses
@@ -234,7 +237,7 @@ TCP and TLS supervisors use `simple_one_for_one` strategy. On startup, `empty_li
 
 1. Client connects via UDP/TCP/TLS/DoH
 2. `parse_dns_request/3` validates the DNS packet structure
-3. Rate limiting checked per `{IP, QName, QType}` key
+3. Rate limiting checked via an intelligent (hybrid) key from `rl_key/5`: granular `{IP, QName, QType}` for provisioned zones (SOA/AXFR/IXFR) and recognized management (CHAOS/TXT) requests, aggregate `{IP}` for everything else (unknown zone / unsupported qtype / unrecognized name) to prevent query-name-variation bypass
 4. TSIG signature validated if present (for zone transfers)
 5. Zone looked up in `cfg_table`
 6. Response served:
@@ -299,6 +302,21 @@ Sources marked with `keep_in_cache=true` are pre-loaded into `rpz_hotcache_table
 |---|---|---|
 | `{SourceName, axfr\|ixfr}` | `{IOCList, Timestamp, Metadata}` | Cached source IOC data |
 | `{pkthotcache, ZoneBin, PktNumber}` | `{PacketData, Timestamp, Metadata}` | Cached zone packets |
+
+### rate_limits
+- **Type**: `set`, public, named
+- **Purpose**: Tracks per-client request counts for DNS rate limiting
+- **Created in**: `ioc2rpz_sup:init/1`
+- **Cleanup**: Expired entries are swept periodically by `ioc2rpz_fun:cleanup_rate_limit_table/0`
+
+The key is chosen per request by `ioc2rpz:rl_key/5` (intelligent/hybrid scheme):
+
+| Key Pattern | Value | Description |
+|---|---|---|
+| `{IP, QName, QType}` | `{LastRequestTime, RequestCount}` | **Granular** bucket for provisioned zones (class `IN` + `SOA`/`AXFR`/`IXFR`) and recognized management requests (class `CHAOS` + `TXT`). Limited by `?MAX_REQUESTS_PER_WINDOW`. |
+| `{IP}` | `{LastRequestTime, RequestCount}` | **Aggregate** per-IP bucket for everything else (unknown/unprovisioned zone, unsupported QTYPE, wrong class, unrecognized management name). Limited by `?MAX_UNKNOWN_REQUESTS_PER_WINDOW`. Prevents query-name-variation bypass. |
+
+`ioc2rpz_fun:check_rate_limit/1` selects the threshold by key shape: a 1-tuple `{IP}` uses the aggregate limit, a 3-tuple `{IP, QName, QType}` uses the granular limit.
 
 ### stat_table
 - **Type**: `ordered_set`, public, named

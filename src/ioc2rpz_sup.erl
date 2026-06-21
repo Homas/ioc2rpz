@@ -28,6 +28,7 @@
 -behaviour(supervisor).
 -include_lib("kernel/include/file.hrl").
 -include_lib("ioc2rpz.hrl").
+-include_lib("eunit/include/eunit.hrl").
 -export([start_ioc2rpz_sup/1,stop_ioc2rpz_sup/0,update_all_zones/1,update_zone_full/1,
         update_zone_inc/1,reload_config3/1,read_config3/1,load_hotsources/1]).
 -export([init/1]).
@@ -113,11 +114,17 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
   %cleanup expired rate-limit entries to prevent unbounded ETS growth
   timer:apply_interval(?RATE_LIMIT_WINDOW,ioc2rpz_fun,cleanup_rate_limit_table,[]),
 
+  %cleanup expired hot-cache packet entries to prevent unbounded ETS growth
+  timer:apply_interval(?HotCacheTime * 1000,ioc2rpz_db,cleanup_hotcache,[]),
+
   ioc2rpz_fun:logMessage("ioc2rpz supervisor started ~n", []),
 
 % Check if a certificate was configured
 	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6','_'}),
   %ioc2rpz_fun:logMessage("cert '~p' ~n", [Cert]),
+  %record a baseline fingerprint of the certificate files so a later config
+  %reload can detect certificate renewals and restart the TLS listeners (task 34)
+  store_cert_hash(),
   if Cert /= [], Cert /= undefined -> ChildTLS=[
       %%%ioc2rpz TLS supervisors
       %#{id => ioc2rpz_tls_sup_v4,
@@ -185,7 +192,7 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
 		%DNS UDP
     #{id => ioc2rpz_udp_sup_v6,
     start => {ioc2rpz_proc_sup, start_ioc2rpz_proc_sup, [[udp6_sup,IPStr6,inet6]]},
-    restart => transient,
+    restart => permanent,
     shutdown => 1000,
     type => supervisor,
     modules => [ioc2rpz_proc_sup]}
@@ -259,6 +266,12 @@ reload_config3(Action)->
 %%% TODO we have to update get zone info..... to get rid of this.
   [ ioc2rpz_db:save_zone_info(X) || [X] <- ets:match(cfg_table,{[rpz,'_'],'_','$4'}),  X#rpz.cache == <<"true">>],
   read_config3(Filename,Action),
+  %On a full reload, pick up renewed TLS certificates by restarting the TLS
+  %listeners if the certificate files changed on disk (task 34).
+  case Action of
+    reload -> maybe_reload_cert();
+    _ -> ok
+  end,
   ok.
 
 %% @doc Parse the configuration file at startup.
@@ -716,6 +729,122 @@ my_process_is_alive(undefined)->
 my_process_is_alive(Pid)->
   is_process_alive(Pid).
 
+%% @doc Atomically claim an RPZ zone for updating, preventing duplicate
+%% concurrent updates (race-condition fix, task 27 / issue 1.19).
+%%
+%% Uses `ets:select_replace/2' (an atomic compare-and-swap) to flip the zone's
+%% `status' field to `updating' and record the caller as the owning `pid', but
+%% only when the zone is not already being updated:
+%% <ul>
+%%   <li>If `status' is not `updating' (e.g. `ready'/`forceAXFR'), it is claimed
+%%       atomically.</li>
+%%   <li>If `status' is `updating' but the recorded pid is dead (a stale/leaked
+%%       update), the entry is atomically reclaimed (matched on the exact dead
+%%       pid so a concurrent claimer cannot double-claim).</li>
+%%   <li>If `status' is `updating' with a live pid, the claim fails.</li>
+%% </ul>
+%%
+%% Called at the start of {@link update_zone_full/1} and {@link update_zone_inc/1}
+%% so every spawn path (periodic `update_all_zones', forced updates, REST/DNS
+%% management) is de-duplicated at a single authoritative point.
+%%
+%% @param ZoneBin The zone name in DNS wire format (`#rpz.zone').
+%% @returns `true' if the zone was claimed by this process, `false' otherwise.
+claim_zone_for_update(ZoneBin) ->
+  Key = [rpz, ZoneBin],
+  case ets:lookup(cfg_table, Key) of
+    [{Key, _ZBin, R}] ->
+      %% A zone is claimable unless it is already 'updating' with a live owner.
+      Claimable = (R#rpz.status /= updating) orelse (not my_process_is_alive(R#rpz.pid)),
+      case Claimable of
+        false ->
+          false;
+        true ->
+          NewR = R#rpz{status = updating, pid = self()},
+          %% Optimistic compare-and-swap: replace the record only if it is still
+          %% byte-for-byte what we just read ('$3' == R). If a concurrent process
+          %% changed it (e.g. claimed it first), select_replace returns 0 and this
+          %% claim fails — guaranteeing only one updater proceeds.
+          MS = [{ {'$1', '$2', '$3'},
+                  [{'==', '$1', {const, Key}}, {'==', '$3', {const, R}}],
+                  [{{'$1', '$2', {const, NewR}}}] }],
+          ets:select_replace(cfg_table, MS) == 1
+      end;
+    _ ->
+      false
+  end.
+
+%% @doc Compute a fingerprint of the configured TLS certificate files.
+%% Returns `undefined' when no certificate is configured.
+cert_files() ->
+  case ets:match(cfg_table,{srv,'_','_','_','_','$6','_'}) of
+    [[Cert]] when Cert /= [], Cert /= undefined ->
+      [ F || F <- [Cert#cert.certfile, Cert#cert.keyfile, Cert#cert.cacertfile], F /= undefined, F /= [] ];
+    _ ->
+      []
+  end.
+
+cert_files_hash([]) ->
+  undefined;
+cert_files_hash(Files) ->
+  crypto:hash(sha256, [ case file:read_file(F) of {ok,B} -> B; _ -> <<>> end || F <- Files ]).
+
+cert_files_readable(Files) ->
+  lists:all(fun(F) -> filelib:is_regular(F) end, Files).
+
+%% @doc Store the current certificate fingerprint as a baseline (no restart).
+store_cert_hash() ->
+  case cert_files() of
+    [] -> ok;
+    Files -> ets:insert(cfg_table, {cert_files_hash, cert_files_hash(Files)}), ok
+  end.
+
+%% @doc On config reload, detect a changed certificate and restart the TLS
+%% listeners so renewed certificates are picked up without a full restart
+%% (task 34 / issue 1.10).
+maybe_reload_cert() ->
+  case cert_files() of
+    [] -> ok;
+    Files ->
+      case cert_files_readable(Files) of
+        false ->
+          ioc2rpz_fun:logMessage("TLS certificate files missing or unreadable on reload; keeping current listeners~n", []);
+        true ->
+          NewHash = cert_files_hash(Files),
+          OldHash = case ets:lookup(cfg_table, cert_files_hash) of
+                      [{cert_files_hash, H}] -> H;
+                      _ -> undefined
+                    end,
+          if NewHash /= OldHash ->
+              ets:insert(cfg_table, {cert_files_hash, NewHash}),
+              case OldHash of
+                undefined -> ok; %first observation: just record the baseline
+                _ ->
+                  ioc2rpz_fun:logMessage("TLS certificate files changed; restarting TLS listeners~n", []),
+                  restart_tls_listeners()
+              end;
+            true ->
+              ok
+          end
+      end
+  end.
+
+%% @doc Terminate and restart the DoT and REST HTTPS listener supervisors so
+%% they re-read the certificate from disk.
+restart_tls_listeners() ->
+  lists:foreach(fun(Child) ->
+    case supervisor:terminate_child(?MODULE, Child) of
+      ok ->
+        case supervisor:restart_child(?MODULE, Child) of
+          {ok, _}    -> ioc2rpz_fun:logMessage("Restarted ~p with the new certificate~n", [Child]);
+          {ok, _, _} -> ioc2rpz_fun:logMessage("Restarted ~p with the new certificate~n", [Child]);
+          {error, R} -> ioc2rpz_fun:logMessage("Failed to restart ~p after certificate change: ~p~n", [Child, R])
+        end;
+      {error, not_found} -> ok; %listener not configured (e.g. no cert at startup)
+      {error, R}         -> ioc2rpz_fun:logMessage("Could not terminate ~p for certificate reload: ~p~n", [Child, R])
+    end
+  end, [ioc2rpz_tls_sup_v6, ioc2rpz_rest_tls_sup_v6]).
+
 %% @doc Trigger zone updates for all cached RPZ zones.
 %%
 %% When called with `true', forces a full AXFR update on every cached zone
@@ -756,6 +885,11 @@ update_all_zones(false) -> %update expired zones
 %% @param Zone  An `#rpz{}' record for the zone to update.
 %% @returns `ok'.
 update_zone_full(Zone) ->
+  case claim_zone_for_update(Zone#rpz.zone) of
+    false ->
+      ioc2rpz_fun:logMessage("Zone ~p is already being updated by a live process; skipping duplicate full update~n",[Zone#rpz.zone_str]),
+      ok;
+    true ->
   Pid=self(),
   CTime=ioc2rpz_fun:curr_serial_60(),%CTime=erlang:system_time(seconds),
   ioc2rpz_fun:logMessage("Zone ~p serial ~p, refresh time ~p current status ~p ~n",[Zone#rpz.zone_str,Zone#rpz.serial, Zone#rpz.axfr_time, Zone#rpz.status]),
@@ -778,7 +912,8 @@ update_zone_full(Zone) ->
       ioc2rpz_fun:logMessage("Zone ~p updated in ~p seconds, new serial ~p, ~p rules, ~p indicators.~n",[Zone#rpz.zone_str, (ioc2rpz_fun:curr_serial_60() - CTime), CTime, NRules, NIOCs])
   end,
   ioc2rpz_db:saveZones(),
-  ok.
+  ok
+  end.
 
 
 %% @doc Trigger incremental (IXFR) zone updates for all cached zones.
@@ -806,6 +941,11 @@ update_all_zones_inc(false) -> %update inc expired zones
 %% @param Zone  An `#rpz{}' record for the zone to update incrementally.
 %% @returns `ok'.
 update_zone_inc(Zone) ->
+  case claim_zone_for_update(Zone#rpz.zone) of
+    false ->
+      ioc2rpz_fun:logMessage("Zone ~p is already being updated by a live process; skipping duplicate incremental update~n",[Zone#rpz.zone_str]),
+      ok;
+    true ->
   %io:fwrite(group_leader(),"Zone ~p IOC  ~p ~n",[Zone#rpz.zone_str,IOC]),
   Pid=self(),
 	ioc2rpz_fun:logMessage("Process PID ~p incremental update ~p started ~n",[Pid, Zone#rpz.zone_str]),
@@ -836,7 +976,8 @@ update_zone_inc(Zone) ->
       end
   end,
 	ioc2rpz_fun:logMessage("Process PID ~p incremental update ~p finished in ~p seconds ~n",[Pid, Zone#rpz.zone_str, (ioc2rpz_fun:curr_serial_60()-CTime)]),
-	ok.
+	ok
+  end.
 
 %% @doc Rebuild the full AXFR zone cache from the current IXFR record set.
 %%
@@ -863,3 +1004,35 @@ rebuild_axfr_zone(Zone) ->
   ioc2rpz_fun:logMessage("Zone ~p, # of rules ~p, # of IOCs ~p ~n", [Zone#rpz.zone_str, NRules, NIOCs]),
   ets:delete(T_ZIP_L),
   {ok, NRules, NIOCs}.
+
+%%%%
+%%%% EUnit tests
+%%%%
+
+%% Verifies the atomic claim_zone_for_update/1 used to prevent duplicate
+%% concurrent zone updates (task 27 / issue 1.19).
+claim_zone_for_update_test() ->
+  catch ets:delete(cfg_table),
+  ets:new(cfg_table, [ordered_set, public, named_table]),
+  Z = <<4,"test",3,"rpz",0>>,
+  R = #rpz{zone=Z, zone_str="test.rpz", status=ready, pid=undefined},
+  ets:insert(cfg_table, {[rpz,Z], Z, R}),
+  %% 1) a 'ready' zone is claimed; status->updating, pid->self()
+  C1 = claim_zone_for_update(Z),
+  [{[rpz,Z],Z,R1}] = ets:lookup(cfg_table,[rpz,Z]),
+  %% 2) a second claim fails — zone is 'updating' with a live pid (self())
+  C2 = claim_zone_for_update(Z),
+  %% 3) a zone stuck 'updating' with a dead pid is reclaimable
+  DeadPid = spawn(fun() -> ok end),
+  timer:sleep(20),
+  ets:insert(cfg_table, {[rpz,Z], Z, R#rpz{status=updating, pid=DeadPid}}),
+  C3 = claim_zone_for_update(Z),
+  %% 4) an unknown zone cannot be claimed
+  C4 = claim_zone_for_update(<<5,"bogus">>),
+  ets:delete(cfg_table),
+  [ ?assert(C1 =:= true),
+    ?assert(R1#rpz.status =:= updating),
+    ?assert(R1#rpz.pid =:= self()),
+    ?assert(C2 =:= false),
+    ?assert(C3 =:= true),
+    ?assert(C4 =:= false) ].

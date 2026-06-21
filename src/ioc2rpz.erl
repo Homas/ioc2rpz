@@ -31,7 +31,7 @@
 -include_lib("ioc2rpz.hrl").
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([start_ioc2rpz/2,send_notify/1,send_notify/5,send_packets/20,domstr_to_bin/2,send_zone_live/9,mrpz_from_ioc/2,parse_dns_request/3,ip_to_str/1,dombin_to_str/1,reverse_IP/1,mrpz_from_ioc/4]).
+-export([start_ioc2rpz/2,send_notify/1,send_notify/5,send_packets/20,domstr_to_bin/2,send_zone_live/9,mrpz_from_ioc/2,parse_dns_request/3,ip_to_str/1,dombin_to_str/1,reverse_IP/1,mrpz_from_ioc/4,rl_key/5,rpz_zone/1]).
 
 
 %-compile([export_all]).
@@ -305,6 +305,14 @@ send_dns_tls(Socket, Pkt, []) -> %used to pass intermediate packets
 %% @param Pkt The DNS response packet binary.
 %% @param Args Unused arguments (reserved for future use).
 %% @returns The result of `gen_udp:send/4'.
+send_dns_udp(Socket, Dst, Port, Pkt, _Args) when byte_size(Pkt) > 512 ->
+  %RFC 1035 4.2.1: a UDP DNS response must not exceed 512 bytes. Oversized
+  %responses are truncated to 512 bytes and the TC (truncation) bit is set in
+  %the header so the client retries the query over TCP.
+  <<DNSId:2/binary, FlagsB1:8, Rest/binary>> = Pkt,
+  TCFlags = FlagsB1 bor 16#02, % set the TC bit (0x02) in the first flags byte
+  Truncated = binary:part(<<DNSId/binary, TCFlags:8, Rest/binary>>, 0, 512),
+  gen_udp:send(Socket, Dst, Port, Truncated);
 send_dns_udp(Socket, Dst, Port, Pkt, _Args) ->
   gen_udp:send(Socket, Dst, Port, Pkt).
 
@@ -353,7 +361,13 @@ parse_dns_request(Socket, <<PH:4/bytes, _QDCOUNT:2/big-unsigned-unit:8,_ANCOUNT:
   {<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, Other_REC/binary>>,QName} = extract_label(Rest,<<>>),
   Question = <<QName/binary,0:8,QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8>>,
   QStr=dombin_to_str(QName),
-  case ioc2rpz_fun:check_rate_limit({Rip,QName,QType}) of
+  %2025-01-10 Resolve the RPZ zone once here so it is not looked up again in
+  %process_dns_request/4 (addresses the "optimize passing processed data" TODO).
+  RpzZone = rpz_zone(QName),
+  %Intelligent (hybrid) rate-limit key: granular {Rip,QName,QType} for provisioned
+  %zones + supported QTYPEs and recognized management requests, aggregate {Rip}
+  %for everything else (prevents query-name-variation bypass). See rl_key/5.
+  case ioc2rpz_fun:check_rate_limit(rl_key(Rip,QName,QType,QClass,RpzZone)) of
       true -> % Rate limit exceeded - send refused
         ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(429),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr,ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]), % Log rate limiting event
         send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?REFUSED:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto);
@@ -370,7 +384,7 @@ parse_dns_request(Socket, <<PH:4/bytes, _QDCOUNT:2/big-unsigned-unit:8,_ANCOUNT:
 %          end;
       false -> % Rate limit not exceeded, process the request
         %2025-01-10 TODO optimize passing processed data
-        process_dns_request(Socket, Data, Proto)
+        process_dns_request(Socket, Data, Proto, RpzZone)
   end.
 
 %% @doc Processes a validated DNS request after rate limiting.
@@ -384,8 +398,11 @@ parse_dns_request(Socket, <<PH:4/bytes, _QDCOUNT:2/big-unsigned-unit:8,_ANCOUNT:
 %% @param Socket The connection socket.
 %% @param Data The raw DNS query binary.
 %% @param Proto A `#proto{}' record with connection metadata.
+%% @param RpzZone The prefetched RPZ zone lookup result (`[Zone]' or `[]') for
+%%        `QName', computed once in `parse_dns_request/3' and reused here to
+%%        avoid a duplicate `cfg_table' lookup.
 %% @returns Side-effectful; sends DNS responses. No meaningful return.
-process_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/big-unsigned-unit:8,NSCOUNT:2/big-unsigned-unit:8,ARCOUNT:2/big-unsigned-unit:8, Rest/binary>> = _Data, Proto) when QDCOUNT == 1, ANCOUNT == 0 -> %_DataLen:2/big-unsigned-unit:8,
+process_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/big-unsigned-unit:8,NSCOUNT:2/big-unsigned-unit:8,ARCOUNT:2/big-unsigned-unit:8, Rest/binary>> = _Data, Proto, RpzZone) when QDCOUNT == 1, ANCOUNT == 0 -> %_DataLen:2/big-unsigned-unit:8,
   STime=erlang:system_time(millisecond), %nanosecond, microsecond, millisecond, second
   <<DNSId:2/binary, _:1, OptB:7, _:1, OptE:3, _:4>> = PH,
   {<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, Other_REC/binary>>,QName} = extract_label(Rest,<<>>),
@@ -456,8 +473,7 @@ process_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:
 %Update a zone/force AXFR for a zone
     {_,?T_TXT,?C_CHAOS,ok} when MGMTIP, Proto#proto.proto == tcp, ?MGMToDNS == true ->
       {TSIGV,TSIG1} = validate_REQ(PH,QDCOUNT,ANCOUNT,NSCOUNT,ARCOUNT-1,Question,RAWN,TSIG,MKeys),
-      ZoneName = <<QName/binary,0:8>>,
-      case ets:select(cfg_table, [{{[rpz,ZoneName],'$1','$2'},[],['$2']}]) of
+      case RpzZone of %use prefetched RPZ zone lookup (avoids duplicate cfg_table select)
         [Zone]  ->
           TXT = <<"ioc2rpz forced AXFR for ",(list_to_binary(Zone#rpz.zone_str))/binary>>,
           case TSIGV of
@@ -489,11 +505,22 @@ process_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:
         TSIGV -> send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, ["sample-zone transfer failed",[TSIGV],QStr, QType, QClass], Proto)
       end;
 
+%Sample zone SOA — allows a SOA query for the built-in sample zone instead of
+%falling through to the RPZ handler (which would return NOTAUTH since the
+%sample zone is not stored in cfg_table).
+    {<<_,"sample-zone",7,"ioc2rpz">>, ?T_SOA, ?C_IN, ok} ->
+      {TSIGV,TSIG1} = validate_REQ(PH,QDCOUNT,ANCOUNT,NSCOUNT,ARCOUNT-1,Question,RAWN,TSIG,MKeys),
+      SampleZone = #rpz{zone = <<11,"sample-zone",7,"ioc2rpz",0>>, zone_str=?ioc2rpzSampleRPZ, serial=ioc2rpz_fun:curr_serial(), soa_timers = <<7200:32,3600:32,259200:32,7200:32>>},
+      case TSIGV of
+        noauth -> send_SOA(Socket, SampleZone, DNSId, OptB, OptE, Question, MailAddr, NSServ, [], Proto);
+        valid -> send_SOA(Socket, SampleZone, DNSId, OptB, OptE, Question, MailAddr, NSServ, TSIG1, Proto);
+        TSIGV -> send_TSIG_error(notsig, Socket, DNSId, OptB, OptE, Question, TSIG, ["sample-zone SOA request failed",[TSIGV],QStr, QType, QClass], Proto)
+      end;
+
 %RPZs
 %    {_,_,?C_IN,ok} when QType == ?T_SOA;QType == ?T_AXFR, NSCOUNT == 0,Proto#proto.proto == tcp; QType == ?T_IXFR, NSCOUNT == 1 -> %TODO check the guard
     {_,_,?C_IN,ok} when QType == ?T_SOA orelse (((QType == ?T_AXFR andalso NSCOUNT == 0) orelse (QType == ?T_IXFR andalso NSCOUNT == 1))  andalso Proto#proto.proto == tcp) -> %TODO check the guard
-      ZoneName = <<QName/binary,0:8>>,
-      case ets:select(cfg_table, [{{[rpz,ZoneName],'$1','$2'},[],['$2']}]) of
+      case RpzZone of %use prefetched RPZ zone lookup (avoids duplicate cfg_table select)
         [Zone]  ->
 						%TODO pull all keys from key groups
 						ZKeys=lists:flatten([ Zone#rpz.akeys,[ ets:match(cfg_table,{[key_group,X,'_'],'$3'}) || X <- Zone#rpz.key_groups ] ]),
@@ -535,6 +562,71 @@ process_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:
       ?logDebugMSG("Unknow request ~p ~p ~p ~p ~n",[QName, QType, QClass,RRRes]),
       ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(102),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
       send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?NOTIMP:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto)
+  end.
+
+
+%% @doc Computes the rate-limit key for a request (intelligent/hybrid scheme).
+%%
+%% Classifies the request and returns the key passed to
+%% `ioc2rpz_fun:check_rate_limit/1':
+%% - Provisioned zone with a supported QTYPE (`?T_SOA'/`?T_AXFR'/`?T_IXFR' in
+%%   class `?C_IN'), or a recognized management request (`?C_CHAOS'/`?T_TXT'
+%%   with a known management command name or a provisioned zone name) → the
+%%   GRANULAR key `{Rip, QName, QType}', so legitimate per-zone/per-type traffic
+%%   from one client is counted independently and not starved.
+%% - Everything else (unknown/unprovisioned zone, unsupported QTYPE, wrong
+%%   class, unrecognized management name) → the AGGREGATE key `{Rip}', so
+%%   query-name variation cannot be used to bypass the limit.
+%%
+%% @param Rip The client IP address tuple.
+%% @param QName The query name in DNS wire (label) format.
+%% @param QType The numeric query type.
+%% @param QClass The numeric query class.
+%% @param RpzZone The prefetched RPZ zone lookup (`[Zone]' or `[]') for `QName'.
+%% @returns `{Rip, QName, QType}' (granular) or `{Rip}' (aggregate).
+-spec rl_key(tuple(), binary(), integer(), integer(), list()) -> tuple().
+rl_key(Rip, QName, QType, QClass, RpzZone) ->
+  case rl_is_granular(QName, QType, QClass, RpzZone) of
+    true  -> {Rip, QName, QType};
+    false -> {Rip}
+  end.
+
+%% @doc Returns `true' when a request qualifies for granular (per zone+type)
+%% rate-limit keying, `false' when it belongs in the aggregate per-IP bucket.
+rl_is_granular(QName, QType, ?C_IN, RpzZone) when QType == ?T_SOA; QType == ?T_AXFR; QType == ?T_IXFR ->
+  RpzZone =/= [] orelse rl_is_sample_zone(QName);
+rl_is_granular(QName, ?T_TXT, ?C_CHAOS, RpzZone) ->
+  rl_is_mgmt_command(QName) orelse RpzZone =/= [];
+rl_is_granular(_QName, _QType, _QClass, _RpzZone) ->
+  false.
+
+%% @doc Matches the virtual built-in sample zone name (`sample-zone.ioc2rpz').
+%% The leading byte is the first DNS label length and is ignored.
+rl_is_sample_zone(<<_,"sample-zone",7,"ioc2rpz">>) -> true;
+rl_is_sample_zone(_) -> false.
+
+%% @doc Matches the recognized DNS management command names (CHAOS/TXT).
+%% The leading byte is the DNS label length and is ignored.
+rl_is_mgmt_command(<<_,"ioc2rpz-status">>) -> true;
+rl_is_mgmt_command(<<_,"ioc2rpz-reload-cfg">>) -> true;
+rl_is_mgmt_command(<<_,"ioc2rpz-update-tkeys">>) -> true;
+rl_is_mgmt_command(<<_,"ioc2rpz-terminate">>) -> true;
+rl_is_mgmt_command(<<_,"ioc2rpz-update-all-rpz">>) -> true;
+rl_is_mgmt_command(_) -> false.
+
+%% @doc Looks up a provisioned RPZ zone by query name via an O(1) keyed
+%% `ets:lookup/2' on `cfg_table'. Returns `[Zone]' if the zone exists, `[]'
+%% otherwise — shaped like the previous `ets:select/2' so callers pattern-match
+%% `[Zone]'. Computed once per request in `parse_dns_request/3' and threaded
+%% into `process_dns_request/4' to avoid a duplicate lookup.
+%% @param QName The query name in DNS wire (label) format.
+%% @returns `[Zone]' or `[]'.
+-spec rpz_zone(binary()) -> list().
+rpz_zone(QName) ->
+  ZoneName = <<QName/binary,0:8>>,
+  case ets:lookup(cfg_table, [rpz,ZoneName]) of
+    [{[rpz,ZoneName],_,Zone}] -> [Zone];
+    _ -> []
   end.
 
 
@@ -823,12 +915,12 @@ send_SOA(Socket, Zone, DNSId, OptB, OptE, Question, MailAddr, NSServ, TSIG, Prot
 %% @see gen_rpzrule/5
 %% @end
 send_sample_zone(Socket, DNSId, OptB, OptE, Questions, MailAddr, NSServ, TSIG, Proto) ->
-  SOA = <<NSServ/binary,MailAddr/binary,(ioc2rpz_fun:curr_serial()):32,7200:32,3600:32,259001:32,7200:32>>,
+  SOA = <<NSServ/binary,MailAddr/binary,(ioc2rpz_fun:curr_serial()):32,7200:32,3600:32,259200:32,7200:32>>,
   SOAREC = <<?ZNameZip, ?T_SOA:16, ?C_IN:16, 604800:32, (byte_size(SOA)):16, SOA/binary>>,
   NSRec = <<?ZNameZip, ?T_NS:16, ?C_IN:16, 604800:32, (byte_size(NSServ)):16, NSServ/binary>>,
 
 %  T_ZIP_L=ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]),
-	Zone=#rpz{zone_str=?ioc2rpzSampleRPZ},
+	Zone=#rpz{zone = <<11,"sample-zone",7,"ioc2rpz",0>>, zone_str=?ioc2rpzSampleRPZ},
 	T_ZIP_L=init_T_ZIP_L(Zone),
   NXLoc=byte_size(list_to_binary([Questions,SOAREC, NSRec]))+12,
   {ok, _, NXRules,_} = gen_rpzrule(<<"nxdomain.net.",?ioc2rpzSampleRPZ,".">>,Zone,?TTL,<<"true">>,<<"nxdomain">>,[],NXLoc,T_ZIP_L),
@@ -1944,3 +2036,27 @@ remove_WL_test() -> [
 	?assert(remove_WL([{<<"yellowcabnc.com">>,0,"fqdn"},{<<"google1.com">>,0,"fqdn"},{<<"example1.com">>,0,"fqdn"},{<<"exa1.com">>,0,"fqdn"}],[{<<"yellowcabnc.com">>,0,"fqdn"},{<<"google.com">>,0,"fqdn"},{<<"example.com">>,0,"fqdn"}]) =:= [{<<"exa1.com">>,0,"fqdn"}, {<<"example1.com">>,0,"fqdn"},{<<"google1.com">>,0,"fqdn"}]),
 	?assert(remove_WL([{<<"yellowcabnc.com">>,10,"fqdn"},{<<"google.com">>,0,"fqdn"},{<<"ioc2rpz.ru">>,10,"fqdn"}],[{<<"yellowcabnc.com">>,0,"fqdn"},{<<"google.com">>,0,"fqdn"},{<<"isc.com">>,0,"fqdn"},{<<"example.com">>,0,"fqdn"}]) =:= [{<<"ioc2rpz.ru">>,10,"fqdn"}])
 ].
+
+rl_key_test() ->
+  Rip = {10,0,0,1},
+  Zone = <<4,"test",3,"rpz">>,
+  [
+    %% provisioned zone + supported QTYPE (C_IN) -> granular {Rip,QName,QType}
+    ?assert(rl_key(Rip, Zone, ?T_SOA,  ?C_IN, [zone]) =:= {Rip, Zone, ?T_SOA}),
+    ?assert(rl_key(Rip, Zone, ?T_AXFR, ?C_IN, [zone]) =:= {Rip, Zone, ?T_AXFR}),
+    ?assert(rl_key(Rip, Zone, ?T_IXFR, ?C_IN, [zone]) =:= {Rip, Zone, ?T_IXFR}),
+    %% unknown/unprovisioned zone + supported QTYPE -> aggregate {Rip}
+    ?assert(rl_key(Rip, <<5,"bogus">>, ?T_SOA, ?C_IN, []) =:= {Rip}),
+    %% known zone but unsupported QTYPE (A=1) -> aggregate {Rip}
+    ?assert(rl_key(Rip, Zone, 1, ?C_IN, [zone]) =:= {Rip}),
+    %% recognized management command (CHAOS/TXT), no zone needed -> granular
+    ?assert(rl_key(Rip, <<14,"ioc2rpz-status">>, ?T_TXT, ?C_CHAOS, []) =:= {Rip, <<14,"ioc2rpz-status">>, ?T_TXT}),
+    %% force-AXFR management for a provisioned zone (CHAOS/TXT + zone exists) -> granular
+    ?assert(rl_key(Rip, Zone, ?T_TXT, ?C_CHAOS, [zone]) =:= {Rip, Zone, ?T_TXT}),
+    %% unrecognized CHAOS/TXT name with no zone -> aggregate (no granular bypass)
+    ?assert(rl_key(Rip, <<6,"random">>, ?T_TXT, ?C_CHAOS, []) =:= {Rip}),
+    %% virtual sample zone -> granular even though it is not stored in cfg_table
+    ?assert(rl_key(Rip, <<11,"sample-zone",7,"ioc2rpz">>, ?T_AXFR, ?C_IN, []) =:= {Rip, <<11,"sample-zone",7,"ioc2rpz">>, ?T_AXFR}),
+    %% wrong class (e.g. C_IN expected) for a TXT to a real zone -> aggregate
+    ?assert(rl_key(Rip, Zone, ?T_TXT, ?C_IN, [zone]) =:= {Rip})
+  ].

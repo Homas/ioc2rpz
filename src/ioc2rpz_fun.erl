@@ -19,7 +19,7 @@
 -include_lib("ioc2rpz.hrl").
 -export([logMessage/2,logMessageCEF/2,strs_to_binary/1,curr_serial/0,curr_serial_60/0,constr_ixfr_url/3,ip_to_bin/1,read_local_actions/1,split_bin_bytes/2,split_tail/2,rsplit_tail/2,
          bin_to_lowcase/1,ip_in_list/2,intersection/2,bin_to_hexstr/1,conv_to_Mb/1,q_class/1,q_type/1,split/2,msg_CEF/1,base64url_decode/1,get_cipher_suites/1,
-         str_to_ip/1,check_rate_limit/1,cleanup_rate_limit_table/0,constant_time_compare/2]).
+         str_to_ip/1,check_rate_limit/1,check_rate_limit/2,cleanup_rate_limit_table/0,constant_time_compare/2,json_escape/1]).
 
 %% @doc Logs a formatted message to the group leader with a timestamp prefix.
 %% Delegates to {@link logMessage/3} using `group_leader()' as the destination.
@@ -464,16 +464,34 @@ get_cipher_suites(TLSVersion) when TLSVersion=="tlsv1.2";TLSVersion=="tlsv1.3";T
 %% cause unbounded ETS table growth. See bugfix task 21 for the planned
 %% periodic cleanup mechanism.
 %%
-%% @param Id The rate limit key (typically a client IP or `{IP, QName, QType}' tuple).
+%% @param Id The rate limit key. A 3-tuple `{IP, QName, QType}' selects the
+%%        granular bucket (limited by `?MAX_REQUESTS_PER_WINDOW'); a 1-tuple
+%%        `{IP}' selects the aggregate per-IP bucket (limited by
+%%        `?MAX_UNKNOWN_REQUESTS_PER_WINDOW').
 %% @returns `true' if the rate limit is exceeded, `false' otherwise.
 -spec check_rate_limit(term()) -> boolean().
 %%%Rate limiting function
 check_rate_limit(Id) ->
+  %% Pick the threshold by key shape: the aggregate per-IP bucket ({IP}) uses
+  %% ?MAX_UNKNOWN_REQUESTS_PER_WINDOW, every other (granular) key uses
+  %% ?MAX_REQUESTS_PER_WINDOW. See ioc2rpz:rl_key/5.
+  Max = case Id of
+          {_Rip} -> ?MAX_UNKNOWN_REQUESTS_PER_WINDOW;
+          _      -> ?MAX_REQUESTS_PER_WINDOW
+        end,
+  check_rate_limit(Id, Max).
+
+%% @doc Rate-limit check with an explicit per-window maximum.
+%% @param Id The rate limit key.
+%% @param Max The maximum number of requests allowed within `?RATE_LIMIT_WINDOW'.
+%% @returns `true' if the rate limit is exceeded, `false' otherwise.
+-spec check_rate_limit(term(), non_neg_integer()) -> boolean().
+check_rate_limit(Id, Max) ->
   CurrentTime = erlang:system_time(millisecond),
   case ets:lookup(?RATE_LIMIT_TABLE, Id) of
       [{Id, {LastRequestTime, RequestCount}}] ->
           if CurrentTime - LastRequestTime < ?RATE_LIMIT_WINDOW ->
-              if RequestCount >= ?MAX_REQUESTS_PER_WINDOW ->
+              if RequestCount >= Max ->
                   true; % Rate limit exceeded
               true ->
                   ets:insert(?RATE_LIMIT_TABLE, {Id, {CurrentTime, RequestCount + 1}}),
@@ -528,6 +546,33 @@ xor_fold(<<>>, <<>>, Acc) ->
 xor_fold(<<H1:8, T1/binary>>, <<H2:8, T2/binary>>, Acc) ->
   xor_fold(T1, T2, Acc bor (H1 bxor H2)).
 
+%% @doc Escapes a string/binary for safe inclusion inside a JSON string literal.
+%%
+%% Escapes the characters that would otherwise break or inject into a JSON
+%% document: double quote, backslash, and the C0 control characters
+%% (`\b', `\t', `\n', `\f', `\r', and any remaining `< 0x20' as `\uXXXX').
+%% Accepts a binary or a list of characters; always returns a flat list
+%% (string) suitable for use with `~s'.
+%%
+%% @param Value A binary or string (list of code points) to escape.
+%% @returns The escaped string (a flat list of characters).
+-spec json_escape(binary() | string()) -> string().
+json_escape(Value) when is_binary(Value) ->
+  json_escape(unicode:characters_to_list(Value));
+json_escape(Value) when is_list(Value) ->
+  lists:flatten([ json_escape_char(C) || C <- Value ]).
+
+%% @doc Escapes a single character for a JSON string literal.
+json_escape_char($")  -> "\\\"";
+json_escape_char($\\) -> "\\\\";
+json_escape_char($\b) -> "\\b";
+json_escape_char($\t) -> "\\t";
+json_escape_char($\n) -> "\\n";
+json_escape_char($\f) -> "\\f";
+json_escape_char($\r) -> "\\r";
+json_escape_char(C) when is_integer(C), C < 16#20 -> lists:flatten(io_lib:format("\\u~4.16.0b", [C]));
+json_escape_char(C) -> C.
+
 %%%%
 %%%% EUnit tests
 %%%%
@@ -539,6 +584,13 @@ q_class_test() -> [
 q_type_test() -> [
 	?assert(q_type(?T_CNAME) =:= "CNAME"),
 	?assert(q_type(42) =:= "42")
+].
+
+json_escape_test() -> [
+	?assert(lists:flatten(json_escape("test\"injection")) =:= "test\\\"injection"),
+	?assert(lists:flatten(json_escape(<<"a\\b">>)) =:= "a\\\\b"),
+	?assert(lists:flatten(json_escape("line\nbreak")) =:= "line\\nbreak"),
+	?assert(lists:flatten(json_escape("plain")) =:= "plain")
 ].
 
 conv_to_Mb_test() -> [

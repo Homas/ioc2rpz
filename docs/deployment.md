@@ -231,6 +231,8 @@ This asks you to create a `_acme-challenge` TXT record. For automation, use a ce
 
 Erlang automatically picks up replaced certificate files within approximately 2 minutes due to internal caching. Replace the files in-place without restarting the service. Do not let certificates expire — renew before expiration for uninterrupted service.
 
+To pick up renewed certificates immediately, trigger a configuration reload (via the REST API or the `ioc2rpz-reload-cfg` DNS management command). On reload, the server compares a fingerprint of the certificate files; if they changed, it restarts the DoT and REST HTTPS listeners (`ioc2rpz_tls_sup_v6`, `ioc2rpz_rest_tls_sup_v6`) so the new certificate takes effect without waiting for the SSL cache to expire and without a full service restart. Existing connections continue until they close naturally.
+
 ### TLS Version
 
 The default TLS version is configured in `include/ioc2rpz.hrl`:
@@ -374,7 +376,8 @@ Check that:
 ### High Memory Usage
 
 - Check ETS table sizes in the Erlang shell (see Monitoring section)
-- `rate_limits` and `rpz_hotcache_table` are periodically cleaned (after hardening fixes)
+- `rate_limits` is swept every 10 seconds (`?RATE_LIMIT_WINDOW`) by `ioc2rpz_fun:cleanup_rate_limit_table/0`, removing expired per-client entries
+- `rpz_hotcache_table` packet entries are swept every 900 seconds (`?HotCacheTime`) by `ioc2rpz_db:cleanup_hotcache/0`, removing expired cached zone packets
 - Large IOC sources consume memory proportional to indicator count
 - Consider reducing `?HotCacheTime` (default 900s) if hot cache grows too large
 

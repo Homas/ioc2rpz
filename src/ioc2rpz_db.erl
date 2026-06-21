@@ -42,7 +42,7 @@
 -module(ioc2rpz_db).
 -include_lib("ioc2rpz.hrl").
 -export([init_db/3,db_table_info/2,read_db_pkt/1,write_db_pkt/2,delete_db_pkt/1,delete_old_db_pkt/1,read_db_record/3,write_db_record/3,delete_old_db_record/1,saveZones/0,loadZones/0,loadZones/1,
-        get_zone_info/2,clean_DB/1,save_zone_info/1,get_allzones_info/2, lookup_db_record/2]).
+        get_zone_info/2,clean_DB/1,save_zone_info/1,get_allzones_info/2, lookup_db_record/2,cleanup_hotcache/0]).
 
 
 %% @doc Initializes the database storage backend.
@@ -142,6 +142,28 @@ read_db_pkt(ets,Zone) ->
   end;
 
 read_db_pkt(mnesia,_Zone) ->
+  ok.
+
+%% @doc Removes expired packet entries from the `rpz_hotcache_table'.
+%%
+%% Deletes cached zone-transfer packet entries (keyed `{pkthotcache, Zone, PktN}')
+%% whose stored timestamp is older than `?HotCacheTime' seconds. Without this
+%% periodic sweep these packet entries are only checked for staleness on read and
+%% otherwise accumulate indefinitely, growing `rpz_hotcache_table' unbounded.
+%%
+%% Source IOC hot-cache entries (keyed `{SourceName, axfr|ixfr}') are deliberately
+%% NOT touched here — they honour each source's own `hotcache_time' and are
+%% refreshed by `ioc2rpz_sup:load_hotsources/1'.
+%%
+%% Intended to be called via `timer:apply_interval/4' from the supervisor.
+%% @returns `ok'.
+-spec cleanup_hotcache() -> ok.
+cleanup_hotcache() ->
+  Cutoff = ioc2rpz_fun:curr_serial() - ?HotCacheTime,
+  %% Delete packet hot-cache entries {{pkthotcache,_,_}, Timestamp, _} where Timestamp < Cutoff
+  Deleted = ets:select_delete(rpz_hotcache_table,
+    [{{{pkthotcache,'_','_'}, '$1', '_'}, [{'<', '$1', Cutoff}], [true]}]),
+  ?logDebugMSG("Hot cache cleanup removed ~p expired packet entries~n", [Deleted]),
   ok.
 
 %% @doc Writes a single AXFR zone transfer packet to the cache.

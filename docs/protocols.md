@@ -9,7 +9,7 @@ ioc2rpz listens on multiple transport protocols for DNS queries. All transports 
 UDP is used for lightweight DNS queries, primarily SOA lookups. The `ioc2rpz_udp` module opens a UDP socket with `{active, true}` and spawns a new process for each incoming packet.
 
 - SOA queries are the primary use case over UDP
-- Responses exceeding 512 bytes (or the EDNS0 advertised buffer size) should set the TC (truncation) bit per RFC 1035 §4.2.1
+- Responses exceeding 512 bytes are truncated by the server, which sets the TC (truncation) bit in the response header per RFC 1035 §4.2.1, prompting the client to retry over TCP (see `send_dns_udp/5`)
 - Management commands are not supported over UDP
 
 ```bash
@@ -147,6 +147,7 @@ Management is supported over TCP and DoT using DNS queries with class `CHAOS` an
 | Update one zone | `<zone_name>` | Forces full refresh of a specific zone |
 | Shutdown | `ioc2rpz-terminate` | Graceful server shutdown |
 | Sample zone | `sample-zone.ioc2rpz` (class IN, type AXFR) | Returns a sample RPZ zone |
+| Sample zone SOA | `sample-zone.ioc2rpz` (class IN, type SOA) | Returns the sample zone's SOA (no longer NOTAUTH) |
 
 ```bash
 # Check server status
@@ -377,14 +378,23 @@ After a zone update (AXFR or IXFR), ioc2rpz sends DNS NOTIFY messages (RFC 1996)
 
 ## Rate Limiting
 
-DNS queries are rate-limited per `{client_IP, query_name, query_type}` tuple. The implementation uses an ETS table (`rate_limits`).
+DNS queries are rate-limited using an **intelligent (hybrid) key** stored in an ETS table (`rate_limits`). The key is chosen per request by `ioc2rpz:rl_key/5` so that legitimate multi-zone traffic and abusive query-name-variation traffic are treated differently:
+
+| Request class | Condition | Rate-limit key | Threshold macro |
+|---|---|---|---|
+| Provisioned zone, supported QTYPE | class `IN` + `SOA`/`AXFR`/`IXFR` for a zone in `cfg_table` (incl. virtual `sample-zone.ioc2rpz`) | `{client_IP, query_name, query_type}` (granular) | `?MAX_REQUESTS_PER_WINDOW` |
+| Recognized management request | class `CHAOS` + `TXT` with a known management command (`ioc2rpz-status`, `ioc2rpz-reload-cfg`, `ioc2rpz-update-tkeys`, `ioc2rpz-terminate`, `ioc2rpz-update-all-rpz`) or a provisioned zone name (force-AXFR) | `{client_IP, query_name, query_type}` (granular) | `?MAX_REQUESTS_PER_WINDOW` |
+| Everything else | non-existent/unprovisioned zone, unsupported QTYPE, wrong class, or unrecognized CHAOS/TXT name | `{client_IP}` (aggregate per-IP) | `?MAX_UNKNOWN_REQUESTS_PER_WINDOW` |
+
+The granular bucket means a legitimate secondary polling/transferring several zones (e.g. `rpz1`, `rpz2`, `rpz3`) plus management from one IP is counted independently per zone+type and is not starved. The aggregate bucket means an attacker cannot multiply their effective limit by varying the query name (random subdomains, junk CHAOS/TXT names) — all such traffic shares a single per-IP counter.
 
 | Parameter | Value | Macro |
 |-----------|-------|-------|
 | Window | 10 seconds | `?RATE_LIMIT_WINDOW` (10000 ms) |
-| Max requests per window | 1 | `?MAX_REQUESTS_PER_WINDOW` |
+| Max requests per window (granular: known zone + type / management) | 1 | `?MAX_REQUESTS_PER_WINDOW` |
+| Max requests per window (aggregate: unknown zone / unsupported type) | 1 | `?MAX_UNKNOWN_REQUESTS_PER_WINDOW` |
 
-When the rate limit is exceeded, the server returns a DNS `REFUSED` response and logs a CEF event.
+The threshold is selected by key shape in `ioc2rpz_fun:check_rate_limit/1` (a 1-tuple `{IP}` uses the aggregate limit; a 3-tuple `{IP, QName, QType}` uses the granular limit). When the rate limit is exceeded, the server returns a DNS `REFUSED` response and logs a CEF event (code 429).
 
 Rate limiting applies to all DNS query transports (UDP, TCP, TLS, DoH).
 

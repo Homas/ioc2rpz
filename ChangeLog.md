@@ -1,5 +1,15 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## 2026-06-22 v1.3.0.4
+- Intelligent (hybrid) DNS rate limiting: provisioned zones + supported QTYPEs (SOA/AXFR/IXFR) and recognized management requests are tracked per {IP, QName, QType}; everything else (unknown zone, unsupported qtype, unrecognized name) is aggregated per {IP} to prevent query-name-variation bypass. Adds separate threshold MAX_UNKNOWN_REQUESTS_PER_WINDOW
+- Hot cache packet entries are now periodically purged (ioc2rpz_db:cleanup_hotcache/0) to prevent unbounded rpz_hotcache_table growth
+- UDP responses over 512 bytes now set the TC (truncation) bit and are truncated per RFC 1035 4.2.1, prompting clients to retry over TCP
+- Fixed zone-update race condition: an atomic compare-and-swap (claim_zone_for_update/1) prevents duplicate concurrent updates of the same zone across all spawn paths
+- REST API JSON responses now escape user-controlled values (ioc2rpz_fun:json_escape/1), preventing JSON injection/breakage from special characters in source/RPZ names
+- Sample zone (sample-zone.ioc2rpz) now answers SOA queries (previously NOTAUTH); fixed the SOA record (zone field set, expire timer 259200)
+- TLS certificate reload: a configuration reload (ioc2rpz-reload-cfg) detects changed certificate files and restarts the DoT/REST TLS listeners, applying renewed certificates without a full restart
+- README: rewrote "Building from Source" with prerequisites, a minimal config example, and a development-shell section
+
 ## 2026-06-21 v1.3.0.3
 - Guard zone build against a removed source (badmatch fix)
 - Rate-limit table cleanup to prevent memory leak

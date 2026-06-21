@@ -602,6 +602,8 @@ Cipher suites are automatically selected based on the configured TLS version usi
 
 Erlang automatically picks up renewed certificate files if they are saved to the same path. There may be a delay of up to 2 minutes due to caching. It is recommended not to let certificates expire to ensure service continuity.
 
+Triggering a configuration reload (REST API or the `ioc2rpz-reload-cfg` DNS management command) picks up renewed certificates immediately: the server detects changed certificate files and restarts the TLS listeners with the new certificate, avoiding the SSL cache delay.
+
 ### Ports
 
 Default ports are defined in `include/ioc2rpz.hrl`:
@@ -721,10 +723,11 @@ curl -u "dnsmkey_1:KEY_SECRET" --insecure \
 
 ### Sample Zone
 
-A built-in sample zone `sample-zone.ioc2rpz` is available for testing. It demonstrates all RPZ rule types and can be transferred via AXFR:
+A built-in sample zone `sample-zone.ioc2rpz` is available for testing. It demonstrates all RPZ rule types and can be transferred via AXFR, and also answers SOA queries:
 
 ```bash
 dig @127.0.0.1 sample-zone.ioc2rpz AXFR +tcp
+dig @127.0.0.1 sample-zone.ioc2rpz SOA +tcp
 ```
 
 ---
@@ -757,7 +760,8 @@ These are defined in `include/ioc2rpz.hrl` and require recompilation to change.
 | `ShellMaxRespSize` | `2 GB` | Maximum response size for shell sources |
 | `SourcePullTimeout` | `300000` | Source download timeout (milliseconds) |
 | `RATE_LIMIT_WINDOW` | `10000` | Rate limit window (milliseconds) |
-| `MAX_REQUESTS_PER_WINDOW` | `1` | Maximum requests per IP per rate limit window |
+| `MAX_REQUESTS_PER_WINDOW` | `1` | Max requests per window for the granular bucket: provisioned zone + supported QTYPE (`SOA`/`AXFR`/`IXFR`) and recognized management requests, keyed `{IP, QName, QType}` |
+| `MAX_UNKNOWN_REQUESTS_PER_WINDOW` | `1` | Max requests per window for the aggregate per-IP bucket: unknown/unprovisioned zone, unsupported QTYPE, wrong class, or unrecognized management name, keyed `{IP}` |
 
 ---
 

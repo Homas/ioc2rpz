@@ -137,7 +137,7 @@
 %%%===================================================================
 
 %% Application version string: "major.minor.patch.build-YYYYMMDDNN"
--define(ioc2rpz_ver, "1.3.0.3-2026062101").
+-define(ioc2rpz_ver, "1.3.0.4-2026062201").
 
 %% DNS label compression pointer for the query name (QNAME) in responses.
 %% In a standard DNS response, the original QNAME from the question section
@@ -474,9 +474,20 @@
 
 %% Sliding window duration in milliseconds for rate limit tracking.
 %% Requests within this window are counted against the limit.
--define(RATE_LIMIT_WINDOW, 10000).
+-define(RATE_LIMIT_WINDOW, 60000).
 
 %% Maximum number of DNS requests allowed per client IP within
 %% a single ?RATE_LIMIT_WINDOW period. Requests exceeding this
 %% threshold are refused with ?REFUSED response code.
--define(MAX_REQUESTS_PER_WINDOW, 1).
+%% Used for the GRANULAR rate-limit bucket keyed by {IP, QName, QType}
+%% (provisioned zone + supported QTYPE, and recognized management requests).
+-define(MAX_REQUESTS_PER_WINDOW, 6).
+
+%% Maximum number of requests allowed within a single ?RATE_LIMIT_WINDOW for
+%% the AGGREGATE per-IP bucket keyed by {IP}. This bucket counts requests that
+%% do not map to a provisioned zone + supported QTYPE (unknown/unprovisioned
+%% zones, unsupported query types, wrong class, unrecognized management names).
+%% Kept separate from ?MAX_REQUESTS_PER_WINDOW so abusive query-name-variation
+%% traffic can be limited independently of legitimate per-zone/per-type traffic.
+%% Selected by rate-limit key shape in ioc2rpz_fun:check_rate_limit/1.
+-define(MAX_UNKNOWN_REQUESTS_PER_WINDOW, 1).
