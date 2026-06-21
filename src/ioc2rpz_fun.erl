@@ -19,7 +19,7 @@
 -include_lib("ioc2rpz.hrl").
 -export([logMessage/2,logMessageCEF/2,strs_to_binary/1,curr_serial/0,curr_serial_60/0,constr_ixfr_url/3,ip_to_bin/1,read_local_actions/1,split_bin_bytes/2,split_tail/2,rsplit_tail/2,
          bin_to_lowcase/1,ip_in_list/2,intersection/2,bin_to_hexstr/1,conv_to_Mb/1,q_class/1,q_type/1,split/2,msg_CEF/1,base64url_decode/1,get_cipher_suites/1,
-         str_to_ip/1,check_rate_limit/1]).
+         str_to_ip/1,check_rate_limit/1,cleanup_rate_limit_table/0,constant_time_compare/2]).
 
 %% @doc Logs a formatted message to the group leader with a timestamp prefix.
 %% Delegates to {@link logMessage/3} using `group_leader()' as the destination.
@@ -489,6 +489,45 @@ check_rate_limit(Id) ->
   end.
 %%%End rate limit function
 
+%% @doc Removes expired entries from the rate-limit ETS table.
+%%
+%% Performs a periodic sweep of `?RATE_LIMIT_TABLE', deleting all entries
+%% whose `LastRequestTime' is older than `?RATE_LIMIT_WINDOW' milliseconds
+%% from the current time. This prevents unbounded table growth from
+%% one-time clients that never return.
+%%
+%% Intended to be called via `timer:apply_interval/4' from the supervisor.
+%% @returns `ok'.
+-spec cleanup_rate_limit_table() -> ok.
+cleanup_rate_limit_table() ->
+  CurrentTime = erlang:system_time(millisecond),
+  Cutoff = CurrentTime - ?RATE_LIMIT_WINDOW,
+  %% Delete all entries where LastRequestTime =< Cutoff
+  %% Match spec: match {Key, {LastRequestTime, _Count}} where LastRequestTime =< Cutoff
+  ets:select_delete(?RATE_LIMIT_TABLE,
+    [{{'_', {'$1', '_'}}, [{'=<', '$1', Cutoff}], [true]}]),
+  ok.
+%%%End rate limit cleanup
+
+%% @doc Constant-time comparison of two binaries.
+%% Returns `true' if both binaries are equal, `false' otherwise.
+%% This function always compares all bytes (XOR-fold) to avoid timing side-channels.
+%% @param A First binary.
+%% @param B Second binary.
+%% @returns `true' | `false'.
+-spec constant_time_compare(binary(), binary()) -> boolean().
+constant_time_compare(A, B) when is_binary(A), is_binary(B), byte_size(A) =:= byte_size(B) ->
+  xor_fold(A, B, 0) =:= 0;
+constant_time_compare(_, _) ->
+  false.
+
+%% @doc XOR-folds corresponding bytes of two equal-length binaries into an accumulator.
+-spec xor_fold(binary(), binary(), non_neg_integer()) -> non_neg_integer().
+xor_fold(<<>>, <<>>, Acc) ->
+  Acc;
+xor_fold(<<H1:8, T1/binary>>, <<H2:8, T2/binary>>, Acc) ->
+  xor_fold(T1, T2, Acc bor (H1 bxor H2)).
+
 %%%%
 %%%% EUnit tests
 %%%%
@@ -534,3 +573,40 @@ bin_to_lowcase_test() ->[
 	?assert(bin_to_lowcase(<<"eeeeeeeeeeeeeeeeeeeeeee">>) =:= <<"eeeeeeeeeeeeeeeeeeeeeee">>)
 ].
 
+cleanup_rate_limit_table_test() ->
+  %% Create or reuse the rate_limits ETS table for testing
+  case ets:info(?RATE_LIMIT_TABLE) of
+    undefined -> ets:new(?RATE_LIMIT_TABLE, [named_table, public, {read_concurrency, true}, {write_concurrency, true}]);
+    _ -> ets:delete_all_objects(?RATE_LIMIT_TABLE)
+  end,
+  CurrentTime = erlang:system_time(millisecond),
+  %% Insert an expired entry (well beyond the window)
+  ExpiredTime = CurrentTime - ?RATE_LIMIT_WINDOW - 5000,
+  ets:insert(?RATE_LIMIT_TABLE, {expired_key, {ExpiredTime, 3}}),
+  %% Insert a fresh entry (within the window)
+  FreshTime = CurrentTime - 100,
+  ets:insert(?RATE_LIMIT_TABLE, {fresh_key, {FreshTime, 2}}),
+  %% Verify both entries exist
+  ?assertEqual(2, ets:info(?RATE_LIMIT_TABLE, size)),
+  %% Run cleanup
+  ok = cleanup_rate_limit_table(),
+  %% Expired entry should be removed, fresh entry should remain
+  ?assertEqual(1, ets:info(?RATE_LIMIT_TABLE, size)),
+  ?assertEqual([], ets:lookup(?RATE_LIMIT_TABLE, expired_key)),
+  ?assertMatch([{fresh_key, {_, 2}}], ets:lookup(?RATE_LIMIT_TABLE, fresh_key)).
+
+
+constant_time_compare_test() -> [
+	%% Equal binaries
+	?assert(constant_time_compare(<<"hello">>, <<"hello">>) =:= true),
+	?assert(constant_time_compare(<<1,2,3>>, <<1,2,3>>) =:= true),
+	?assert(constant_time_compare(<<>>, <<>>) =:= true),
+	%% Unequal binaries (same length)
+	?assert(constant_time_compare(<<"hello">>, <<"world">>) =:= false),
+	?assert(constant_time_compare(<<1,2,3>>, <<1,2,4>>) =:= false),
+	?assert(constant_time_compare(<<"abc">>, <<"abd">>) =:= false),
+	%% Different lengths
+	?assert(constant_time_compare(<<"hi">>, <<"hello">>) =:= false),
+	?assert(constant_time_compare(<<"hello">>, <<"hi">>) =:= false),
+	?assert(constant_time_compare(<<>>, <<"a">>) =:= false)
+].

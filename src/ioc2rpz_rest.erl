@@ -95,7 +95,7 @@ is_authorized(Req, State) ->
 				[[X,Y]] -> {X,base64:encode(Y)};
 				[]	-> {false, false}
 			end,
-			case {lists:member(UserB,MKeys), TKey == Password} of
+			case {lists:member(UserB,MKeys), ioc2rpz_fun:constant_time_compare(TKey, Password)} of
 				{true, true} -> {true, Req, State#state{user=User}};
 				_ ->
 					Body = io_lib:format("{status: \"error\", msg: \"Authentication failed\"}\n",[]),

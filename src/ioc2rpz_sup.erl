@@ -110,6 +110,9 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
   timer:apply_interval(?ZoneRefTime,ioc2rpz_sup,load_hotsources,[false]),
   timer:apply_interval(?ZoneRefTime,ioc2rpz_sup,update_all_zones,[false]),
 
+  %cleanup expired rate-limit entries to prevent unbounded ETS growth
+  timer:apply_interval(?RATE_LIMIT_WINDOW,ioc2rpz_fun,cleanup_rate_limit_table,[]),
+
   ioc2rpz_fun:logMessage("ioc2rpz supervisor started ~n", []),
 
 % Check if a certificate was configured

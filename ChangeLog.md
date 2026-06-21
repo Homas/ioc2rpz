@@ -1,5 +1,20 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## 2026-06-21 v1.3.0.3
+- Guard zone build against a removed source (badmatch fix)
+- Rate-limit table cleanup to prevent memory leak
+- Constant-time comparison for REST key and TSIG MAC
+
+## 2026-06-21 v1.3.0.2
+- Fix AXFR cache wipe causing badmatch crash on zone transfer (same-serial race condition)
+- Harden read_db_pkt to return [] on empty match instead of crashing
+- TLS connection handling fix
+- Cowboy version bump
+- Comprehensive EDoc comments added to all source modules
+- Created docs/architecture.md, docs/protocols.md, docs/configuration.md, docs/deployment.md
+- Overhauled README.md with full project documentation
+- Sample IOC and config files added
+
 ## 2025-01-22 v1.3.0.1
 - FIX BUG #52 (https://github.com/Homas/ioc2rpz/issues/52)
 

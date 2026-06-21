@@ -631,7 +631,7 @@ validate_REQ(PH,QDCOUNT,ANCOUNT,NSCOUNT,ARCOUNT,Question,DNSRR,TSIG, KEYS) when 
           "sha256" -> crypto:mac(hmac,sha256,KEY,PKT); %crypto:hmac(sha256,KEY,PKT);
           "sha512" -> crypto:mac(hmac,sha512,KEY,PKT) %crypto:hmac(sha512,KEY,PKT)
         end,
-        case CH_MAC == TSIG#dns_TSIG_RR.mac of
+        case ioc2rpz_fun:constant_time_compare(CH_MAC, TSIG#dns_TSIG_RR.mac) of
           true when LTime >= RTimeL, LTime =< RTimeH -> ?logDebugMSG("Good timestamp ... Valid MAC~n",[]),      {valid,TSIG#dns_TSIG_RR{alg_str=Alg,key=KEY}};
           false when LTime >= RTimeL, LTime =< RTimeH -> ?logDebugMSG("Good timestamp ... NOT Valid MAC~n",[]), {badmac,[]};
             %TODO 4.5.2 cache client time and if later request contains early time -> BADTIME
@@ -1448,13 +1448,18 @@ check_source_updating(Source, SRC, Pid, true) -> % if the process is alive - wai
 
 check_source_updating(_Source, SRC, Pid, false) -> % if the proces is not alive - check config if someother process grab it and restart validation
   timer:sleep(500+rand:uniform(100)),
-  [[Source]]=ets:match(cfg_table,{[source,SRC],'$2'}),
-  if Pid == Source#source.pid ->
-    ioc2rpz_fun:logMessage("~p is dead. no other process is pulling it. ~p will download it.~n",[Pid, self()]),
-    ets:update_element(cfg_table, [source,SRC], [{2, Source#source{pid=self()}}]);
-    true ->
-      ioc2rpz_fun:logMessage("~p is dead. Got ~p in the config. ~p is waiting...~n",[Pid, Source#source.pid, self()]),
-      check_source_updating(Source, SRC, Source#source.pid)
+  case ets:match(cfg_table,{[source,SRC],'$2'}) of
+    [[Source]] ->
+      if Pid == Source#source.pid ->
+        ioc2rpz_fun:logMessage("~p is dead. no other process is pulling it. ~p will download it.~n",[Pid, self()]),
+        ets:update_element(cfg_table, [source,SRC], [{2, Source#source{pid=self()}}]);
+        true ->
+          ioc2rpz_fun:logMessage("~p is dead. Got ~p in the config. ~p is waiting...~n",[Pid, Source#source.pid, self()]),
+          check_source_updating(Source, SRC, Source#source.pid)
+      end;
+    [] ->
+      ioc2rpz_fun:logMessage("Error: source ~p not found in config (removed?). Skipping.~n",[SRC]),
+      {error, source_not_found}
   end.
 
 %% @doc Fetches IOCs from all sources for a zone and removes whitelisted entries.
@@ -1479,9 +1484,10 @@ mrpz_from_ioc(Zone,UType) -> %Zone - RPZ zone
 %% @returns A list of `{IOC, Expiry, Type}' tuples from all sources.
 mrpz_from_ioc([SRC|REST], RPZ,UType, IOC) -> %List of the sources, RPZ zone, UType - AXFR/IXFR update type, IOC - list of accumulated IOCs
   CTime=RPZ#rpz.serial, %CTime=ioc2rpz_fun:curr_serial(),
-  [[Source]]=ets:match(cfg_table,{[source,SRC],'$2'}),
-  check_source_updating(Source, SRC,Source#source.pid),
-   case {ets:match(rpz_hotcache_table,{{SRC,UType},'$2','$3'}),UType} of
+  case ets:match(cfg_table,{[source,SRC],'$2'}) of
+    [[Source]] ->
+      check_source_updating(Source, SRC,Source#source.pid),
+       case {ets:match(rpz_hotcache_table,{{SRC,UType},'$2','$3'}),UType} of
     {[[Timestamp,IOCZip]],axfr} when CTime=<(Timestamp+Source#source.hotcache_time) ->
       IOC1=binary_to_term(IOCZip),
       ioc2rpz_fun:logMessage("Got source ~p from cache~n",[SRC]); %TODO debug
@@ -1516,8 +1522,12 @@ mrpz_from_ioc([SRC|REST], RPZ,UType, IOC) -> %List of the sources, RPZ zone, UTy
       ioc2rpz_fun:logMessage("Memory total ~p after garbage collector. processes ~p binary ~p ~n",[erlang:memory(total)/1024/1024,erlang:memory(processes)/1024/1024,erlang:memory(binary)/1024/1024]) %TODO debug
 
   end,
-  ets:update_element(cfg_table, [source,SRC], [{2, Source#source{ioc_count=length(IOC1), pid=[]}}]),
-  mrpz_from_ioc(REST,RPZ,UType,IOC1 ++ IOC);
+      ets:update_element(cfg_table, [source,SRC], [{2, Source#source{ioc_count=length(IOC1), pid=[]}}]),
+      mrpz_from_ioc(REST,RPZ,UType,IOC1 ++ IOC);
+    [] ->
+      ioc2rpz_fun:logMessage("Error: source ~p not found in config (removed?). Skipping.~n",[SRC]),
+      mrpz_from_ioc(REST,RPZ,UType,IOC)
+  end;
 
 mrpz_from_ioc([],_RPZ,_UType,IOC) ->
   IOC.
