@@ -85,10 +85,15 @@ init([Socket,[Pid,Proc,TLS]]) ->
 %% @param State The gen_server state containing the listen socket.
 %% @returns `{noreply, State}' on successful accept, `{stop, Reason, State}' on error.
 handle_cast(accept, State = #state{socket=ListenSocket, tls=no, params=[Pid,Proc]}) ->
-  case gen_tcp:accept(ListenSocket) of
+  case gen_tcp:accept(ListenSocket, 30000) of
       {ok, AcceptSocket} ->
           ioc2rpz_proc_sup:start_socket(Proc), % Start a new listener immediately
           {noreply, State#state{socket=AcceptSocket, tls=no, params=[Pid,Proc]}};
+      {error, timeout} ->
+          %% No new connection within the accept window. Re-enter the accept
+          %% loop and keep this worker alive instead of depleting the pool.
+          gen_server:cast(self(), accept),
+          {noreply, State};
       {error, closed} ->
           %% Listen socket is dead — do NOT spawn a replacement worker.
           ioc2rpz_fun:logMessage("~p:~p:~p. TCP listen socket closed, worker exiting ~n",
@@ -111,7 +116,7 @@ handle_cast(accept, State = #state{socket=ListenSocket, tls=no, params=[Pid,Proc
 %% @param State The gen_server state containing the TLS listen socket.
 %% @returns `{noreply, State}' on success, `{stop, Reason, State}' on error.
 handle_cast(accept, State = #state{socket=ListenSocket, tls=yes, params=[Pid,Proc]}) ->
-  case ssl:transport_accept(ListenSocket) of
+  case ssl:transport_accept(ListenSocket, 30000) of
       {ok, TLSTransportSocket} ->
           case ssl:handshake(TLSTransportSocket, 5000) of
               {ok, AcceptSocket} ->
@@ -124,6 +129,11 @@ handle_cast(accept, State = #state{socket=ListenSocket, tls=yes, params=[Pid,Pro
                   ioc2rpz_proc_sup:start_socket(Proc),
                   {stop, normal, State}
           end;
+      {error, timeout} ->
+          %% No new connection within the accept window. Re-enter the accept
+          %% loop and keep this worker alive instead of depleting the pool.
+          gen_server:cast(self(), accept),
+          {noreply, State};
       {error, closed} ->
           %% Listen socket is dead — do NOT spawn a replacement worker.
           %% Let this worker die so the supervisor chain can restart the listener.
@@ -160,12 +170,19 @@ handle_info({tcp, Socket, <<_:2/binary,Pkt1/binary>>=_Pkt}, State = #state{socke
   %end,
 
 %  fprof:trace(start),
-  {ok,{R_ip,R_port}}=inet:peername(Socket),
-  parse_dns_request(Socket, Pkt1, #proto{proto=tcp, tls=no, rip=R_ip, rport=R_port}),
+  case inet:peername(Socket) of
+    {ok,{R_ip,R_port}} ->
+      parse_dns_request(Socket, Pkt1, #proto{proto=tcp, tls=no, rip=R_ip, rport=R_port}),
 %  ok = gen_tcp:close(Socket),
-  case gen_tcp:close(Socket) of % Improved closing
-    ok -> ok;
-    {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. TCP close error: ~p ~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Reason])
+      case gen_tcp:close(Socket) of % Improved closing
+        ok -> ok;
+        {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. TCP close error: ~p ~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Reason])
+      end;
+    {error, PReason} ->
+      %% Peer disconnected in the race window between message arrival and
+      %% peername resolution. Log and stop cleanly instead of crashing on badmatch.
+      ioc2rpz_fun:logMessage("~p:~p:~p. TCP peer disconnected: ~p ~n", [?MODULE, ?FUNCTION_NAME, ?LINE, PReason]),
+      gen_tcp:close(Socket)
   end,
   %  fprof:trace(stop),
   {stop, normal , State}; 
@@ -180,12 +197,19 @@ handle_info({tcp, Socket, <<_:2/binary,Pkt1/binary>>=_Pkt}, State = #state{socke
 %% @returns `{stop, normal, State}' after processing and closing the socket.
 handle_info({ssl, Socket, <<_:2/binary,Pkt1/binary>>=_Pkt}, State = #state{socket=_ListenSocket, params=_Params}) ->
 %  fprof:trace(start),
-  {ok,{R_ip,R_port}}=ssl:peername(Socket),
-  parse_dns_request(Socket, Pkt1, #proto{proto=tcp, tls=yes, rip=R_ip, rport=R_port}),
+  case ssl:peername(Socket) of
+    {ok,{R_ip,R_port}} ->
+      parse_dns_request(Socket, Pkt1, #proto{proto=tcp, tls=yes, rip=R_ip, rport=R_port}),
 %  ok = ssl:close(Socket),
-  case ssl:close(Socket) of % Improved closing
-    ok -> ok;
-    {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. SSL close error: ~p ~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Reason])
+      case ssl:close(Socket) of % Improved closing
+        ok -> ok;
+        {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. SSL close error: ~p ~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Reason])
+      end;
+    {error, PReason} ->
+      %% Peer disconnected in the race window between message arrival and
+      %% peername resolution. Log and stop cleanly instead of crashing on badmatch.
+      ioc2rpz_fun:logMessage("~p:~p:~p. TLS peer disconnected: ~p ~n", [?MODULE, ?FUNCTION_NAME, ?LINE, PReason]),
+      ssl:close(Socket)
   end,
 %  fprof:trace(stop),
   {stop, normal , State};
@@ -279,32 +303,46 @@ end.
 %% @doc Sends a DNS response over a TLS socket.
 %% When Args is `addlen', prepends the 2-byte DNS TCP length prefix.
 %% When Args is `[]', sends the packet as-is for intermediate zone transfer packets.
-%% After sending, re-arms the socket with `{active, once}'.
-%% Note: Return values from `ssl:send/2' and `ssl:setopts/2' are currently not checked.
+%% After a successful send, re-arms the socket with `{active, once}'.
+%% The `ssl:send/2' and `ssl:setopts/2' return values are checked; on failure the
+%% error is logged and returned instead of proceeding on a dead socket.
 %% @param Socket The TLS connection socket.
 %% @param Pkt The DNS response packet binary.
 %% @param Args `addlen' for first/only packet, `[]' for intermediate packets.
-%% @returns The result of `ssl:setopts/2' (typically `ok').
+%% @returns `ok' on success, `{error, Reason}' on send/setopts failure.
 send_dns_tls(Socket, Pkt, addlen) -> %used to send the first or an only packet
-  ssl:send(Socket, [<<(byte_size(Pkt)):16>>,Pkt]),
+  case ssl:send(Socket, [<<(byte_size(Pkt)):16>>,Pkt]) of
+    ok ->
 % The connection will not be reused and a child will be terminated
 % TODO check compliance with DoT
-  ssl:setopts(Socket, [{active, once}]);
+      case ssl:setopts(Socket, [{active, once}]) of
+        ok -> ok;
+        {error, SOReason} -> ioc2rpz_fun:logMessage("~p:~p:~p. send_dns_tls setopts error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, SOReason]), {error, SOReason}
+      end;
+    {error, Reason} -> {error, Reason} %passing a reason if send was failed
+  end;
 
 send_dns_tls(Socket, Pkt, []) -> %used to pass intermediate packets
-  ssl:send(Socket, Pkt),
+  case ssl:send(Socket, Pkt) of
+    ok ->
 % The connection will not be reused and a child will be terminated
 % TODO check compliance with DoT
-  ssl:setopts(Socket, [{active, once}]).
+      case ssl:setopts(Socket, [{active, once}]) of
+        ok -> ok;
+        {error, SOReason} -> ioc2rpz_fun:logMessage("~p:~p:~p. send_dns_tls setopts error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, SOReason]), {error, SOReason}
+      end;
+    {error, Reason} -> {error, Reason} %passing a reason if send was failed
+  end.
 
 %% @doc Sends a DNS response over UDP.
-%% Delegates directly to `gen_udp:send/4'. The return value is currently not checked.
+%% Responses larger than 512 bytes are truncated with the TC bit set (RFC 1035 §4.2.1).
+%% The `gen_udp:send/4' return value is checked; failures are logged and returned.
 %% @param Socket The UDP socket.
 %% @param Dst The destination IP address tuple.
 %% @param Port The destination port number.
 %% @param Pkt The DNS response packet binary.
 %% @param Args Unused arguments (reserved for future use).
-%% @returns The result of `gen_udp:send/4'.
+%% @returns `ok' on success, `{error, Reason}' on send failure.
 send_dns_udp(Socket, Dst, Port, Pkt, _Args) when byte_size(Pkt) > 512 ->
   %RFC 1035 4.2.1: a UDP DNS response must not exceed 512 bytes. Oversized
   %responses are truncated to 512 bytes and the TC (truncation) bit is set in
@@ -312,9 +350,15 @@ send_dns_udp(Socket, Dst, Port, Pkt, _Args) when byte_size(Pkt) > 512 ->
   <<DNSId:2/binary, FlagsB1:8, Rest/binary>> = Pkt,
   TCFlags = FlagsB1 bor 16#02, % set the TC bit (0x02) in the first flags byte
   Truncated = binary:part(<<DNSId/binary, TCFlags:8, Rest/binary>>, 0, 512),
-  gen_udp:send(Socket, Dst, Port, Truncated);
+  case gen_udp:send(Socket, Dst, Port, Truncated) of
+    ok -> ok;
+    {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. send_dns_udp. remote IP ~p error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, ip_to_str(Dst), Reason]), {error, Reason}
+  end;
 send_dns_udp(Socket, Dst, Port, Pkt, _Args) ->
-  gen_udp:send(Socket, Dst, Port, Pkt).
+  case gen_udp:send(Socket, Dst, Port, Pkt) of
+    ok -> ok;
+    {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. send_dns_udp. remote IP ~p error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, ip_to_str(Dst), Reason]), {error, Reason}
+  end.
 
 %% @doc Parses and validates an incoming DNS request, applying rate limiting.
 %% This is the main entry point for DNS query processing. It performs:

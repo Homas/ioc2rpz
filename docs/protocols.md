@@ -24,6 +24,7 @@ TCP handles zone transfers (AXFR/IXFR), SOA queries, and management commands. A 
 - Zone transfers (AXFR/IXFR) require TCP
 - Management commands require TCP (or DoT)
 - Default TCP timeout: 3000ms (`?TCPTimeout`)
+- Accept calls use a 30-second timeout; on timeout the worker re-enters the accept loop instead of blocking indefinitely (the timeout applies only to waiting for a new connection, not to an in-progress transfer)
 
 ```bash
 # AXFR zone transfer over TCP
@@ -41,6 +42,7 @@ DoT encrypts DNS traffic using TLS. The TLS listener starts automatically when a
 - Supports AXFR, IXFR, SOA queries, and management commands
 - TLS PIN is not supported
 - DNS NOTIFY messages are sent unencrypted (plain TCP)
+- Accept calls use a 30-second timeout; on timeout the worker re-enters the accept loop instead of blocking indefinitely (the timeout applies only to the accept phase, not to the TLS handshake or an in-progress transfer)
 - Certificates auto-refresh when files are replaced on disk (up to ~2 minute delay due to Erlang SSL caching)
 
 ```bash
@@ -66,7 +68,7 @@ Supported methods:
 - GET with base64url-encoded DNS message in `?dns=` query parameter
 - POST with `Content-Type: application/dns-message` body
 
-Responses use `Content-Type: application/dns-message`.
+Responses use `Content-Type: application/dns-message`. A POST request with an empty body (or any request without a decodable DNS message) returns HTTP 400 Bad Request rather than a 500 / internal error.
 
 ```bash
 # DoH GET request (base64url-encoded DNS query)

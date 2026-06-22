@@ -373,6 +373,10 @@ Check that:
 - The server retries 3 times with 3-second intervals (`?Src_Retry`, `?Src_Retry_TimeOut`)
 - For HTTPS sources, ensure the remote server's TLS certificate is valid
 
+### Source Removed From Config
+
+After a configuration reload, if an RPZ zone still references a source that was removed from the config file, the zone update logs a warning (`Error: source <name> not found in config (removed?). Skipping.`) and continues building the zone from the remaining sources instead of crashing the update process. The reload-time validator (`validateCFGRPZ/3`) also logs the specific missing source and whitelist names and the affected RPZ zone (`RPZ <zone> was not loaded. Missing sources: [...]. Missing whitelists: [...]`). To resolve, either restore the source definition or remove the stale reference from the RPZ's `Sources` list.
+
 ### High Memory Usage
 
 - Check ETS table sizes in the Erlang shell (see Monitoring section)

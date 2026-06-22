@@ -1,5 +1,13 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## 2026-06-22 v1.3.0.5
+- Listener pool resilience: top-level UDP child supervisor and the TCP/TLS accept workers are now `permanent` (previously `transient`/`temporary`), and the TCP/TLS worker pools use intensity `{1000, 60}` so bursts of accept/handshake failures no longer deplete the pool or crash the supervisor
+- Accept calls now use a 30s timeout (gen_tcp:accept/2, ssl:transport_accept/2); on timeout the worker re-enters the accept loop instead of blocking indefinitely
+- TLS listen socket now sets reuseaddr, send_timeout (5s), and send_timeout_close; TCP listen socket now sets reuseaddr and no longer sets {active, once} on the listen socket (set on accepted sockets only)
+- Fixed peername badmatch crashes: handle_info for TCP/TLS now handles ssl:peername/inet:peername errors gracefully (logs "peer disconnected", closes socket, stops cleanly) instead of crashing the worker when a peer disconnects in the race window
+- send_dns_tls/3 now checks ssl:send/2 and ssl:setopts/2 return values (returns {error, Reason} on failure) like its TCP twin; send_dns_udp/5 now checks and logs gen_udp:send/4 failures
+- DoH POST with an empty body now returns HTTP 400 Bad Request instead of an unbound-variable error/500
+- Config reload validator (validateCFGRPZ/3) now names the specific missing source/whitelist and affected RPZ zone when an RPZ references a removed source
 ## 2026-06-22 v1.3.0.4
 - Intelligent (hybrid) DNS rate limiting: provisioned zones + supported QTYPEs (SOA/AXFR/IXFR) and recognized management requests are tracked per {IP, QName, QType}; everything else (unknown zone, unsupported qtype, unrecognized name) is aggregated per {IP} to prevent query-name-variation bypass. Adds separate threshold MAX_UNKNOWN_REQUESTS_PER_WINDOW
 - Hot cache packet entries are now periodically purged (ioc2rpz_db:cleanup_hotcache/0) to prevent unbounded rpz_hotcache_table growth

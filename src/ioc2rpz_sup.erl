@@ -636,10 +636,13 @@ validateCFGSrc(Src) -> %Check: RegEx and URLs availability. If URL is not availa
 %% @param W    List of validated `#source{}' records (whitelists).
 %% @returns The `#rpz{}' record if valid, or `[]' if sources are missing.
 validateCFGRPZ(RPZ,S,W) -> %Check: Sources, Whitelists
-  SV = not lists:member(false, [ lists:member(X, [ Z#source.name || Z <- S ])  || X <- RPZ#rpz.sources  ]),
-  WV = not lists:member(false, [ lists:member(X, [ Z#source.name || Z <- W ])  || X <- RPZ#rpz.whitelist ]),
-  if not SV -> % or not WV
-    ioc2rpz_fun:logMessage("RPZ ~p was not loaded. No sources. Sources ~p Whitelists ~p.~n",[RPZ#rpz.zone_str,SV,WV]),
+  SourceNames = [ Z#source.name || Z <- S ],
+  WLNames = [ Z#source.name || Z <- W ],
+  MissingSources = [ X || X <- RPZ#rpz.sources, not lists:member(X, SourceNames) ],
+  MissingWL = [ X || X <- RPZ#rpz.whitelist, not lists:member(X, WLNames) ],
+  SV = MissingSources == [],
+  if not SV -> % only missing sources block loading; missing whitelists are logged for visibility
+    ioc2rpz_fun:logMessage("RPZ ~p was not loaded. Missing sources: ~p. Missing whitelists: ~p.~n",[RPZ#rpz.zone_str,MissingSources,MissingWL]),
     [];
     true -> RPZ
   end.

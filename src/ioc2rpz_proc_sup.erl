@@ -68,7 +68,7 @@ init([Proc,IPStr,Proto]) when Proc == tcp_sup; Proc == tcp6_sup -> %DNS TCP
   {ok, TCPSocket} = open_tcp_sockets(IPStr, Proto) ,
 	spawn_opt(ioc2rpz_proc_sup,empty_listeners,[Proc],[link,{fullsweep_after,0}]),
   ioc2rpz_fun:logMessage("ioc2rpz ~p started ~n", [Proc]),
-  {ok, {{simple_one_for_one, 60, 3600}, [{ioc2rpz, {ioc2rpz, start_ioc2rpz, [TCPSocket, [Pid,Proc,no]]}, temporary, 1000, worker, [ioc2rpz]}]}};
+  {ok, {{simple_one_for_one, 1000, 60}, [{ioc2rpz, {ioc2rpz, start_ioc2rpz, [TCPSocket, [Pid,Proc,no]]}, permanent, 1000, worker, [ioc2rpz]}]}};
 
 
 init([Proc,IPStr,Proto]) when Proc == udp_sup; Proc == udp6_sup -> %DNS UDP
@@ -81,7 +81,7 @@ init([Proc,IPStr,Proto]) when Proc == tls_sup; Proc == tls6_sup -> %DoT
   {ok, TLSSocket} = open_tls_sockets(IPStr, Proto) ,
 	spawn_opt(ioc2rpz_proc_sup,empty_listeners,[Proc],[link,{fullsweep_after,0}]),
   ioc2rpz_fun:logMessage("ioc2rpz ~p started ~n", [Proc]),
-  {ok, {{simple_one_for_one, 60, 3600}, [{ioc2rpz, {ioc2rpz, start_ioc2rpz, [TLSSocket, [Pid,Proc,yes]]}, temporary, 1000, worker, [ioc2rpz]}]}};
+  {ok, {{simple_one_for_one, 1000, 60}, [{ioc2rpz, {ioc2rpz, start_ioc2rpz, [TLSSocket, [Pid,Proc,yes]]}, permanent, 1000, worker, [ioc2rpz]}]}};
 
 
 init([Proc,_IPStr,_Proto]) when Proc == rest_tls_sup; Proc == rest_tls6_sup -> %REST
@@ -135,11 +135,11 @@ init([Proc,_IPStr,_Proto]) when Proc == doh_sup; Proc == doh6_sup -> %DoH
 %% @end
 open_tcp_sockets(IPStr,Proto) when IPStr /= "", IPStr /= [] ->
   {ok,IP}=inet:parse_address(IPStr),
-  {ok, TCPSocket} = gen_tcp:listen(?Port, [{ip, IP},{active,once}, binary, Proto]),
+  {ok, TCPSocket} = gen_tcp:listen(?Port, [{ip, IP},{reuseaddr, true}, binary, Proto]),
   {ok, TCPSocket};
 
 open_tcp_sockets(_IPStr,Proto) ->
-  {ok, TCPSocket} = gen_tcp:listen(?Port, [{active,once}, binary, Proto]),  %{ipv6_v6only,true}
+  {ok, TCPSocket} = gen_tcp:listen(?Port, [{reuseaddr, true}, binary, Proto]),  %{ipv6_v6only,true}
   {ok, TCPSocket}.
 
 
@@ -158,13 +158,13 @@ open_tls_sockets(IPStr,Proto) when IPStr /= "", IPStr /= [] ->
   {ok,IP}=inet:parse_address(IPStr),
 	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6','_'}),
 	Ciphers=ioc2rpz_fun:get_cipher_suites(?TLSVersion),
-	{ok, TLSSocket} = ssl:listen(?PortTLS, [{ip, IP},{active,once}, binary, Proto, {certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile}, {ciphers, Ciphers} ]), %,{cacertfile, Cert#cert.cacertfile}
+	{ok, TLSSocket} = ssl:listen(?PortTLS, [{ip, IP},{active,once},{reuseaddr, true},{send_timeout, 5000},{send_timeout_close, true}, binary, Proto, {certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile}, {ciphers, Ciphers} ]), %,{cacertfile, Cert#cert.cacertfile}
   {ok, TLSSocket};
 
 open_tls_sockets(_IPStr,Proto) ->
 	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6','_'}),
 	Ciphers=ioc2rpz_fun:get_cipher_suites(?TLSVersion),
-	{ok, TLSSocket} = ssl:listen(?PortTLS, [{active,once}, binary, Proto, {certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile}, {ciphers, Ciphers}]), %,{cacertfile, Cert#cert.cacertfile}
+	{ok, TLSSocket} = ssl:listen(?PortTLS, [{active,once},{reuseaddr, true},{send_timeout, 5000},{send_timeout_close, true}, binary, Proto, {certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile}, {ciphers, Ciphers}]), %,{cacertfile, Cert#cert.cacertfile}
   {ok, TLSSocket}.
 
 %% @doc Asks the supervisor `Proc' to start a new child worker.
