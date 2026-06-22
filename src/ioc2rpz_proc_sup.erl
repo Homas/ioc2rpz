@@ -68,7 +68,7 @@ init([Proc,IPStr,Proto]) when Proc == tcp_sup; Proc == tcp6_sup -> %DNS TCP
   {ok, TCPSocket} = open_tcp_sockets(IPStr, Proto) ,
 	spawn_opt(ioc2rpz_proc_sup,empty_listeners,[Proc],[link,{fullsweep_after,0}]),
   ioc2rpz_fun:logMessage("ioc2rpz ~p started ~n", [Proc]),
-  {ok, {{simple_one_for_one, 1000, 60}, [{ioc2rpz, {ioc2rpz, start_ioc2rpz, [TCPSocket, [Pid,Proc,no]]}, permanent, 1000, worker, [ioc2rpz]}]}};
+  {ok, {{simple_one_for_one, 1000, 60}, [{ioc2rpz, {ioc2rpz, start_ioc2rpz, [TCPSocket, [Pid,Proc,no]]}, transient, 1000, worker, [ioc2rpz]}]}};
 
 
 init([Proc,IPStr,Proto]) when Proc == udp_sup; Proc == udp6_sup -> %DNS UDP
@@ -81,7 +81,7 @@ init([Proc,IPStr,Proto]) when Proc == tls_sup; Proc == tls6_sup -> %DoT
   {ok, TLSSocket} = open_tls_sockets(IPStr, Proto) ,
 	spawn_opt(ioc2rpz_proc_sup,empty_listeners,[Proc],[link,{fullsweep_after,0}]),
   ioc2rpz_fun:logMessage("ioc2rpz ~p started ~n", [Proc]),
-  {ok, {{simple_one_for_one, 1000, 60}, [{ioc2rpz, {ioc2rpz, start_ioc2rpz, [TLSSocket, [Pid,Proc,yes]]}, permanent, 1000, worker, [ioc2rpz]}]}};
+  {ok, {{simple_one_for_one, 1000, 60}, [{ioc2rpz, {ioc2rpz, start_ioc2rpz, [TLSSocket, [Pid,Proc,yes]]}, transient, 1000, worker, [ioc2rpz]}]}};
 
 
 init([Proc,_IPStr,_Proto]) when Proc == rest_tls_sup; Proc == rest_tls6_sup -> %REST

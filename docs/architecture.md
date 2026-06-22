@@ -23,12 +23,12 @@ ioc2rpz_app (application)
 └── ioc2rpz_sup (supervisor, one_for_one, intensity=60, period=3600)
     ├── ioc2rpz_db_sup (gen_server — ETS table heir process)
     ├── ioc2rpz_tcp_sup_v6 (supervisor via ioc2rpz_proc_sup)
-    │   └── simple_one_for_one (intensity=1000, period=60): ioc2rpz workers (TCP accept, permanent)
+    │   └── simple_one_for_one (intensity=1000, period=60): ioc2rpz workers (TCP accept, transient)
     │       └── 5 pre-spawned listeners via empty_listeners/1
     ├── ioc2rpz_udp_sup_v6 (supervisor via ioc2rpz_proc_sup)
     │   └── one_for_one: ioc2rpz_udp worker
     ├── ioc2rpz_tls_sup_v6 (supervisor via ioc2rpz_proc_sup) [if cert configured]
-    │   └── simple_one_for_one (intensity=1000, period=60): ioc2rpz workers (TLS accept, permanent)
+    │   └── simple_one_for_one (intensity=1000, period=60): ioc2rpz workers (TLS accept, transient)
     │       └── 5 pre-spawned listeners via empty_listeners/1
     └── ioc2rpz_rest_tls_sup_v6 (supervisor via ioc2rpz_proc_sup) [if cert configured]
         └── one_for_one: Cowboy HTTPS listener (REST API + DoH routes)
@@ -57,7 +57,7 @@ ioc2rpz_app (application)
 
 TCP and TLS supervisors use `simple_one_for_one` strategy with intensity `{1000, 60}` (up to 1000 worker restarts per 60 seconds) so that bursts of transient accept/handshake failures are absorbed without crashing the supervisor. On startup, `empty_listeners/1` spawns 5 worker processes per pool. Each worker calls `gen_server:cast(self(), accept)` in `init/1`, which triggers the accept loop. When a connection is accepted, the worker spawns a replacement listener via `ioc2rpz_proc_sup:start_socket/1` before processing the request.
 
-Workers use a `permanent` restart type, so any worker that exits (normally or abnormally) is automatically restarted by the supervisor, keeping the pool at its target size over long-running operation.
+Workers use a `transient` restart type: a worker that exits normally (the expected one-connection-per-worker lifecycle, where the replacement listener is spawned via `start_socket/1` on accept) is not restarted and produces no supervisor report, while a worker that exits abnormally (a genuine crash) is automatically restarted by the supervisor. This keeps the pool at its target size over long-running operation without logging or re-spawning on every completed connection.
 
 Accept calls use a 30-second timeout (`gen_tcp:accept/2` and `ssl:transport_accept/2`). On `{error, timeout}` the worker re-casts `accept` to itself and stays alive instead of stopping, preventing a worker from blocking indefinitely on a listen socket in a bad state. The timeout applies only to waiting for a new connection; it does not bound an already-accepted connection or an in-progress zone transfer.
 

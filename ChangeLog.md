@@ -1,5 +1,7 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## 2026-06-22 v1.3.0.6
+- Fixed a regression from v1.3.0.5: the TCP/TLS accept workers were set to `permanent`, which emitted a child_terminated SUPERVISOR REPORT and triggered a supervisor restart on every completed connection — these workers are one-shot (one connection then `{stop, normal}`) and already self-replace via start_socket/1 on accept, so `permanent` spammed the logs and slowly grew the accept-worker pool. Workers are now `transient`: a normal exit is silent and not restarted (pool is maintained by start_socket), while a genuine abnormal crash is still restarted. Top-level child supervisors remain `permanent`.
 ## 2026-06-22 v1.3.0.5
 - Listener pool resilience: top-level UDP child supervisor and the TCP/TLS accept workers are now `permanent` (previously `transient`/`temporary`), and the TCP/TLS worker pools use intensity `{1000, 60}` so bursts of accept/handshake failures no longer deplete the pool or crash the supervisor
 - Accept calls now use a 30s timeout (gen_tcp:accept/2, ssl:transport_accept/2); on timeout the worker re-enters the accept loop instead of blocking indefinitely
