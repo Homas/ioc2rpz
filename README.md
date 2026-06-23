@@ -167,7 +167,7 @@ DoH provides DNS resolution over HTTPS via the `/dns-query` endpoint. Supported 
 - **GET** with base64url-encoded DNS message in `?dns=` query parameter
 - **POST** with `Content-Type: application/dns-message` body (max 4096 bytes; larger payloads receive HTTP 413)
 
-Responses use `Content-Type: application/dns-message`. DoH queries are subject to IP-based ACL enforcement using the `srv` record ACL.
+Responses use `Content-Type: application/dns-message`. DoH carries the full DNS wire-format message and is processed through the same path as Do53/DoT, so it inherits the same TSIG authentication; zone transfers (AXFR/IXFR) remain TCP-only and are not served over DoH.
 
 ```bash
 # DoH GET request
@@ -734,7 +734,7 @@ ioc2rpz™ supports the following configuration parameters:
 - NS server name used in SOA record;
 - an email address for SOA record (in SOA format);
 - list of management TSIG keys (names only). Please refer [the management section](#ioc2rpz-management) for the details.
-- list of ACL IP addresses for REST API and DoH access control.
+- list of ACL IP addresses for REST API access control.
 
 Sample **srv** record:  
 ```
@@ -843,6 +843,10 @@ Optional parameters (all or none must be used):
 - Incremental source update, hot cache time (in seconds).
 
 HTTPS source downloads verify the remote server's TLS certificate. Sources with invalid or self-signed certificates will fail to download. For self-signed certs, use a `shell:` source with `curl --insecure`.
+
+**Local file restrictions:** `file:` paths containing `..` (parent-directory traversal) are rejected for security; use a path without `..` (within the working/data directory).
+
+**Shell command restrictions:** each pipeline segment's executable must be an absolute path (e.g. `/usr/bin/curl`) or a bare-name safe text utility (`sort`, `uniq`, `grep`, `sed`, `awk`, `gawk`, etc.); destructive commands and shells (`rm`, `bash`, `sh`, etc.) are blocked, and command substitution (`$(...)`, backticks) and output redirection (`>`, `>>`) are rejected. Rejected commands are not executed and are logged via CEF event 151 (executed commands via 150). See [docs/configuration.md](docs/configuration.md#shell-command-restrictions) for the full ruleset.
 
 If a source returns fewer than 50% of its previous indicator count, the update is rejected and previous data is retained. This prevents degraded feeds from reducing RPZ coverage. Configurable via `?SOURCE_MIN_IOC_RATIO` macro.
 

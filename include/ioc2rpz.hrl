@@ -137,7 +137,7 @@
 %%%===================================================================
 
 %% Application version string: "major.minor.patch.build-YYYYMMDDNN"
--define(ioc2rpz_ver, "1.3.0.6-2026062203").
+-define(ioc2rpz_ver, "1.3.0.7-2026062301").
 
 %% DNS label compression pointer for the query name (QNAME) in responses.
 %% In a standard DNS response, the original QNAME from the question section
@@ -368,7 +368,7 @@
 %%   server     — server hostname / MNAME for SOA records
 %%   email      — responsible person email / RNAME for SOA records
 %%   mkeys      — list of management key names authorized for DNS mgmt
-%%   acl        — access control list (IP ranges) for REST API / DoH
+%%   acl        — access control list (IP ranges) for REST API and DNS management commands
 %%   cert       — #cert{} record with TLS certificate paths
 %%   max_ioc    — global maximum IOC count limit (optional)
 %%   key_groups — list of key group names for access control

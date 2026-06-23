@@ -1,5 +1,11 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## 2026-06-23 v1.3.0.7
+- [CB] Shell source hardening: `shell:` commands are now validated before execution. Each pipeline segment's executable must be an absolute path or an allowlisted text utility (sort, uniq, grep, sed, awk, gawk, etc.); destructive commands and shells (rm, bash, sh, dd, chmod, ...) are blocked, and command substitution (`$(...)`, backticks) and output redirection (`>`, `>>`) are rejected. Rejected commands are not run and are logged via CEF 151 (executed commands via CEF 150)
+- [CB] File source path traversal: `file:` source paths containing `..` parent-directory segments are now rejected
+- [CB] HTTPS source downloads now verify the remote server's TLS certificate against the system CA store, including hostname verification. Sources served with an invalid, expired, self-signed, or hostname-mismatched certificate will fail to download. For self-signed endpoints use http:// or a shell: source with `curl --insecure`
+- DoH POST bodies are now capped at 4096 bytes; oversized requests receive HTTP 413 Payload Too Large instead of being read unbounded into memory
+- Configuration file safety: ioc2rpz now logs a warning on startup, reload, and for included files if the configuration file is world-writable (advisory, non-fatal; fix with `chmod o-w`)
 ## 2026-06-22 v1.3.0.6
 - Fixed a regression from v1.3.0.5: the TCP/TLS accept workers were set to `permanent`, which emitted a child_terminated SUPERVISOR REPORT and triggered a supervisor restart on every completed connection — these workers are one-shot (one connection then `{stop, normal}`) and already self-replace via start_socket/1 on accept, so `permanent` spammed the logs and slowly grew the accept-worker pool. Workers are now `transient`: a normal exit is silent and not restarted (pool is maintained by start_socket), while a genuine abnormal crash is still restarted. Top-level child supervisors remain `permanent`.
 ## 2026-06-22 v1.3.0.5

@@ -109,45 +109,69 @@ p_clean_feed(IOC,REGEX,Max,Count,IoCType)  ->
 
 %% @doc Reads IOC data from a local file.
 %%
-%% Reads the entire file into memory. Retries up to `Retry' times with
-%% `?Src_Retry_TimeOut' second delays on failure.
+%% Validates the path first (task 12): filenames containing `..' parent-directory
+%% segments are rejected to prevent path traversal. Reads the entire file into
+%% memory. Retries up to `Retry' times with `?Src_Retry_TimeOut' second delays
+%% on failure.
 %%
 %% @param URL Binary of the form `<<"file:Path">>'.
 %% @param Retry Number of remaining retry attempts.
-%% @returns `{ok, Binary}' on success, or `{error, Reason}' after all retries exhausted.
+%% @returns `{ok, Binary}' on success, `{error, invalid_file_path}' if the path
+%%          is rejected, or `{error, Reason}' after all retries exhausted.
 get_ioc(<<"file:",Filename/binary>> = URL, Retry) ->
-  case file:read_file(Filename) of
-    {ok, Bin} ->
-      {ok, Bin};
-    {error,Reason} when Retry > 0 ->
-	    ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p. Try ~p ~n",[URL, Reason, (?Src_Retry-Retry)]), %TODO timeout and add retry
-			timer:sleep(?Src_Retry_TimeOut*1000),
-			get_ioc(URL, Retry-1);
-    {error, Reason}  when Retry == 0->
-      ioc2rpz_fun:logMessage("Error reading file ~p reason ~p ~n",[Filename, Reason]),
-      {error, Reason}
+  case valid_file_path(Filename) of
+    false ->
+      ioc2rpz_fun:logMessage("Rejected file source ~p: path contains '..' (directory traversal)~n",[URL]),
+      {error, invalid_file_path};
+    true ->
+      case file:read_file(Filename) of
+        {ok, Bin} ->
+          {ok, Bin};
+        {error,Reason} when Retry > 0 ->
+          ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p. Try ~p ~n",[URL, Reason, (?Src_Retry-Retry)]), %TODO timeout and add retry
+          timer:sleep(?Src_Retry_TimeOut*1000),
+          get_ioc(URL, Retry-1);
+        {error, Reason}  when Retry == 0->
+          ioc2rpz_fun:logMessage("Error reading file ~p reason ~p ~n",[Filename, Reason]),
+          {error, Reason}
+      end
   end;
 
 %% @doc Executes a local shell command and returns its output as IOC data.
 %%
-%% Passes the command string directly to `os:cmd/1'. The output is converted
-%% to a UTF-8 binary. No retries are attempted for shell sources.
-%%
-%% WARNING: The command is not sanitized. See task 11 for planned security hardening.
+%% The command is first validated by {@link ioc2rpz_fun:validate_shell_cmd/1}
+%% (task 11 security hardening): each pipeline segment's executable must be an
+%% absolute path or an allowlisted safe text utility, destructive commands and
+%% shell interpreters are blocked, and command substitution / output redirection
+%% are rejected. On success the full command is logged via CEF 150 and passed to
+%% `os:cmd/1'; on rejection a CEF 151 security warning is logged and
+%% `{error, shell_cmd_rejected}' is returned without executing anything.
+%% The output is converted to a UTF-8 binary. No retries are attempted.
 %%
 %% @param URL Binary of the form `<<"shell:Command">>'.
 %% @param Retry Unused (shell commands are not retried).
-%% @returns `{ok, Binary}' containing the command output.
+%% @returns `{ok, Binary}' containing the command output, or
+%%          `{error, shell_cmd_rejected}' if the command failed validation.
 get_ioc(<<"shell:",CMD/binary>> = _URL, _Retry) ->
-  {ok, unicode:characters_to_binary(os:cmd(binary_to_list(CMD)))}; %fix for https://github.com/Homas/ioc2rpz/issues/47
+  case ioc2rpz_fun:validate_shell_cmd(CMD) of
+    {ok, _} ->
+      ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(150),[CMD]),
+      {ok, unicode:characters_to_binary(os:cmd(binary_to_list(CMD)))}; %fix for https://github.com/Homas/ioc2rpz/issues/47
+    {error, Reason} ->
+      ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(151),[CMD, Reason]),
+      {error, shell_cmd_rejected}
+  end;
 
 %% @doc Downloads IOC data from an HTTP, HTTPS, or FTP URL.
 %%
 %% Uses `httpc:request/4' with a Mozilla User-Agent header, cookies enabled,
-%% and a configurable timeout (`?SourcePullTimeout'). On HTTP 200, returns the
-%% response body. On non-200 status codes, logs a warning and returns an empty
-%% binary. Retries up to `Retry' times with `?Src_Retry_TimeOut' second delays
-%% on connection errors.
+%% and a configurable timeout (`?SourcePullTimeout'). For `https://' URLs the
+%% remote server's TLS certificate is verified (task 17): `verify_peer' against
+%% the system CA store (`public_key:cacerts_get/0') plus HTTPS hostname
+%% verification, so MITM/self-signed certificates are rejected. On HTTP 200,
+%% returns the response body. On non-200 status codes, logs a warning and
+%% returns an empty binary. Retries up to `Retry' times with
+%% `?Src_Retry_TimeOut' second delays on connection errors.
 %%
 %% @param URL Binary URL starting with `<<"http:">>', `<<"https">>', or `<<"ftp:/">>'.
 %% @param Retry Number of remaining retry attempts.
@@ -155,7 +179,16 @@ get_ioc(<<"shell:",CMD/binary>> = _URL, _Retry) ->
 %%          or `{error, Reason}' after all retries exhausted.
 get_ioc(<<Proto:5/bytes,_/binary>> = URL, Retry) when Proto == <<"http:">>;Proto == <<"https">>;Proto == <<"ftp:/">> ->
 	httpc:set_options([{cookies,enabled}]),
-  case httpc:request(get,{binary_to_list(URL),[{"User-Agent", "Mozilla"}]},[{timeout, ?SourcePullTimeout}],[{body_format,binary},{sync,true}]) of %,{socket_opts,[{cookies,enabled}]}
+	HTTPOptions = case Proto of
+		<<"https">> ->
+			[{timeout, ?SourcePullTimeout},
+			 {ssl, [{verify, verify_peer},
+			        {cacerts, public_key:cacerts_get()},
+			        {customize_hostname_check, [{match_fun, public_key:pkix_verify_hostname_match_fun(https)}]}]}];
+		_ ->
+			[{timeout, ?SourcePullTimeout}]
+	end,
+  case httpc:request(get,{binary_to_list(URL),[{"User-Agent", "Mozilla"}]},HTTPOptions,[{body_format,binary},{sync,true}]) of %,{socket_opts,[{cookies,enabled}]}
   {ok,{{_,200,_},_,Response}} ->
     {ok,Response};
   {ok,{{_,Code,_},Headers,_Response}} ->
@@ -169,6 +202,14 @@ get_ioc(<<Proto:5/bytes,_/binary>> = URL, Retry) when Proto == <<"http:">>;Proto
     ioc2rpz_fun:logMessage("Error downloading feed ~p reason ~p ~n",[URL, Reason]), %TODO timeout and add retry
     {error,Reason}
   end.
+
+%% @doc Returns `true' if a `file:' source path is safe to read, `false' if it
+%% contains a `..' parent-directory segment (path traversal). Task 12 guard.
+%% A `..' that is merely part of a filename (e.g. `foo..bar') is allowed; only
+%% a `..' that is a full path segment is rejected.
+valid_file_path(Filename) ->
+  Parts = binary:split(Filename, <<"/">>, [global]),
+  not lists:member(<<"..">>, Parts).
 
 %get_ioc reads IOCs from a local file
 %%%get_ioc(<<"file:",Filename/binary>> = _URL,REGEX,Source,stype) ->

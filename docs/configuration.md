@@ -29,6 +29,8 @@ This document provides a complete reference for the ioc2rpz configuration file. 
 
 By default ioc2rpz reads its configuration from `./cfg/ioc2rpz.conf`. This can be changed via the `DefConf` macro in `include/ioc2rpz.hrl` or by passing a custom path through the `CONF` environment variable in `config/sys.config.src`.
 
+**File permissions:** On startup and on every configuration reload (including `include`d files), ioc2rpz checks the configuration file's permissions and logs a warning if the file is world-writable. A world-writable config can be silently tampered with by any local user. The check is advisory and non-fatal — parsing continues — but you should restrict access with `chmod o-w cfg/ioc2rpz.conf`.
+
 ---
 
 ## Configuration Tuple Types
@@ -295,6 +297,8 @@ Fetches indicators from a remote URL. ioc2rpz uses Erlang's `httpc` client with 
 
 For feeds that require custom headers, API tokens, or more complex authentication, use a `shell:` source with `curl` instead (see below).
 
+**TLS certificate verification:** HTTPS source downloads verify the remote server's TLS certificate against the system CA trust store (`verify_peer`), including hostname verification. Sources served with an invalid, expired, or self-signed certificate — or whose certificate does not match the hostname — will fail to download (the connection is rejected at the TLS layer and the download is retried, then logged as a download error). For development/testing against a host with a self-signed certificate, use a plain `http://` URL or a `shell:` source with `curl --insecure` instead.
+
 ### Local File
 
 Reads indicators from a file on the local filesystem. Prefix the path with `file:`.
@@ -302,6 +306,8 @@ Reads indicators from a file on the local filesystem. Prefix the path with `file
 ```erlang
 {source, {"local_feed", "file:cfg/sample_ioc_fqdn.txt", "[:AXFR:]", none}}.
 ```
+
+**Security note:** File paths containing `..` (parent-directory traversal) segments are rejected — a source such as `file:../../etc/passwd` will not be read and is logged as an error. Use a path within the server's working directory or its configured data directory (for example `cfg/...` or an absolute path under your ioc2rpz config directory).
 
 ### FTP
 
@@ -313,7 +319,7 @@ Fetches indicators via FTP. Basic authentication is supported via URL credential
 
 ### Shell Command
 
-Executes a shell command via `os:cmd/1` and reads indicators from stdout. Prefix with `shell:`. The command string is passed directly to the system shell, so pipes, redirects, and chaining are all supported.
+Executes a shell command via `os:cmd/1` and reads indicators from stdout. Prefix with `shell:`. Pipes (`|`), quoting, and text-processing filters are supported, so multi-stage feed pipelines work as expected. For security, the command is validated before execution (see [Shell Command Restrictions](#shell-command-restrictions) below).
 
 ```erlang
 {source, {"shell_feed",
@@ -352,6 +358,27 @@ Shell sources are useful when you need to:
 ```
 
 The maximum response size for shell sources is controlled by the `ShellMaxRespSize` macro (default: 2 GB). The ioc2rpz Docker container includes `dig`, `grep`, `awk`, `curl`, and `python`.
+
+#### Shell Command Restrictions
+
+For security, every `shell:` command is validated by `ioc2rpz_fun:validate_shell_cmd/1` before it is passed to `os:cmd/1`. A command that fails validation is **not executed**; it is logged as a CEF security warning (event code 151) and the source is skipped. Successful executions are logged at info level (CEF event code 150).
+
+The command is split into pipeline segments on unquoted `|`, and the following rules apply:
+
+- **Executables must be absolute paths or allowlisted utilities.** Each segment's executable (its first token) must either be an absolute path (e.g. `/usr/bin/curl`, not `curl`) **or** the bare name of a safe text-processing utility: `sort`, `uniq`, `grep`, `egrep`, `fgrep`, `sed`, `awk`, `gawk`, `cut`, `tr`, `head`, `tail`, `cat`, `comm`, `wc`, `tee`. These coreutils may be used by bare name because their location varies across distributions.
+- **Destructive commands and shells are blocked** even when given an absolute path: `rm`, `mkfs`, `dd`, `chmod`, `chown`, `shutdown`, `reboot`, `kill`, `killall`, `mv`, `eval`, `exec`, `source`, `bash`, `sh`, `zsh`, `csh`, `ksh`. (Interpreters such as `php`, `python`, `python3`, `perl`, `ruby`, and `node` are allowed when invoked with an absolute path, since they are commonly used for feed processing.)
+- **Command substitution and output redirection are rejected:** backticks, `$(...)`, and unquoted `>` / `>>`.
+- **Allowed:** pipes (`|`), single/double quotes, backslashes, parentheses inside awk/gawk/sed programs, `&` inside quoted URL parameters, and other standard text-processing characters — all of which are essential for real feed pipelines. A `|` (or `\|`) inside quotes is treated as literal, not a pipeline separator.
+
+**Example of a valid command** (absolute fetcher plus bare-name filters):
+
+```erlang
+{source, {"phishtank",
+           "shell:/usr/bin/curl -sL https://example.com/feed.csv | /usr/bin/gawk 'match($0,/p/,a) {print a[1]}' | sort | uniq | grep '^[a-zA-Z0-9\\-\\.]*$'",
+           "[:AXFR:]", "^([0-9A-Za-z\\.\\-]+)$"}}.
+```
+
+**Examples that are rejected:** `curl http://x | sort` (relative `curl`), `/bin/rm -rf /tmp` (blocked command), `/usr/bin/curl http://x | /bin/bash` (shell interpreter), `/usr/bin/curl http://x > /tmp/out` (output redirection), `/usr/bin/curl http://x/$(id)` (command substitution).
 
 ### Incremental Updates with Keywords
 

@@ -283,6 +283,7 @@ reload_config3(Action)->
 %% @param Filename  Path to the Erlang-term configuration file.
 %% @returns `{ok, RPZ, Keys, Srv}' on success; does not return on error.
 read_config3(Filename)  ->
+  check_config_permissions(Filename),
   case file:consult(Filename) of
     {ok,CFG} -> read_config3(CFG,startup,#srv{},[],[],[],[],[]);
     {error, Error} when is_atom(Error) -> ioc2rpz_fun:logMessage("Error ~p opening or reading ~p ~n", [Error, Filename]), exit(config_error);
@@ -298,10 +299,30 @@ read_config3(Filename)  ->
 %% @param Filename  Path to the configuration file.
 %% @param Action    `reload' | `updTkeys' | `include'.
 read_config3(Filename,Action)  ->
+  check_config_permissions(Filename),
   case file:consult(Filename) of
     {ok,CFG} -> read_config3(CFG,Action,#srv{},[],[],[],[],[]);
     {error, Error} when is_atom(Error) -> ioc2rpz_fun:logMessage("Error ~p opening or reading ~p ~n", [Error, Filename]);
     {error, Reason} -> ioc2rpz_fun:logMessage("Error in configuration file ~p. ~p ~p ~n", [Filename,Reason, file:format_error(Reason)])
+  end.
+
+%% @doc Logs a security warning if the configuration file is world-writable
+%% (task 20). A world-writable config can be silently tampered with by any
+%% local user, so the server flags it on startup, reload, and for each included
+%% file. This is non-fatal — parsing continues regardless. A missing/unreadable
+%% file is left for `file:consult/1' to report.
+%%
+%% @param Filename Path to the configuration file to check.
+%% @returns `ok'.
+check_config_permissions(Filename) ->
+  case file:read_file_info(Filename) of
+    {ok, FileInfo} ->
+      case FileInfo#file_info.mode band 8#002 of
+        0 -> ok;
+        _ ->
+          ioc2rpz_fun:logMessage("WARNING: configuration file ~p is world-writable (mode ~.8.0b). A world-writable config can be tampered with by any local user; run 'chmod o-w ~s' to restrict access.~n", [Filename, FileInfo#file_info.mode, Filename])
+      end;
+    {error, _Reason} -> ok
   end.
 
 

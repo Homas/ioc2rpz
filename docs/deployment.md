@@ -315,6 +315,8 @@ ioc2rpz logs to stdout (Erlang group leader). Messages use two formats: plain te
 | 136 | High | MGMT request failed | Management request processing failed |
 | 137 | High | Unsupported request | Unknown REST API endpoint |
 | 138 | High | Zone not found | REST API referenced nonexistent zone |
+| 150 | Low | Shell command executed | A `shell:` source command passed validation and was executed |
+| 151 | High | Shell command rejected | A `shell:` source command failed validation and was not executed |
 | 201 | Low | RPZ transfer success | Zone transfer completed |
 | 202 | Low | DNS Query | Standard DNS query processed |
 | 221 | Low | DNS Notify | Notify sent to secondary server |
@@ -366,12 +368,36 @@ Check that:
 - Look for CEF 104/105 events in logs (key not found / bad MAC)
 - Ensure the client IP is in the zone's allowed transfer list
 
+### Shell Source Command Rejected
+
+If a `shell:` source produces no data and a CEF event code **151** ("Shell command rejected") appears in the logs, the command failed security validation and was not executed. The log line includes the rejected command and the reason. Common causes:
+
+- A pipeline segment's executable is a relative path that is not an allowlisted text utility (e.g. `curl` instead of `/usr/bin/curl`, or `wget`). Use an absolute path.
+- The command uses a blocked executable (`rm`, `bash`, `sh`, etc.).
+- The command contains command substitution (`$(...)`, backticks) or output redirection (`>`, `>>`).
+
+See [Shell Command Restrictions](configuration.md#shell-command-restrictions) for the full ruleset. Successful executions are logged with CEF event code **150**.
+
+### File Source Rejected (Path Traversal)
+
+If a `file:` source produces no data and the log shows `Rejected file source ... path contains '..' (directory traversal)`, the configured path contains a `..` parent-directory segment and was refused. Use a path without `..` (within the working directory or your configured data directory).
+
 ### Source Download Failures
 
 - Check network connectivity to the source URL
 - Look for `Error downloading feed` log messages
 - The server retries 3 times with 3-second intervals (`?Src_Retry`, `?Src_Retry_TimeOut`)
-- For HTTPS sources, ensure the remote server's TLS certificate is valid
+- For HTTPS sources, the remote certificate is verified against the system CA store with hostname checking. An invalid, expired, self-signed, or hostname-mismatched certificate causes the TLS handshake to fail and the download to error out. For a host with a self-signed cert, use a plain `http://` URL or a `shell:` source with `curl --insecure`.
+
+### World-Writable Config File Warning
+
+On startup and config reload, if the log shows `WARNING: configuration file <path> is world-writable`, the config file's permissions allow any local user to modify it. This is advisory (the server still loads the config) but should be fixed:
+
+```bash
+chmod o-w cfg/ioc2rpz.conf
+```
+
+The same check applies to any `include`d configuration files.
 
 ### Source Removed From Config
 

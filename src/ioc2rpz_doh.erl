@@ -95,11 +95,25 @@ parse_dns(#{method := Method} = Req, State) when Method == <<"GET">> ->
 %% @param State Current handler state.
 %% @end
 parse_dns(#{method := Method} = Req, State) when Method == <<"POST">> ->
-	DNSMessage = case cowboy_req:has_body(Req) of
-		true -> {ok,DNSM,Req0} = read_body(Req,<<>>),{ok,DNSM};
-		_ -> Req0=Req, {error, <<>>}
+	{DNSMessage, Req0} = case cowboy_req:has_body(Req) of
+		true ->
+			case read_body(Req,<<>>) of
+				{ok, DNSM, ReqR} -> {{ok, DNSM}, ReqR};
+				{error, body_too_large, ReqR} -> {{error, body_too_large}, ReqR}
+			end;
+		_ -> {{error, <<>>}, Req}
 	end,
 	parse_dns(Req0, State, DNSMessage).
+
+%% @doc Reject a POST body that exceeds the maximum allowed size.
+%%
+%% Replies with HTTP 413 Payload Too Large. See {@link read_body/2} for the
+%% 4096-byte cap. Mirrors the `{error, <<>>}' (400) clause.
+%% @end
+parse_dns(Req, State, {error, body_too_large}) ->
+	#{peer := {IP, Port}} = Req,
+	ioc2rpz_fun:logMessage("DoH POST body too large from ~p:~p. URI: ~p\n",[ioc2rpz:ip_to_str(IP), Port, cowboy_req:uri(Req)]),
+	{normal,cowboy_req:reply(413,#{}, "Payload too large\n", Req),State};
 
 %% @doc Handle a malformed or missing DNS message.
 %%
@@ -130,18 +144,23 @@ parse_dns(Req, State, {ok, DNSMessage}) ->
 	end,
 	Respond.
 
-%% @doc Read the full request body, accumulating chunks.
+%% @doc Read the full request body, enforcing a 4096-byte maximum (task 15).
 %%
-%% Calls `cowboy_req:read_body/1' in a loop, concatenating each chunk
-%% into `Acc' until Cowboy signals `ok' (final chunk). Used by the POST
-%% handler to collect the raw DNS wire-format message.
+%% Calls `cowboy_req:read_body/2' with `#{length => 4096}'. A single read
+%% distinguishes the two cases: `{ok, Data, Req}' means the whole body arrived
+%% within the limit; `{more, Data, Req}' means the body exceeds 4096 bytes, in
+%% which case reading stops and `{error, body_too_large, Req}' is returned
+%% (carrying the updated `Req' so the caller can reply on a valid request
+%% object). This replaces the previous unbounded accumulator loop, preventing a
+%% large POST from exhausting server memory.
 %%
-%% @param Req0 Cowboy request object (updated after each read).
-%% @param Acc  Accumulator binary for body data read so far.
-%% @returns `{ok, Body, Req}' when the entire body has been read.
+%% @param Req0 Cowboy request object.
+%% @param _Acc Unused (kept for call-site compatibility).
+%% @returns `{ok, Body, Req}' when the body fits, or
+%%          `{error, body_too_large, Req}' when it exceeds the limit.
 %% @end
-read_body(Req0, Acc) ->
-    case cowboy_req:read_body(Req0) of
-        {ok, Data, Req} -> {ok, << Acc/binary, Data/binary >>, Req};
-        {more, Data, Req} -> read_body(Req, << Acc/binary, Data/binary >>)
+read_body(Req0, _Acc) ->
+    case cowboy_req:read_body(Req0, #{length => 4096}) of
+        {ok, Data, Req}   -> {ok, Data, Req};
+        {more, _Data, Req} -> {error, body_too_large, Req}
     end.

@@ -70,6 +70,8 @@ Supported methods:
 
 Responses use `Content-Type: application/dns-message`. A POST request with an empty body (or any request without a decodable DNS message) returns HTTP 400 Bad Request rather than a 500 / internal error.
 
+POST request bodies are limited to 4096 bytes; a request whose body exceeds this limit receives HTTP 413 Payload Too Large and is not processed. This cap applies to POST bodies only — GET requests carry the query in the `dns` query-string parameter, which is bounded separately by Cowboy's request-line and header size limits. 4096 bytes is well above the size of any DNS query (including EDNS0 and TSIG).
+
 ```bash
 # DoH GET request (base64url-encoded DNS query)
 curl -H "Accept: application/dns-message" \
