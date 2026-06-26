@@ -99,21 +99,21 @@ is_authorized(Req, State) ->
 				{true, true} -> {true, Req, State#state{user=User}};
 				_ ->
 					Body = io_lib:format("{status: \"error\", msg: \"Authentication failed\"}\n",[]),
-                    ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(130),[ioc2rpz:ip_to_str(IP), Port, User, cowboy_req:path(Req), ""]),
+                    ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(140),[ioc2rpz:ip_to_str(IP), Port, User, cowboy_req:path(Req), ""]),
 					Req0=cowboy_req:set_resp_body(Body,Req),
 					{{false, <<"Basic">>}, Req0, State}
 			end;
 		{{bearer, Token}, true} ->
-            ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(131),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
+            ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(141),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
 			{{false, <<"Token">>}, Req, State#state{user=Token}};
 
 		{_, false} ->
-            ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(135),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
+            ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(145),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
 			Body = io_lib:format("{status: \"error\", msg: \"Authentication failed\"}\n",[]),
 			Req0=cowboy_req:set_resp_body(Body,Req),
 			{{false, <<"Basic">>}, Req0, State};
 		_ ->
-            ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(131),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
+            ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(141),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
 			Body = io_lib:format("{status: \"error\", msg: \"Authentication failed\"}\n",[]),
 			Req0=cowboy_req:set_resp_body(Body,Req),
 			{{false, <<"Basic">>}, Req0, State}
@@ -170,8 +170,8 @@ srv_mgmt(Req, State, Format) when State#state.op == reload_cfg -> %Reload server
 	{Body,Req0} = case {ioc2rpz_sup:reload_config3(reload), Format} of
 		{ok, json} -> {"{\"status\":\"ok\",\"msg\":\"Configuration reloaded\"}\n",Req};
 		{ok, txt} -> {"status: ok\nmsg: Configuration reloaded\n",Req};
-		{_, json} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(136),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {"{\"status\":\"error\",\"msg\":\"Configuration reload error\"}\n",cowboy_req:reply(520, Req)};
-		{_, txt} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(136),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {"status: error\nmsg: Configuration reload error\n",cowboy_req:reply(520, Req)}
+		{_, json} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(146),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {"{\"status\":\"error\",\"msg\":\"Configuration reload error\"}\n",cowboy_req:reply(520, Req)};
+		{_, txt} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(146),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {"status: error\nmsg: Configuration reload error\n",cowboy_req:reply(520, Req)}
 	end,
 	{Body, Req0, State};
 
@@ -182,8 +182,8 @@ srv_mgmt(Req, State, Format) when State#state.op == update_tkeys -> %Reload TSIG
 	{Body,Req0} = case {ioc2rpz_sup:reload_config3(updTkeys), Format} of
 		{ok, json} -> {"{\"status\":\"ok\",\"msg\":\"TSIG keys were updated\"}\n",Req};
 		{ok, txt} -> {"status: ok\nmsg: TSIG keys were updated\n",Req};
-		{_, json} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(136),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {"{\"status\":\"error\",\"msg\":\"TSIG keys update error\"}\n",cowboy_req:reply(520, Req)};
-		{_, txt} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(136),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {"status: error\nmsg: TSIG keys update error\n",cowboy_req:reply(520, Req)}
+		{_, json} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(146),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {"{\"status\":\"error\",\"msg\":\"TSIG keys update error\"}\n",cowboy_req:reply(520, Req)};
+		{_, txt} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(146),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {"status: error\nmsg: TSIG keys update error\n",cowboy_req:reply(520, Req)}
 	end,
 	{Body, Req0, State};
 
@@ -259,8 +259,8 @@ srv_mgmt(Req, State, Format) when State#state.op == update_rpz -> %Update an RPZ
 	{Body,Req0} = case {ZoneS, Format} of
 		{true,json} -> {io_lib:format("{\"status\":\"ok\",\"msg\":\"RPZ ~s will be updated\"}\n",[ioc2rpz_fun:json_escape(RPZ)]),Req};
 		{true,txt} -> {io_lib:format("status: ok\nmsg: RPZ ~s will be updated\n",[RPZ]),Req};
-		{false,json} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(136),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {io_lib:format("{\"status\":\"error\",\"msg\":\"RPZ ~s not found\"}\n",[ioc2rpz_fun:json_escape(RPZ)]),cowboy_req:reply(520, Req)};
-		{false,txt} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(136),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {io_lib:format("status: error\nmsg: RPZ ~s not found\n",[RPZ]),cowboy_req:reply(520, Req)}
+		{false,json} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(146),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {io_lib:format("{\"status\":\"error\",\"msg\":\"RPZ ~s not found\"}\n",[ioc2rpz_fun:json_escape(RPZ)]),cowboy_req:reply(520, Req)};
+		{false,txt} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(146),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {io_lib:format("status: error\nmsg: RPZ ~s not found\n",[RPZ]),cowboy_req:reply(520, Req)}
 	end,
 	{Body, Req0, State};
 
@@ -317,8 +317,8 @@ srv_mgmt(Req, State, Format) when State#state.op == get_rpz -> % Get RPZ
   #{type := Type} = cowboy_req:match_qs([{type, [], <<"both">>}], Req),
 %  erlang:display(Type),
 	{Body,Req0} = case {Data, Format, Type} of
-		{[],json,_} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(138),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {io_lib:format("{\"status\":\"error\",\"msg\":\"RPZ ~s not found\"}\n",[ioc2rpz_fun:json_escape(RPZ)]),cowboy_req:reply(520, Req)};
-		{[],txt,_} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(138),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {io_lib:format("status: error\nmsg: RPZ ~s not found\n",[RPZ]),cowboy_req:reply(520, Req)};
+		{[],json,_} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(148),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {io_lib:format("{\"status\":\"error\",\"msg\":\"RPZ ~s not found\"}\n",[ioc2rpz_fun:json_escape(RPZ)]),cowboy_req:reply(520, Req)};
+		{[],txt,_} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(148),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]), {io_lib:format("status: error\nmsg: RPZ ~s not found\n",[RPZ]),cowboy_req:reply(520, Req)};
 		{_,json,_} -> {io_lib:format("{\"status\":\"ok\",\"rpz\":\"~s\",\"iocs\":[~s]}\n",[ioc2rpz_fun:json_escape(RPZ),ioc2jsonarr(Data,binary_to_list(Type))]),Req};
 %		{_,txt} -> {lists:flatten([ io_lib:format("~s,~s\n",[binary_to_list(X),Type]) || [X,_Ser,_Exp,Type] <- Data]),Req}
     {_,txt,<<"fqdn">>} -> {lists:flatten([ io_lib:format("~s\n",[binary_to_list(X)]) || [X,_Ser,_Exp,"fqdn"] <- Data]),Req};
@@ -370,7 +370,7 @@ srv_mgmt(Req, State, Format) when State#state.op == get_ioc -> % check IoC
 
 srv_mgmt(Req, State, Format) when State#state.op == catch_all -> % Catch all unsupported requests from authenticated users
 	#{peer := {IP, Port}} = Req,
-    ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(137),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
+    ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(147),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
     Body = case Format of
 		json -> "{\"status\":\"error\",\"msg\":\"Unsupported request\"}\n";
 		txt ->  "status: error\nmsg: Unsupported request\n"
@@ -453,7 +453,7 @@ get_tkey_zones(TKeyBin, Groups, [RPZ|Rest], Zones) ->
 %%          {@link list_tuples_to_json/1}.
 %% @end
 gen_rpz_stats() ->
-	[ [{"name",X#rpz.zone_str},{"rule_count",X#rpz.rule_count},{"ioc_count",X#rpz.ioc_count},{"serial",X#rpz.serial},{"serial_ixfr",X#rpz.serial_ixfr},{"update_time",X#rpz.update_time},{"ixfr_update_time",X#rpz.ixfr_update_time},{"ixfr_nz_update_time",X#rpz.ixfr_nz_update_time}] || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), X#rpz.rule_count /= undefined].
+	[ [{"name",X#rpz.zone_str},{"status",atom_to_list(X#rpz.status)},{"rule_count",X#rpz.rule_count},{"ioc_count",X#rpz.ioc_count},{"serial",X#rpz.serial},{"serial_ixfr",X#rpz.serial_ixfr},{"update_time",X#rpz.update_time},{"ixfr_update_time",X#rpz.ixfr_update_time},{"ixfr_nz_update_time",X#rpz.ixfr_nz_update_time}] || [X]  <- ets:match(cfg_table,{[rpz,'_'],'_','$2'}), X#rpz.rule_count /= undefined].
 
 %% @doc Collect per-source statistics from `cfg_table'.
 %%

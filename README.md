@@ -512,6 +512,7 @@ curl -u "keyname:base64key==" -k https://127.0.0.1:8443/api/v1/stats/rpz
   "rpz": [
     {
       "name": "malware.ioc2rpz",
+      "status": "ready",
       "rule_count": 5000,
       "ioc_count": 4500,
       "serial": 1709000000,
@@ -523,6 +524,8 @@ curl -u "keyname:base64key==" -k https://127.0.0.1:8443/api/v1/stats/rpz
   ]
 }
 ```
+
+The `status` field (`ready`, `updating`, `forceAXFR`, `notready`) indicates whether the reported counts/serial are current; when `updating` or `forceAXFR` they reflect the last completed update. Counts and serial are preserved across a configuration reload rather than resetting to zero.
 
 `/api/v1/stats/source` — Source statistics
 
@@ -1086,14 +1089,14 @@ For detailed documentation, see the `docs/` directory:
 | 109 | Low | Received DNS response | Unexpected DNS response received |
 | 120 | Medium | RPZ not found | Requested RPZ zone does not exist |
 | 121 | Low | RPZ not ready | RPZ zone is still loading/updating |
-| 130 | Low | RPZ transfer error | Error during zone transfer |
-| 131 | Low | RPZ transfer closed | Remote closed connection during transfer |
-| 135 | High | REST MGMT denied | REST management request denied by ACL |
-| 136 | High | MGMT request failed | Management request processing failed |
-| 137 | High | Unsupported request | Unknown REST API endpoint |
-| 138 | High | Zone not found | REST API referenced nonexistent zone |
+| 130 | Low | RPZ transfer error | Error during zone transfer (RPZ transfer only) |
+| 131 | Low | RPZ transfer closed | Remote closed connection during transfer (RPZ transfer only) |
 | 140 | High | REST Basic auth failed | REST API basic authentication failed |
 | 141 | High | REST Auth failed | REST API authorization failed |
+| 145 | High | REST MGMT denied | REST management request denied by ACL |
+| 146 | High | MGMT request failed | Management request processing failed |
+| 147 | High | Unsupported request | Unknown REST API endpoint |
+| 148 | High | Zone not found | REST API referenced nonexistent zone |
 | 150 | Low | Shell command executed | Shell source command executed (info) |
 | 151 | High | Shell command rejected | Shell source command rejected (security) |
 | 201 | Low | RPZ transfer success | Zone transfer completed |

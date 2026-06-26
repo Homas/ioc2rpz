@@ -1,5 +1,10 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## 2026-06-26 v1.3.0.8
+- [CB] CEF event codes for REST API events were renumbered out of the RPZ-transfer range to remove duplicate/shadowed IDs: REST Basic auth failed 130→140, REST auth failed 131→141, REST MGMT denied 135→145, MGMT request failed 136→146, unsupported request 137→147, zone not found 138→148. Codes 130/131 are now exclusively RPZ transfer events. Update any SIEM correlation rules that referenced the old REST codes
+- RPZ statistics (`/api/v1/stats/rpz`) now include a `status` field per zone (`ready`, `updating`, `forceAXFR`, `notready`) so consumers can tell current stats from those reflecting the last completed update
+- RPZ indicator/rule counts, serials, and update timestamps are now preserved across a configuration reload (including non-cached/online zones) instead of relying on the cache roundtrip and resetting to zero while a zone is re-validated
+- Fixed get_cipher_suites/1: recognized single TLS version atoms (`'tlsv1.2'`, `'tlsv1.3'`, `'tlsv1.1'`, `'dtlsv1.2'`) are now handled correctly (previously only `'tlsv1.2-1.3'` worked and the other documented values crashed), and an unknown/misconfigured version now logs a warning and falls back to TLS 1.2 instead of raising a function_clause error at listener startup
 ## 2026-06-23 v1.3.0.7
 - [CB] Shell source hardening: `shell:` commands are now validated before execution. Each pipeline segment's executable must be an absolute path or an allowlisted text utility (sort, uniq, grep, sed, awk, gawk, etc.); destructive commands and shells (rm, bash, sh, dd, chmod, ...) are blocked, and command substitution (`$(...)`, backticks) and output redirection (`>`, `>>`) are rejected. Rejected commands are not run and are logged via CEF 151 (executed commands via CEF 150)
 - [CB] File source path traversal: `file:` source paths containing `..` parent-directory segments are now rejected

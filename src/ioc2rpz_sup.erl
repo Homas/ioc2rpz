@@ -545,13 +545,21 @@ read_config3([],reload,Srv,Keys,_Key_Groups,WhiteLists,Sources,RPZ)  ->
   [ exit(X#rpz.pid,rpzRemoved) || X <- RPZ_D, X#rpz.status == updating], %TODO 2025-01-11 replace by supervisor:terminate_child(SupervisorPid, X#rpz.pid). Where to get supervisor?
   [ exit(X#rpz.pid,rpzUpdated) || X <- RPZ_UPD, X#rpz.status == updating],
 
+  %% Task 25: preserve runtime stats (counts/serial/timestamps) across reload by
+  %% merging the pre-reload values from RPZ_C onto the freshly-parsed records.
+  %% This is independent of the save_zone_info -> load_zone_info roundtrip (which
+  %% only covers cached zones and zeroes non-cached/online ones). New zones have
+  %% no match in RPZ_C and keep their parsed values; force-update zones keep the
+  %% carried-over last-completed counts (status=forceAXFR signals they are stale).
+  RPZ_V_M = [ merge_rpz_stats(X, RPZ_C) || X <- RPZ_V ],
+
   [ ets:delete(cfg_table, [rpz,X#rpz.zone]) || X <- RPZ_D ],
-  [ ets:insert(cfg_table, {[rpz,X#rpz.zone],X#rpz.zone,X}) || X <- RPZ_V ],
+  [ ets:insert(cfg_table, {[rpz,X#rpz.zone],X#rpz.zone,X}) || X <- RPZ_V_M ],
   [ ets:match_delete(rpz_hotcache_table,{{pkthotcache,X#rpz.zone,'_'},'_','_'}) || X <- RPZ_D ++ RPZ_UPD ],
 
   ioc2rpz_db:clean_DB(RPZ_D), %Remove deleted zones 
 
-  [ ets:update_element(cfg_table, [rpz,X#rpz.zone], [{3, X#rpz{status=forceAXFR}}]) || X <- RPZ_UPD ], %forceaxfr
+  [ ets:update_element(cfg_table, [rpz,X#rpz.zone], [{3, (merge_rpz_stats(X, RPZ_C))#rpz{status=forceAXFR}}]) || X <- RPZ_UPD ], %forceaxfr
 
   [ ioc2rpz_fun:logMessage("Whitelist ~p was added.~n",[X#source.name]) || X <- WhiteLists_N ],
   [ ioc2rpz_fun:logMessage("Whitelist ~p was updated.~n",[X#source.name]) || X <- WhiteLists_UPD ],
@@ -666,6 +674,36 @@ validateCFGRPZ(RPZ,S,W) -> %Check: Sources, Whitelists
     ioc2rpz_fun:logMessage("RPZ ~p was not loaded. Missing sources: ~p. Missing whitelists: ~p.~n",[RPZ#rpz.zone_str,MissingSources,MissingWL]),
     [];
     true -> RPZ
+  end.
+
+%% @doc Merge runtime statistics fields from the pre-reload record onto a
+%% freshly-parsed `#rpz{}' record (task 25).
+%%
+%% On a configuration reload the `#rpz{}' records are rebuilt from the config
+%% file (counts/serial/timestamps come from `load_zone_info/1', which only
+%% restores cached zones and returns zeroes for non-cached/online or
+%% not-yet-persisted zones). To keep `/api/v1/stats/rpz' meaningful across a
+%% reload, this carries the previous `ioc_count', `rule_count', `serial',
+%% `serial_ixfr', `update_time', `ixfr_update_time', and `ixfr_nz_update_time'
+%% from the matching old record onto the new one. The zone is matched by
+%% `#rpz.zone'. A new zone (no match in `OldList') is returned unchanged so its
+%% parsed/zeroed values stand until the scheduler populates them.
+%%
+%% @param New     The freshly-parsed `#rpz{}' record.
+%% @param OldList The pre-reload snapshot of `#rpz{}' records (`RPZ_C').
+%% @returns The `New' record with stats fields overridden from the old record,
+%%          or `New' unchanged if no matching zone exists.
+merge_rpz_stats(New, OldList) ->
+  case lists:keyfind(New#rpz.zone, #rpz.zone, OldList) of
+    false -> New;
+    Old when is_record(Old, rpz) ->
+      New#rpz{ioc_count           = Old#rpz.ioc_count,
+              rule_count          = Old#rpz.rule_count,
+              serial              = Old#rpz.serial,
+              serial_ixfr         = Old#rpz.serial_ixfr,
+              update_time         = Old#rpz.update_time,
+              ixfr_update_time    = Old#rpz.ixfr_update_time,
+              ixfr_nz_update_time = Old#rpz.ixfr_nz_update_time}
   end.
 
 %% @doc Expand a key's group memberships into `{GroupName, KeyNameBin}' pairs.
@@ -1060,3 +1098,36 @@ claim_zone_for_update_test() ->
     ?assert(C2 =:= false),
     ?assert(C3 =:= true),
     ?assert(C4 =:= false) ].
+
+%% Verifies merge_rpz_stats/2 (task 25): runtime counts/serial/timestamps from
+%% the pre-reload record are carried onto the freshly-parsed record, matched by
+%% zone; a new zone (no match) is returned unchanged.
+merge_rpz_stats_test() ->
+  Z = <<4,"test",3,"rpz",0>>,
+  %% Old (pre-reload) record carries real runtime stats.
+  Old = #rpz{zone=Z, zone_str="test.rpz", status=ready,
+             ioc_count=1000, rule_count=1500, serial=42, serial_ixfr=43,
+             update_time=100, ixfr_update_time=110, ixfr_nz_update_time=105},
+  %% New (freshly-parsed) record has zeroed stats (as load_zone_info would yield
+  %% for a non-cached zone) but a different status.
+  New = #rpz{zone=Z, zone_str="test.rpz", status=forceAXFR,
+             ioc_count=0, rule_count=0, serial=0, serial_ixfr=0,
+             update_time=0, ixfr_update_time=0, ixfr_nz_update_time=0},
+  Merged = merge_rpz_stats(New, [Old]),
+  %% A zone with no match in the old list is returned unchanged.
+  Znew = <<3,"new",3,"rpz",0>>,
+  NewOnly = New#rpz{zone=Znew},
+  Unchanged = merge_rpz_stats(NewOnly, [Old]),
+  [ %% stats fields taken from Old
+    ?assert(Merged#rpz.ioc_count =:= 1000),
+    ?assert(Merged#rpz.rule_count =:= 1500),
+    ?assert(Merged#rpz.serial =:= 42),
+    ?assert(Merged#rpz.serial_ixfr =:= 43),
+    ?assert(Merged#rpz.update_time =:= 100),
+    ?assert(Merged#rpz.ixfr_update_time =:= 110),
+    ?assert(Merged#rpz.ixfr_nz_update_time =:= 105),
+    %% non-stats fields preserved from New (status is NOT overridden by the merge)
+    ?assert(Merged#rpz.status =:= forceAXFR),
+    %% unmatched zone returned unchanged (zeroed stats kept)
+    ?assert(Unchanged#rpz.ioc_count =:= 0),
+    ?assert(Unchanged#rpz.serial =:= 0) ].

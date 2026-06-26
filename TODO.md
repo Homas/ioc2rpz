@@ -98,3 +98,84 @@ https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-
 
 
 
+
+## Source failure handling & graceful degradation (was dot-reliability-fix task 24)
+
+> Moved out of the `dot-reliability-fix` spec because the original "task 24" was
+> framed as a one-line bug fix (`{ok,<<>>}` → `{error,{http_status,Code}}`) but the
+> real problem is a design/behavior decision that needs an explicit degradation
+> policy. Captured here so it isn't lost. **Not scheduled.**
+
+### Background — what the code does today
+
+- `ioc2rpz_conn:get_ioc/2` already **retries** failed downloads: `?Src_Retry` = 3
+  attempts, `?Src_Retry_TimeOut` = 3s apart, `?SourcePullTimeout` = 5 min per attempt.
+  So a source returning nothing has already been retried, not dropped on first hiccup.
+- **Retry asymmetry:** retries only cover the `{error, Reason}` branch (connection
+  refused / timeout / remote close). A *valid* non-200 HTTP response (403/500/503 page)
+  hits the `{ok,{{_,Code,_},...}}` clause, which returns `{ok,<<>>}` immediately with
+  **no retry**. TCP-level failure → 3 tries; HTTP 503 → 1 try. Inconsistent.
+- Non-200 currently returns `{ok,<<>>}`, which `get_ioc/3` treats as a *successful*
+  download of zero indicators (logs "got 0 indicators").
+- In `ioc2rpz:mrpz_from_ioc/4`, when an **expired** cached source fails to refetch:
+  ```
+  ets:delete(rpz_hotcache_table,{SRC,UType}),   % old data deleted
+  IOC1 = get_ioc(...),                          % [] on failure
+  ets:insert(rpz_hotcache_table, {{SRC,UType}, CTime, term_to_binary([])})  % caches []
+  ```
+  i.e. it does **not** keep stale data forever — it drops the source's contribution and
+  caches the empty result.
+
+### The real issues
+
+1. **Stale-forever vs. drop is a genuine tradeoff, not a bug.**
+   - Retain old data forever → a permanently dead feed keeps injecting stale/wrong
+     indicators into the RPZ indefinitely.
+   - Drop on failure (current) → coverage silently disappears on a transient outage that
+     outlasted the 3 retries.
+   Neither is universally correct; the operator needs to choose per source.
+
+2. **No last-known-good store.** The hot cache is the *only* store of parsed per-source
+   IOCs. Once an entry expires and the refetch fails, it's deleted and unrecoverable
+   until the feed returns. There is no persistent last-good copy to fall back on.
+
+3. **No source attribution in the merged RPZ.** Sources are flattened with `IOC1 ++ IOC`
+   then deduped/whitelisted. The served zone is a union with no record of which indicator
+   came from which source, so graceful per-source degradation ("keep A's last-good set,
+   drop B's") can't be reconstructed from the zone once built. Per-source data only exists
+   while each `{SRC,UType}` cache entry is alive.
+
+### Proposed direction (decide policy before implementing)
+
+- [ ] Distinguish failure types in `get_ioc/2`: non-200 → `{error,{http_status,Code}}`;
+      log distinct reasons for `{failed_connect,_}`, `socket_closed_remotely`, `timeout`.
+- [ ] Fix the retry asymmetry: retry non-200 statuses (at least 5xx) like connection errors.
+- [ ] Have `get_ioc/3` treat a failed download as failure (not empty success) — return a
+      sentinel distinct from a genuinely empty feed so the zone-update logic can decide.
+- [ ] On failure of an **expired** source, stop the `delete + cache []` behavior. Instead,
+      apply a per-source degradation policy:
+        - `ignore_unreachable` — keep serving last-good cached data past TTL,
+        - up to a configurable **grace / max-staleness window**,
+        - with a **hard max-staleness bound** so a permanently dead feed eventually ages
+          out (addresses issue 1) instead of lingering forever,
+        - or `drop` (current behavior) as an explicit opt-in.
+      (See existing TODO: "RPZ behavior: ignore unreachable sources, use old data for
+      unreachable sources, do not update the zone".)
+- [ ] Add a persistent last-known-good copy per source so data survives cache expiry +
+      fetch failure (issue 2).
+- [ ] Surface per-source health: last successful fetch time, last error, stale flag —
+      via logs and REST stats — so a degraded source is visible instead of silently 0.
+- [ ] Tie in with existing TODO items: "Monitor significant drop in # of IoCs and ...
+      postpone an update", and "Handle RPZ update if one of a sources is not available or
+      a recent update returned significantly low number of indicators".
+
+### Original spec subtasks (for reference)
+
+- 24.1 `get_ioc/2` non-200 → `{error,{http_status,Code}}` instead of `{ok,<<>>}`.
+- 24.2 `get_ioc/2` error clause: distinguish `{failed_connect,_}` / `socket_closed_remotely`
+       / `timeout` / other in the log.
+- 24.3 `get_ioc/3` handle `{error,{http_status,Code}}`: log status, return `[]`.
+- 24.4 Docs (`deployment.md` Common Log Messages): non-200 now returns the typed error;
+       add specific connection-error entries.
+- 24.5 Testing: source returning 403/500 → typed error in logs (not "success" 0 bytes);
+       source whose server closes the connection → "connection closed by remote server".

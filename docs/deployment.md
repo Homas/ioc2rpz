@@ -309,12 +309,14 @@ ioc2rpz logs to stdout (Erlang group leader). Messages use two formats: plain te
 | 109 | Low | Received DNS response | Unexpected DNS response received |
 | 120 | Medium | RPZ not found | Requested RPZ zone does not exist |
 | 121 | Low | RPZ not ready | RPZ zone is still loading/updating |
-| 130 | Low | RPZ transfer error | Error during zone transfer |
-| 131 | Low | RPZ transfer closed | Remote closed connection during transfer |
-| 135 | High | REST MGMT denied | REST management request denied by ACL |
-| 136 | High | MGMT request failed | Management request processing failed |
-| 137 | High | Unsupported request | Unknown REST API endpoint |
-| 138 | High | Zone not found | REST API referenced nonexistent zone |
+| 130 | Low | RPZ transfer error | Error during zone transfer (RPZ transfer only) |
+| 131 | Low | RPZ transfer closed | Remote closed connection during transfer (RPZ transfer only) |
+| 140 | High | REST API Basic auth failed | REST API HTTP Basic authentication failed |
+| 141 | High | REST API Auth failed | REST API authentication failed |
+| 145 | High | REST MGMT denied | REST management request denied by ACL |
+| 146 | High | MGMT request failed | Management request processing failed |
+| 147 | High | Unsupported request | Unknown REST API endpoint |
+| 148 | High | Zone not found | REST API referenced nonexistent zone |
 | 150 | Low | Shell command executed | A `shell:` source command passed validation and was executed |
 | 151 | High | Shell command rejected | A `shell:` source command failed validation and was not executed |
 | 201 | Low | RPZ transfer success | Zone transfer completed |

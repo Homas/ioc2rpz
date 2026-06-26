@@ -220,6 +220,7 @@ The API version segment is optional (e.g., `/api/v1/...` or `/api/v1.0/...`).
   "rpz": [
     {
       "name": "malware.ioc2rpz",
+      "status": "ready",
       "rule_count": 5000,
       "ioc_count": 4500,
       "serial": 1709000000,
@@ -231,6 +232,17 @@ The API version segment is optional (e.g., `/api/v1/...` or `/api/v1.0/...`).
   ]
 }
 ```
+
+The `status` field reports the zone's current state: `ready` (counts/serial are
+current), `updating` (a full/incremental update is in progress), `forceAXFR` (a
+config reload changed the zone's sources/whitelist and a full rebuild is pending),
+or `notready` (no data loaded yet). When `status` is `updating` or `forceAXFR`, the
+reported counts and serial reflect the **last completed** update until the
+in-progress update finishes.
+
+Counts, serial, and update timestamps are **preserved across a configuration
+reload** for zones that existed before the reload (including non-cached/online
+zones), so stats do not reset to zero while the zone is re-validated.
 
 `GET|POST /api/v1/stats/source` — Source statistics
 

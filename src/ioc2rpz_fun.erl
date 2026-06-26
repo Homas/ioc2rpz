@@ -94,15 +94,15 @@ msg_CEF(120)    -> "|000120|RPZ not found|5|src=~s spt=~p proto=~p qname=~p qtyp
 msg_CEF(121)    -> "|000121|RPZ not ready|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
 
 msg_CEF(130)    -> "|000130|RPZ transfer error|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p error=~p~n";
-msg_CEF(131)    -> "|000131|RPZ transfer error. Remote server closed connection|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p~n";
+msg_CEF(131)    -> "|000131|RPZ transfer error. Remote server closed connection|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p reason=~p~n";
 
 
-msg_CEF(130)    -> "|000130|REST API Basic authentication failed|7|src=~s spt=~p username=~p path=~p msg=~p~n";
-msg_CEF(131)    -> "|000131|REST API Authentication failed|7|src=~s spt=~p path=~p msg=~p~n";
-msg_CEF(135)    -> "|000135|REST MGMT request denied|7|src=~s spt=~p path=~p msg=~p~n";
-msg_CEF(136)    -> "|000136|MGMT request failed|7|src=~s spt=~p path=~p msg=~p~n";
-msg_CEF(137)    -> "|000137|Unsupported request|7|src=~s spt=~p path=~p msg=~p~n";
-msg_CEF(138)    -> "|000138|Zone not found|7|src=~s spt=~p path=~p msg=~p~n";
+msg_CEF(140)    -> "|000140|REST API Basic authentication failed|7|src=~s spt=~p username=~p path=~p msg=~p~n";
+msg_CEF(141)    -> "|000141|REST API Authentication failed|7|src=~s spt=~p path=~p msg=~p~n";
+msg_CEF(145)    -> "|000145|REST MGMT request denied|7|src=~s spt=~p path=~p msg=~p~n";
+msg_CEF(146)    -> "|000146|MGMT request failed|7|src=~s spt=~p path=~p msg=~p~n";
+msg_CEF(147)    -> "|000147|Unsupported request|7|src=~s spt=~p path=~p msg=~p~n";
+msg_CEF(148)    -> "|000148|Zone not found|7|src=~s spt=~p path=~p msg=~p~n";
 
 msg_CEF(201)    -> "|000201|RPZ transfer success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p~n";
 msg_CEF(202)    -> "|000202|DNS Query|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p~n";
@@ -429,29 +429,30 @@ base64url_decode(Str) ->
 
 %% @doc Returns the SSL cipher suites for the given TLS version.
 %%
-%% Supported version strings:
+%% Behavior:
 %% <ul>
 %%   <li>`'tlsv1.2-1.3'' — combined TLS 1.2 default + TLS 1.3 exclusive suites</li>
-%%   <li>`"tlsv1.2"', `"tlsv1.3"', `"dtlsv1.2"', `"tlsv1.1"' — default suites
-%%       for the specified version</li>
+%%   <li>a recognized single version atom (`'tlsv1.2'', `'tlsv1.3'', `'tlsv1.1'',
+%%       `'dtlsv1.2'') — that version's default suites</li>
+%%   <li>any other value — logs a warning and falls back to the TLS 1.2 default
+%%       suites (so a misconfigured version cannot crash listener startup)</li>
 %% </ul>
 %%
-%% <b>Note:</b> The second guarded clause is currently unreachable dead code
-%% (identical guard to the first). See bugfix task 30 for the planned fix
-%% to add a proper catch-all fallback.
+%% The version is matched/forwarded as an atom, which is what
+%% `ssl:cipher_suites/2' expects.
 %%
-%% @param TLSVersion A TLS version atom or string.
+%% @param TLSVersion A TLS version atom (see `?TLSVersion').
 %% @returns A list of cipher suite maps as returned by `ssl:cipher_suites/2'.
 get_cipher_suites('tlsv1.2-1.3') ->
   TLS12=ssl:cipher_suites(default, 'tlsv1.2'),
   TLS13=ssl:cipher_suites(exclusive, 'tlsv1.3'),
   ssl:append_cipher_suites(TLS12,TLS13);
 
-get_cipher_suites(TLSVersion) when TLSVersion=="tlsv1.2";TLSVersion=="tlsv1.3";TLSVersion=="dtlsv1.2";TLSVersion=="tlsv1.1" -> %'tlsv1.2', 'tlsv1.3'
+get_cipher_suites(TLSVersion) when TLSVersion=='tlsv1.2';TLSVersion=='tlsv1.3';TLSVersion=='tlsv1.1';TLSVersion=='dtlsv1.2' ->
   ssl:cipher_suites(default, TLSVersion);
 
-get_cipher_suites(TLSVersion) when TLSVersion=="tlsv1.2";TLSVersion=="tlsv1.3";TLSVersion=="dtlsv1.2";TLSVersion=="tlsv1.1" -> %'tlsv1.2', 'tlsv1.3'
-  logMessage("unsuported TLS version ~s ~n", [TLSVersion]),
+get_cipher_suites(TLSVersion) ->
+  logMessage("unsupported TLS version ~p, falling back to tlsv1.2~n", [TLSVersion]),
   ssl:cipher_suites(default, 'tlsv1.2').
 
 %% @doc Checks whether a request identified by `Id' exceeds the rate limit.
@@ -722,8 +723,20 @@ conv_to_Mb_test() -> [
 ].
 
 msg_CEF_test() -> [
-	?assert(msg_CEF(138) =:= "|000138|Zone not found|7|src=~s spt=~p path=~p msg=~p~n"),
+	?assert(msg_CEF(148) =:= "|000148|Zone not found|7|src=~s spt=~p path=~p msg=~p~n"),
 	?assert(msg_CEF(424242) =:= "Not defined~n")
+].
+
+%% Verifies get_cipher_suites/1 (task 30): the combined and single-version atoms
+%% return non-empty cipher lists, and an unknown value falls back to the TLS 1.2
+%% default suites instead of raising function_clause.
+get_cipher_suites_test() -> [
+	?assert(is_list(get_cipher_suites('tlsv1.2-1.3'))),
+	?assert(get_cipher_suites('tlsv1.2-1.3') /= []),
+	?assert(get_cipher_suites('tlsv1.2') /= []),
+	?assert(get_cipher_suites('tlsv1.3') /= []),
+	%% unknown atom -> logged fallback to tlsv1.2 default (no crash)
+	?assert(get_cipher_suites('bogus') =:= ssl:cipher_suites(default, 'tlsv1.2'))
 ].
 
 
