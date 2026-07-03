@@ -1,5 +1,8 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## 2026-07-04 v1.3.0.9
+- Configuration reload now applies changes to a source's extraction `regex`, `ioc_type`, and `max_ioc` even when its AXFR/IXFR URLs are unchanged. Previously the reload diff only compared the URLs, so editing just the regex (or ioc_type/max_ioc) of an existing source was silently ignored: the source kept its old settings in cfg_table and its hot cache was not invalidated. Such sources are now correctly marked as updated, re-inserted, purged from the hot cache, and their RPZ zones re-transferred
+- Logging is now crash-safe: a format string / argument-count mismatch in a log call no longer takes down the calling process. Previously a bad `msg_CEF`/`logMessage` call raised `badarg` from `io:fwrite`, which for a DNS/AXFR worker crashed the gen_server and aborted the transfer (with a SUPERVISOR/CRASH REPORT). `logMessage/3` and `logMessageCEF/3` now route through a guarded writer that catches formatting errors and emits a fallback line (class, reason, format, args) so the defect is still visible without disrupting DNS service or zone transfers
 ## 2026-06-26 v1.3.0.8
 - [CB] CEF event codes for REST API events were renumbered out of the RPZ-transfer range to remove duplicate/shadowed IDs: REST Basic auth failed 130→140, REST auth failed 131→141, REST MGMT denied 135→145, MGMT request failed 136→146, unsupported request 137→147, zone not found 138→148. Codes 130/131 are now exclusively RPZ transfer events. Update any SIEM correlation rules that referenced the old REST codes
 - RPZ statistics (`/api/v1/stats/rpz`) now include a `status` field per zone (`ready`, `updating`, `forceAXFR`, `notready`) so consumers can tell current stats from those reflecting the last completed update

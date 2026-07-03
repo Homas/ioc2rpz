@@ -520,9 +520,9 @@ read_config3([],reload,Srv,Keys,_Key_Groups,WhiteLists,Sources,RPZ)  ->
   WhiteLists_N = [ X || X <- WhiteLists_V, not lists:member(X#source.name, [ Z#source.name || Z <- WhiteLists_C ]) ],
   Sources_N = [ X || X <- Sources_V, not lists:member(X#source.name, [ Z#source.name || Z <- Sources_C ]) ],
 
-  WhiteLists_UPD = [ X || X <- WhiteLists_V, X#source.axfr_url /= (checkSrcRec(lists:keyfind(X#source.name,2,WhiteLists_C)))#source.axfr_url,lists:member(X#source.name, [ Z#source.name || Z <- WhiteLists_C ]) ],
+  WhiteLists_UPD = [ X || X <- WhiteLists_V, lists:member(X#source.name, [ Z#source.name || Z <- WhiteLists_C ]), srcChanged(X, checkSrcRec(lists:keyfind(X#source.name,2,WhiteLists_C))) ],
 
-  Sources_UPD = [ X || X <- Sources_V, ((X#source.axfr_url /= (checkSrcRec(lists:keyfind(X#source.name,2,Sources_C)))#source.axfr_url) or (X#source.ixfr_url /= (checkSrcRec(lists:keyfind(X#source.name,2,Sources_C)))#source.ixfr_url)) and (lists:member(X#source.name, [ Z#source.name || Z <- Sources_C ])) ],
+  Sources_UPD = [ X || X <- Sources_V, lists:member(X#source.name, [ Z#source.name || Z <- Sources_C ]), srcChanged(X, checkSrcRec(lists:keyfind(X#source.name,2,Sources_C))) ],
 
   [ ets:insert(cfg_table, {[source,X#source.name],X}) || X <- WhiteLists_N ++ Sources_N ++ WhiteLists_UPD ++ Sources_UPD ],
 
@@ -609,6 +609,26 @@ checkSrcRec(Rec) when Rec#source.name /= undefined ->
 	Rec;
 checkSrcRec(_Rec) ->
 	#source{}.
+
+%% @doc Returns `true' if a source's data-affecting configuration changed and it
+%% therefore has to be re-pulled / invalidated in the hot cache on reload.
+%%
+%% Compares the download URLs plus every field that changes how the feed is
+%% parsed or limited: the extraction `regex', the `ioc_type', and `max_ioc'.
+%% Previously only the AXFR/IXFR URLs were compared, so editing just the regex
+%% (or ioc_type/max_ioc) of an existing source was silently ignored on reload.
+%% Fields that do not affect the produced IOC set (cache timers, keep_in_cache)
+%% are intentionally excluded.
+%%
+%% @param New  Freshly-parsed `#source{}' record from the config file.
+%% @param Old  Currently-loaded `#source{}' record from `cfg_table'.
+%% @returns `true' if any data-affecting field differs, `false' otherwise.
+srcChanged(New, Old) ->
+	New#source.axfr_url /= Old#source.axfr_url orelse
+	New#source.ixfr_url /= Old#source.ixfr_url orelse
+	New#source.regex    /= Old#source.regex orelse
+	New#source.ioc_type /= Old#source.ioc_type orelse
+	New#source.max_ioc  /= Old#source.max_ioc.
 
 %% @doc Validate a TSIG key record.
 %%

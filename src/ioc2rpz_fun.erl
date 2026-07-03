@@ -36,7 +36,7 @@ logMessage(Message, Vars) ->
 -spec logMessage(pid() | atom(), string(), list()) -> ok.
 logMessage(Dest, Message, Vars) ->
  ?addTS(Dest),
- io:fwrite(Dest,Message,Vars).
+ safe_fwrite(Dest,Message,Vars).
 
 
 %% @doc Logs a CEF (Common Event Format) message to the group leader.
@@ -51,7 +51,29 @@ logMessageCEF(Message, Vars) -> % "Device Event Class ID|Name|Severity|[Extensio
 
 logMessageCEF(Dest, Message, Vars) ->
  ?addTS(Dest),
- io:fwrite(Dest,"CEF:0|ioc2rpz|ioc2rpz|~s"++Message,[?ioc2rpz_ver|Vars]).
+ safe_fwrite(Dest,"CEF:0|ioc2rpz|ioc2rpz|~s"++Message,[?ioc2rpz_ver|Vars]).
+
+%% @doc Writes a formatted log line, but never lets a logging error crash the
+%% calling process. A format string / argument-count mismatch (or any other
+%% formatting error) would otherwise make `io:fwrite/3' raise `badarg', which
+%% for a DNS/AXFR worker gen_server means the whole connection is torn down and
+%% a crash report is emitted. Here such errors are caught and replaced by a
+%% best-effort fallback line that preserves the original format and arguments so
+%% the underlying bug is still visible in the logs.
+%% @param Dest    The IO device to write to.
+%% @param Message The format string.
+%% @param Vars    The list of format arguments.
+%% @returns `ok'.
+safe_fwrite(Dest, Message, Vars) ->
+  try
+    io:fwrite(Dest, Message, Vars)
+  catch
+    Class:Reason ->
+      catch io:fwrite(Dest,
+        "ioc2rpz logging error (~p:~p) - bad format/args. format=~p args=~p~n",
+        [Class, Reason, Message, Vars]),
+      ok
+  end.
 
 %CEF:Version|Device Vendor|Device Product|Device Version|Device Event Class ID|Name|Severity|[Extension]
 % Severity is a string or integer and reflects the importance of the event. The valid string values are Unknown, Low, Medium, High, and Very-High. The valid integer values are 0-3=Low, 4-6=Medium, 7- 8=High, and 9-10=Very-High.
