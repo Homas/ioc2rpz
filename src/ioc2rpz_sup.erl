@@ -559,6 +559,13 @@ read_config3([],reload,Srv,Keys,_Key_Groups,WhiteLists,Sources,RPZ)  ->
 	ets:match_delete(cfg_table,{[key_group,'_','_'],'_'}),
 	[ ets:insert_new(cfg_table, {[key_group,Y,Z],Z}) || {Y,Z} <- lists:flatten([ gen_group_array(Y#key.name_bin,Y#key.key_groups) || Y <- Keys_V ]) ],
 
+  %% Capture the OLD server record BEFORE overwriting it so a change to the
+  %% global track_sources default is detectable below: feeds that INHERIT the
+  %% default (track_sources=undefined) can flip their effective tracking state
+  %% without any per-feed edit, and must then be force-rebuilt to (re)derive
+  %% source masks (design §12). Without this the masks stay 0 and the API
+  %% reports "(unavailable)" for multi-source feeds until an unrelated AXFR runs.
+  OldSrv = case ets:match(cfg_table,{srv,'_','_','_','_','_','$7'}) of [[OS]] -> OS; _ -> #srv{} end,
   SrvV = validateCFGSrv(Srv), ets:insert(cfg_table, {srv,SrvV#srv.server,SrvV#srv.email,SrvV#srv.mkeys,SrvV#srv.acl, SrvV#srv.cert,SrvV}),
 
   SW=ets:match(cfg_table, {[source,'_'],'$2'}),
@@ -595,7 +602,15 @@ read_config3([],reload,Srv,Keys,_Key_Groups,WhiteLists,Sources,RPZ)  ->
 %TODO TKEYS and Groups should be checked
   RPZ_UPD = [ X || X <- RPZ_V, not checkRPZEq(X,lists:keyfind(X#rpz.zone,3,RPZ_C)),lists:member(X#rpz.zone, [ Z#rpz.zone || Z <- RPZ_C ]) ] ++
             [ X || X <- RPZ_V, ioc2rpz_fun:intersection(X#rpz.whitelist,[Z#source.name || Z <- WhiteLists_UPD]) /= [] ] ++
-            [ X || X <- RPZ_V, ioc2rpz_fun:intersection(X#rpz.sources,[Z#source.name || Z <- Sources_UPD]) /= [] ],
+            [ X || X <- RPZ_V, ioc2rpz_fun:intersection(X#rpz.sources,[Z#source.name || Z <- Sources_UPD]) /= [] ] ++
+            %% Source-attribution (R2/R6): force an AXFR for any existing feed whose
+            %% EFFECTIVE tracking state changed — either its own track_sources flag
+            %% was edited, or it inherits the server global default which changed.
+            %% checkRPZEq intentionally ignores track_sources, so this is the only
+            %% path that rebuilds masks when tracking is toggled. Comparing the
+            %% effective boolean (not the raw flag) avoids needless rebuilds when the
+            %% result is unchanged (e.g. auto<->on both resolving to true).
+            [ X || X <- RPZ_V, track_state_changed(X, RPZ_C, OldSrv, SrvV) ],
 
 
   [ ioc2rpz_fun:logMessage("Zone ~p was updated. Terminating ~p.~n",[X#rpz.zone_str,X#rpz.pid]) || X <- RPZ_UPD, X#rpz.status == updating ],
@@ -658,6 +673,33 @@ checkRPZEq(R1,R2) when R1#rpz.zone == R2#rpz.zone,R1#rpz.soa_timers == R2#rpz.so
 
 checkRPZEq(_R1,_R2) ->
   false.
+
+%% @doc Returns `true' if a freshly-parsed feed's EFFECTIVE source-tracking state
+%% differs from what it was before the reload, so the feed must be force-rebuilt
+%% (AXFR) to (re)derive per-source masks. Source masks are only (re)computed
+%% during a full AXFR; IXFR never backfills masks for already-present indicators
+%% (accepted limitation R6). `checkRPZEq/2' deliberately excludes `track_sources',
+%% so this is the dedicated detector that covers BOTH a per-feed flag edit and an
+%% inherited change from the server global default (`#srv.track_sources').
+%%
+%% The comparison is on the resolved boolean from {@link track_enabled/2} (old
+%% record + old #srv vs new record + new #srv), not the raw flag, so toggling
+%% between two values that resolve to the same effective state (e.g. `auto' and
+%% `on' for a multi-source feed) does NOT trigger a needless rebuild. A brand-new
+%% zone (no match in `OldList') returns `false' here — it is a fresh AXFR anyway
+%% (handled via RPZ_N).
+%%
+%% @param New     The freshly-parsed `#rpz{}' record.
+%% @param OldList The pre-reload snapshot of `#rpz{}' records (`RPZ_C').
+%% @param OldSrv  The pre-reload `#srv{}' record (old global default).
+%% @param NewSrv  The freshly-parsed `#srv{}' record (new global default).
+%% @returns boolean() — `true' when the effective tracking state changed.
+track_state_changed(New, OldList, OldSrv, NewSrv) ->
+  case lists:keyfind(New#rpz.zone, #rpz.zone, OldList) of
+    false -> false;
+    Old when is_record(Old, rpz) ->
+      track_enabled(Old, OldSrv) =/= track_enabled(New, NewSrv)
+  end.
 
 %% @doc Safe accessor for source records during reload diffing.
 %%
@@ -1446,6 +1488,32 @@ track_enabled_test() ->
     %% resolve to true rather than being force-disabled by the capacity check.
     ?assert(track_enabled(ZbigTrue, Srv_off) =:= true),
     ?assert(track_enabled(ZbigAuto, Srv_off) =:= true) ].
+
+%% Verifies track_state_changed/4 (reload forced-AXFR on tracking toggle): a feed
+%% whose EFFECTIVE tracking state changes — via its own flag or an inherited
+%% change to the server global default — is detected so masks are rebuilt; a
+%% no-op toggle (same effective result) and a brand-new zone are NOT flagged.
+track_state_changed_test() ->
+  Z = <<4,"test",3,"rpz",0>>,
+  Multi  = ["s0","s1"],
+  SrvOff  = #srv{track_sources=off},
+  SrvAuto = #srv{track_sources=auto},
+  %% per-feed flag edited off(inherit)->on
+  OldInherit = #rpz{zone=Z, sources=Multi, track_sources=undefined},
+  NewOn      = #rpz{zone=Z, sources=Multi, track_sources=true},
+  %% global default changed off->auto for an inheriting multi-source feed
+  %% no effective change: auto (multi ⇒ true) vs forced true
+  NewAuto    = #rpz{zone=Z, sources=Multi, track_sources=auto},
+  [ %% per-feed off->on under an unchanged (off) global ⇒ changed
+    ?assert(track_state_changed(NewOn, [OldInherit], SrvOff, SrvOff) =:= true),
+    %% inherited off->auto (multi-source ⇒ effective true) ⇒ changed
+    ?assert(track_state_changed(OldInherit, [OldInherit], SrvOff, SrvAuto) =:= true),
+    %% auto (multi ⇒ true) -> forced true: same effective state ⇒ NOT changed
+    ?assert(track_state_changed(NewOn, [NewAuto], SrvOff, SrvOff) =:= false),
+    %% no change at all ⇒ false
+    ?assert(track_state_changed(OldInherit, [OldInherit], SrvOff, SrvOff) =:= false),
+    %% brand-new zone (no match in the old list) ⇒ false (fresh AXFR anyway)
+    ?assert(track_state_changed(NewOn, [], SrvOff, SrvOff) =:= false) ].
 
 %% Verifies source_index_list/1 produces 0-based {Index, SourceName} pairs.
 source_index_list_test() ->
