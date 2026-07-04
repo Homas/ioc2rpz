@@ -137,7 +137,7 @@
 %%%===================================================================
 
 %% Application version string: "major.minor.patch.build-YYYYMMDDNN"
--define(ioc2rpz_ver, "1.3.0.9-2026070401").
+-define(ioc2rpz_ver, "1.4.0.0-2026070401").
 
 %% DNS label compression pointer for the query name (QNAME) in responses.
 %% In a standard DNS response, the original QNAME from the question section
@@ -372,7 +372,12 @@
 %%   cert       — #cert{} record with TLS certificate paths
 %%   max_ioc    — global maximum IOC count limit (optional)
 %%   key_groups — list of key group names for access control
--record(srv, {server,email,mkeys,acl,cert, max_ioc, key_groups}).
+%%   track_sources — server-level global default for IOC source attribution:
+%%                   `off | auto | on`. Applied to any feed whose own
+%%                   #rpz.track_sources is `undefined`. Defaults to `off`, so
+%%                   existing configs (which specify no value) keep the current
+%%                   behavior of tracking disabled.
+-record(srv, {server,email,mkeys,acl,cert, max_ioc, key_groups, track_sources = off}).
 
 %% TSIG key definition. Stored in cfg_table as {[key, Name], ...}.
 %% Used for authenticating zone transfers and DNS management requests.
@@ -422,7 +427,14 @@
 %%   max_ioc            — per-zone maximum IOC count limit (optional)
 %%   key_groups         — list of key group names authorized for this zone
 %%   rule_count         — number of DNS rules generated from IOCs
--record(rpz, {rpzid, zone, zone_str, soa_timers, cache, wildcards, notify, action, akeys, ioc_type, axfr_time, ixfr_time, sources, status, serial, serial_new, serial_ixfr, notifylist, whitelist, ioc_md5, update_time, ixfr_update_time, ixfr_nz_update_time, pid, ioc_count, userid, max_ioc, key_groups, rule_count}).
+%%   track_sources      — per-feed source-attribution setting:
+%%                        `undefined | auto | true | false`. `undefined` ⇒ use the
+%%                        server global default (#srv.track_sources). `auto` ⇒ track
+%%                        only for multi-source feeds; `true`/`false` ⇒ force on/off.
+%%                        Left `undefined` by default so every existing #rpz{...}
+%%                        literal keeps compiling and unconfigured feeds inherit the
+%%                        global default.
+-record(rpz, {rpzid, zone, zone_str, soa_timers, cache, wildcards, notify, action, akeys, ioc_type, axfr_time, ixfr_time, sources, status, serial, serial_new, serial_ixfr, notifylist, whitelist, ioc_md5, update_time, ixfr_update_time, ixfr_nz_update_time, pid, ioc_count, userid, max_ioc, key_groups, rule_count, track_sources = undefined}).
 
 %% IOC Source definition. Represents a feed/data source that provides
 %% indicators of compromise. Stored in cfg_table as {[source, Name], Source}.
@@ -482,6 +494,18 @@
 %% Used for the GRANULAR rate-limit bucket keyed by {IP, QName, QType}
 %% (provisioned zone + supported QTYPE, and recognized management requests).
 -define(MAX_REQUESTS_PER_WINDOW, 6).
+
+%%%===================================================================
+%%% Source-Attribution Mask Constants (IOC Source Attribution, R7)
+%%%===================================================================
+
+%% Fixnum bit budget for a per-zone positional source mask. Bit `i' of the mask
+%% corresponds to the `i'-th source in a zone's #rpz.sources list. While the
+%% number of sources stays within this budget the mask is represented as a
+%% single small Erlang integer (fixnum); above it, ioc2rpz_fun:mask_repr_for/1
+%% selects a binary-bitmap representation so larger feeds can still be tracked
+%% (design §8). 63 keeps the integer a fixnum on 64-bit systems (one tag bit).
+-define(MaskFixnumBits, 63).
 
 %% Maximum number of requests allowed within a single ?RATE_LIMIT_WINDOW for
 %% the AGGREGATE per-IP bucket keyed by {IP}. This bucket counts requests that

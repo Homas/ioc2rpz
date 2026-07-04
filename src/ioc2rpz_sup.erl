@@ -32,6 +32,7 @@
 -export([start_ioc2rpz_sup/1,stop_ioc2rpz_sup/0,update_all_zones/1,update_zone_full/1,
         update_zone_inc/1,reload_config3/1,read_config3/1,load_hotsources/1]).
 -export([init/1]).
+-export([track_enabled/2, source_index_list/1]).
 
 %-compile([export_all]).
 
@@ -374,6 +375,17 @@ read_config3([{include,Filename}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sour
   read_config3(REST,RType, Srv, KeysI ++ Keys,Key_GroupsI ++ Key_Groups, WhiteListsI ++ WhiteLists, SourcesI ++ Sources, RPZI ++ RPZ);
 
 
+%%% Extended server clause with an optional global track_sources default (off | auto | on).
+%%% A 5-element {srv,{...}} tuple won't collide with the 4-element clause below; Erlang matches
+%%% clauses in order. Absent (4-element tuple) ⇒ track_sources stays at its `off` default.
+read_config3([{srv,{Serv,Email,MKeys,ACL,TrackSources}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
+  {ok,ServB}=ioc2rpz:domstr_to_bin(list_to_binary(Serv),0),
+  {ok,EmailB}=ioc2rpz:domstr_to_bin(list_to_binary(Email),0),
+  MKeysX=[ioc2rpz:domstr_to_bin(list_to_binary(X),0)|| X <- MKeys, is_list(X)], MKeysB=[X || {_,X} <- MKeysX], %keys group support
+	KeyGroups=lists:append([ Y || {groups, Y} <- [ X || X <- MKeys, is_tuple(X) ], is_list(Y) ]),
+  TrackSourcesV=validate_track_sources(TrackSources),
+  read_config3(REST,RType,Srv#srv{server=ServB,email=EmailB,mkeys=MKeysB,acl=ACL,key_groups=KeyGroups,track_sources=TrackSourcesV},Keys,Key_Groups,WhiteLists,Sources,RPZ);
+
 read_config3([{srv,{Serv,Email,MKeys,ACL}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
   {ok,ServB}=ioc2rpz:domstr_to_bin(list_to_binary(Serv),0),
   {ok,EmailB}=ioc2rpz:domstr_to_bin(list_to_binary(Email),0),
@@ -424,6 +436,47 @@ read_config3([{source,{Name,AXFR,IXFR,REGEX,UserID,Max_Count,HotCacheTime,HotCac
   read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX,userid=UserID,max_ioc=Max_Count,hotcache_time=HotCacheTime,hotcacheixfr_time=HotCacheTimeIXFR,pid=[],ioc_type=IocType,keep_in_cache=KeepInCache}|Sources],RPZ);
 
 
+%%% Extended 16-field rpz clause carrying an explicit per-feed track_sources
+%%% value as the trailing (16th) tuple element (auto | true | false). It does
+%%% everything the 15-field clause below does, but also sets #rpz.track_sources
+%%% to the validated value. A 16-element {rpz,{...}} tuple won't collide with
+%%% the 15-element clause below; Erlang matches clauses in order. An
+%%% unrecognised value defaults to `undefined` (⇒ inherit the server global
+%%% default). Existing 15-field configs are unaffected (R2).
+read_config3([{rpz,{Zone, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards, Action, AKeys, IOCType, AXFR_Time, IXFR_Time, Sources, NotifyList, Whitelist, TrackSources}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,RPZ) ->
+  {ok,ZoneB} = ioc2rpz:domstr_to_bin(list_to_binary(Zone),0),
+  AKeysX=[ioc2rpz:domstr_to_bin(list_to_binary(X),0)|| X <- AKeys, is_list(X) ], AKeysB=[X || {_,X} <- AKeysX],
+	KeyGroups=lists:append([ Y || {groups, Y} <- [ X || X <- AKeys, is_tuple(X) ], is_list(Y) ]),
+  SOATimers = <<Refresh:32,Retry:32,Expiration:32,Neg_ttl:32>>,
+  %TODO update config to support protocol
+  %temporary fix for issue #35
+  NotifyListIP = [{udp,ioc2rpz_fun:str_to_ip(IPStr)} || IPStr <- NotifyList ],
+  ZoneInfoReq = #rpz{zone=ZoneB,axfr_time=AXFR_Time, zone_str=Zone,ixfr_time=AXFR_Time, cache=Cache},
+  case {Cache,load_zone_info(ZoneInfoReq)} of
+    {"true",[ready = Status0,Serial,_Soa_timersC,_CacheC,_WildcardsC,_SourcesC,_Ioc_md5,Update_time,IOC_count,Rules_count, ready,_Serial,Serial_IXFR,IXFR_Update_time,NZ_Update_Time]} -> ok;
+    {"true",[ready= Status0,Serial,_Soa_timersC,_CacheC,_WildcardsC,_SourcesC,_Ioc_md5,Update_time,IOC_count,Rules_count, notready| _ ]} -> IXFR_Update_time=0, Serial_IXFR=0, NZ_Update_Time=0;
+    {"true",[notready = Status0|_]} -> Update_time=0, IXFR_Update_time=0, Serial_IXFR=0, Serial=0,NZ_Update_Time=0,IOC_count=0,Rules_count=0;
+    _ -> Status0 = notready, Update_time=0, IXFR_Update_time=0, Serial_IXFR=0, Serial=0,NZ_Update_Time=0,IOC_count=0,Rules_count=0
+  end,
+  %% Task 3.2 (R6): if this cached zone's source list changed since the cached
+  %% masks were built, force an AXFR so masks are re-derived. No-op for
+  %% notready/non-cached zones and when the signature matches.
+  Status = maybe_force_source_axfr(Cache, Status0, ZoneInfoReq, Sources),
+  ZAction = case Action of
+   Action when Action=="nodata";Action=="passthru";Action=="drop";Action=="tcp-only";Action=="nxdomain";Action=="blockns" -> list_to_binary(Action);
+   [{LAction,LData}] when LAction=="redirect_domain" -> {list_to_binary(LAction),binary:split(list_to_binary(LData),<<".">>,[global])};
+   [{LAction,LData}] when LAction=="redirect_ip" -> {list_to_binary(LAction),ioc2rpz_fun:ip_to_bin(LData)};
+   _ -> ioc2rpz_fun:read_local_actions(Action)
+  end,
+  TrackSourcesV=validate_feed_track_sources(TrackSources),
+  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,[#rpz{zone=ZoneB, zone_str=Zone, soa_timers=SOATimers, cache=list_to_binary(Cache), wildcards=list_to_binary(Wildcards), action=ZAction, akeys=AKeysB, ioc_type=list_to_binary(IOCType), axfr_time=AXFR_Time, ixfr_time=IXFR_Time, sources=Sources, notifylist=NotifyListIP, whitelist=Whitelist, serial=Serial, status=Status, update_time=Update_time, ixfr_update_time=IXFR_Update_time, ixfr_nz_update_time=NZ_Update_Time, serial_ixfr=Serial_IXFR, key_groups=KeyGroups, ioc_count=IOC_count, rule_count=Rules_count, track_sources=TrackSourcesV}|RPZ]);
+
+%%% Existing 15-field rpz clause (source attribution not specified). It builds
+%%% #rpz{...} WITHOUT setting track_sources, so the field keeps its record
+%%% default of `undefined` (⇒ inherit the server global default,
+%%% #srv.track_sources, which is `off` unless configured). This preserves
+%%% backward compatibility: existing config files load unchanged and behave as
+%%% off — no tracking, no rebuilds, unchanged API (R2/R4).
 read_config3([{rpz,{Zone, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards, Action, AKeys, IOCType, AXFR_Time, IXFR_Time, Sources, NotifyList, Whitelist}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,RPZ) ->
   {ok,ZoneB} = ioc2rpz:domstr_to_bin(list_to_binary(Zone),0),
   AKeysX=[ioc2rpz:domstr_to_bin(list_to_binary(X),0)|| X <- AKeys, is_list(X) ], AKeysB=[X || {_,X} <- AKeysX],
@@ -432,12 +485,17 @@ read_config3([{rpz,{Zone, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards,
   %TODO update config to support protocol
   %temporary fix for issue #35
   NotifyListIP = [{udp,ioc2rpz_fun:str_to_ip(IPStr)} || IPStr <- NotifyList ],
-  case {Cache,load_zone_info(#rpz{zone=ZoneB,axfr_time=AXFR_Time, zone_str=Zone,ixfr_time=AXFR_Time, cache=Cache})} of
-    {"true",[ready = Status,Serial,_Soa_timersC,_CacheC,_WildcardsC,_SourcesC,_Ioc_md5,Update_time,IOC_count,Rules_count, ready,_Serial,Serial_IXFR,IXFR_Update_time,NZ_Update_Time]} -> ok;
-    {"true",[ready= Status,Serial,_Soa_timersC,_CacheC,_WildcardsC,_SourcesC,_Ioc_md5,Update_time,IOC_count,Rules_count, notready| _ ]} -> IXFR_Update_time=0, Serial_IXFR=0, NZ_Update_Time=0;
-    {"true",[notready = Status|_]} -> Update_time=0, IXFR_Update_time=0, Serial_IXFR=0, Serial=0,NZ_Update_Time=0,IOC_count=0,Rules_count=0;
-    _ -> Status = notready, Update_time=0, IXFR_Update_time=0, Serial_IXFR=0, Serial=0,NZ_Update_Time=0,IOC_count=0,Rules_count=0
+  ZoneInfoReq = #rpz{zone=ZoneB,axfr_time=AXFR_Time, zone_str=Zone,ixfr_time=AXFR_Time, cache=Cache},
+  case {Cache,load_zone_info(ZoneInfoReq)} of
+    {"true",[ready = Status0,Serial,_Soa_timersC,_CacheC,_WildcardsC,_SourcesC,_Ioc_md5,Update_time,IOC_count,Rules_count, ready,_Serial,Serial_IXFR,IXFR_Update_time,NZ_Update_Time]} -> ok;
+    {"true",[ready= Status0,Serial,_Soa_timersC,_CacheC,_WildcardsC,_SourcesC,_Ioc_md5,Update_time,IOC_count,Rules_count, notready| _ ]} -> IXFR_Update_time=0, Serial_IXFR=0, NZ_Update_Time=0;
+    {"true",[notready = Status0|_]} -> Update_time=0, IXFR_Update_time=0, Serial_IXFR=0, Serial=0,NZ_Update_Time=0,IOC_count=0,Rules_count=0;
+    _ -> Status0 = notready, Update_time=0, IXFR_Update_time=0, Serial_IXFR=0, Serial=0,NZ_Update_Time=0,IOC_count=0,Rules_count=0
   end,
+  %% Task 3.2 (R6): if this cached zone's source list changed since the cached
+  %% masks were built, force an AXFR so masks are re-derived. No-op for
+  %% notready/non-cached zones and when the signature matches.
+  Status = maybe_force_source_axfr(Cache, Status0, ZoneInfoReq, Sources),
   ZAction = case Action of
    Action when Action=="nodata";Action=="passthru";Action=="drop";Action=="tcp-only";Action=="nxdomain";Action=="blockns" -> list_to_binary(Action);
    [{LAction,LData}] when LAction=="redirect_domain" -> {list_to_binary(LAction),binary:split(list_to_binary(LData),<<".">>,[global])};
@@ -745,6 +803,188 @@ parse_ixfr_url(AXFR,"") -> %empty IXFR
 parse_ixfr_url(AXFR,IXFR) ->
   [ if X == "[:AXFR:]" -> AXFR; true -> X end || X <- re:split(IXFR,"(\\[:[^:]+:\\])",[{return,list},trim]), X /=[]].
 
+%% @doc Validate the server-level global `track_sources' default.
+%%
+%% Accepts `off | auto | on'. Any other value falls back to `off' (with a log
+%% message) to stay backward compatible and never enable tracking unexpectedly.
+%%
+%% @param V  The raw value from the server config tuple.
+%% @returns `off | auto | on'.
+validate_track_sources(off)  -> off;
+validate_track_sources(auto) -> auto;
+validate_track_sources(on)   -> on;
+validate_track_sources(V) ->
+  ioc2rpz_fun:logMessage("Invalid server track_sources value ~p, defaulting to off~n", [V]),
+  off.
+
+%% @doc Validate the per-feed `track_sources' value.
+%%
+%% Accepts `auto | true | false'. Any other value falls back to `undefined'
+%% (with a log message) so the feed inherits the server global default
+%% (#srv.track_sources).
+%%
+%% @param V  The raw value from the extended rpz config tuple.
+%% @returns `auto | true | false | undefined'.
+validate_feed_track_sources(auto)  -> auto;
+validate_feed_track_sources(true)  -> true;
+validate_feed_track_sources(false) -> false;
+validate_feed_track_sources(V) ->
+  ioc2rpz_fun:logMessage("Invalid feed track_sources value ~p, defaulting to undefined (inherit global default)~n", [V]),
+  undefined.
+
+%% @doc Resolve the effective source-attribution tracking flag for a zone.
+%%
+%% Implements the effective-state resolution from design §3.1b. Precedence:
+%% the per-feed #rpz.track_sources value wins when set; otherwise the server
+%% global default #srv.track_sources applies. The built-in default is `off'
+%% (#srv.track_sources defaults to `off'), so an unconfigured feed on a server
+%% with no global setting does not track.
+%%
+%% The resolved value is then mapped to a boolean:
+%% <ul>
+%%   <li>`off' | `false' ⇒ false (tracking disabled)</li>
+%%   <li>`on'  | `true'  ⇒ true  (tracking forced on)</li>
+%%   <li>`auto' ⇒ true only for multi-source feeds
+%%       (`length(sources) > 1', R3)</li>
+%% </ul>
+%%
+%% Finally the >63-source capacity decision (R7, design §8) is applied via
+%% {@link capacity_ok/1}. As of task 14 the DEFAULT above the fixnum threshold is
+%% to TRACK using a binary-bitmap mask (see {@link ioc2rpz_fun:mask_repr_for/1}),
+%% so `capacity_ok/1' no longer force-disables large feeds; it returns `true'.
+%% The result is therefore `Tracked andalso capacity_ok(Zone)'.
+%%
+%% @param Zone  A #rpz{} record (per-feed track_sources + sources list).
+%% @param Srv   A #srv{} record (server global track_sources default).
+%% @returns boolean() — whether source attribution is effectively enabled.
+track_enabled(Zone, Srv) ->
+  case Zone#rpz.track_sources of
+    undefined -> Eff = Srv#srv.track_sources;
+    V         -> Eff = V
+  end,
+  Tracked = case Eff of
+    off   -> false;
+    false -> false;
+    on    -> true;
+    true  -> true;
+    auto  -> length(Zone#rpz.sources) > 1
+  end,
+  Tracked andalso capacity_ok(Zone).
+
+%% @doc Capacity decision for positional source masks (design §8, R7).
+%%
+%% A per-zone positional mask is a single Erlang integer (fixnum) while the
+%% number of sources stays within `?MaskFixnumBits' (63). Those feeds always
+%% pass. As of task 14, feeds ABOVE the fixnum threshold are no longer
+%% force-disabled: the default is to keep TRACKING them using a binary-bitmap
+%% mask representation (see {@link ioc2rpz_fun:mask_repr_for/1} and the
+%% ioc2rpz_fun mask abstraction), which costs ~ceil(N/8) bytes per indicator
+%% instead of a growing bignum. This helper therefore returns `true' for both
+%% cases and delegates the oversize decision to {@link capacity_over_threshold_ok/1}.
+%%
+%% @param Zone  A #rpz{} record.
+%% @returns boolean() — whether tracking is permitted for this feed's source count.
+capacity_ok(Zone) ->
+  case length(Zone#rpz.sources) =< ?MaskFixnumBits of
+    true  -> true;
+    false -> capacity_over_threshold_ok(Zone)
+  end.
+
+%% @doc Decide whether a feed with MORE than `?MaskFixnumBits' sources is tracked
+%% (design §8, R7). The default is `true' (track via a binary-bitmap mask, with a
+%% logged warning emitted on the build path — observability task 16). The
+%% configurable FALLBACK is to disable tracking for such feeds and store
+%% `SrcMask = 0'.
+%%
+%% HOOK (configurable disable): the fallback would be wired to a server/per-feed
+%% config flag (e.g. a `#srv.track_sources_oversize = bitmap | disable' setting,
+%% or a per-feed variant). When that flag resolves to `disable' this function
+%% should return `false'. The config plumbing for that flag is intentionally left
+%% out here to keep this change minimal; the default (bitmap/track) is what
+%% design §8 specifies, and the integer mask stays correct for any index in the
+%% meantime (Erlang integers are arbitrary precision).
+%%
+%% @param Zone  A #rpz{} record with more than `?MaskFixnumBits' sources.
+%% @returns boolean() — `true' (track, default) unless a disable fallback is set.
+capacity_over_threshold_ok(_Zone) ->
+  true.
+
+%% @doc Build the 0-based index/source-name list for a zone.
+%%
+%% Each source's position in `Zone#rpz.sources' is the bit index used by the
+%% positional source mask (bit `i' ⇒ the `i'-th source). This helper pairs each
+%% source name with its 0-based index, e.g. for `["a","b","c"]' it returns
+%% `[{0,"a"},{1,"b"},{2,"c"}]'. Used by the build path to tag indicators with
+%% `1 bsl Index' and by the API to resolve mask bits back to source names.
+%%
+%% @param Zone  A #rpz{} record whose `sources' list is indexed.
+%% @returns `[{Index :: non_neg_integer(), SourceName :: term()}]'.
+source_index_list(Zone) ->
+  Sources = Zone#rpz.sources,
+  N = length(Sources),
+  lists:zip(lists:seq(0, N - 1), Sources).
+
+%% @doc Read the persisted source-list signature from the zone's IXFR cfg row.
+%%
+%% Source masks are per-zone positional (bit `i' = `i'-th entry of
+%% `#rpz.sources'), so the ordered source-name signature is stored alongside the
+%% zone's IXFR config (see {@link ioc2rpz_db:save_zone_info/1}). This helper
+%% returns the stored signature binary when present, or `undefined' when there
+%% is no cfg row or the row is a legacy 5-field row without a signature
+%% (pre-upgrade cached zone — task 15). Only cached zones populate
+%% `rpz_ixfr_table', so non-cached zones return `undefined'.
+%%
+%% @param Zone  An `#rpz{}' record with at least `zone' populated.
+%% @returns the stored signature `binary()' or `undefined'.
+load_source_signature(Zone) ->
+  case ioc2rpz_db:get_zone_info(Zone,ixfr) of
+    [[_,_Serial,_Serial_IXFR,_IXFR_Update_time,_NZ_Update_Time,SrcSig]] -> SrcSig;
+    _ -> undefined
+  end.
+
+%% @doc Decide whether the configured source list differs from the one that
+%% produced the cached masks (design §7.2, R6).
+%%
+%% Compares the freshly-configured, ordered source names against the persisted
+%% signature. A missing/`undefined' stored signature (legacy pre-upgrade row, or
+%% no row) is treated as a mismatch so exactly one AXFR rebuild re-derives the
+%% masks (design §12, task 15). Otherwise the signatures are compared for
+%% equality; any add/remove/reorder of sources changes the signature.
+%%
+%% @param Sources  The configured, ordered source list (`#rpz.sources').
+%% @param StoredSig  The persisted signature `binary()' or `undefined'.
+%% @returns boolean() — `true' when a rebuild is required.
+source_list_changed(_Sources, undefined) -> true;
+source_list_changed(Sources, StoredSig) ->
+  ioc2rpz_db:source_signature(Sources) =/= StoredSig.
+
+%% @doc Override a loaded zone status to `forceAXFR' when its source list
+%% changed since the cached masks were built (design §7.2, R6).
+%%
+%% Only cached zones (`Cache == "true"') store masks and read the IXFR cfg row,
+%% so only they can detect a source-list change. When such a zone would
+%% otherwise load as `ready' but the configured source list no longer matches
+%% the persisted signature (including a legacy row with no signature, treated as
+%% unknown ⇒ one rebuild), the status is overridden to `forceAXFR' and the
+%% change is logged. In every other case the status is returned unchanged: a
+%% `notready' zone AXFRs anyway, and non-cached zones don't store masks.
+%%
+%% @param Cache    The zone `cache' config value (`"true"' | `"false"').
+%% @param Status   The status derived from the loaded zone info.
+%% @param Zone     An `#rpz{}' record (used to read the stored signature/log).
+%% @param Sources  The configured, ordered source list.
+%% @returns the (possibly overridden) status atom.
+maybe_force_source_axfr("true", ready, Zone, Sources) ->
+  case source_list_changed(Sources, load_source_signature(Zone)) of
+    true ->
+      ioc2rpz_fun:logMessage("Zone ~p source list changed; forcing AXFR rebuild to re-derive source masks~n",[Zone#rpz.zone_str]),
+      forceAXFR;
+    false ->
+      ready
+  end;
+maybe_force_source_axfr(_Cache, Status, _Zone, _Sources) ->
+  Status.
+
 %% @doc Load persisted zone info (AXFR + IXFR) for a zone from the database.
 %%
 %% Combines results from {@link load_axfr_zone_info/1} and
@@ -785,6 +1025,16 @@ load_ixfr_zone_info(Zone) ->
 load_ixfr_zone_info(ets,Zone) ->
   CTime=ioc2rpz_fun:curr_serial(), %erlang:system_time(seconds),
   case ioc2rpz_db:get_zone_info(Zone,ixfr) of
+    %% New 6-field row: trailing source-list signature (_SrcSig) is ignored
+    %% here; task 3.2 compares it against the configured sources to force AXFR.
+    [[_,Serial,Serial_IXFR,IXFR_Update_time,NZ_Update_Time,_SrcSig]] when (IXFR_Update_time+Zone#rpz.ixfr_time)>CTime ->
+      ioc2rpz_fun:logMessage("Get IXFR zone ~p serial ~p status ready ~n",[Zone#rpz.zone_str,Serial_IXFR]),
+      [ready,Serial,Serial_IXFR,IXFR_Update_time,NZ_Update_Time];
+    [[_,Serial,Serial_IXFR,IXFR_Update_time,NZ_Update_Time,_SrcSig]] when Zone#rpz.cache == "true"  ->
+      ioc2rpz_fun:logMessage("Get IXFR zone ~p serial ~p status notready ~n",[Zone#rpz.zone_str,Serial_IXFR]),
+      [notready,Serial,Serial_IXFR,IXFR_Update_time,NZ_Update_Time];
+    %% Legacy 5-field row (pre-upgrade cached zones). Task 15 covers full
+    %% migration tolerance; keep loading working here.
     [[_,Serial,Serial_IXFR,IXFR_Update_time,NZ_Update_Time]] when (IXFR_Update_time+Zone#rpz.ixfr_time)>CTime ->
       ioc2rpz_fun:logMessage("Get IXFR zone ~p serial ~p status ready ~n",[Zone#rpz.zone_str,Serial_IXFR]),
       [ready,Serial,Serial_IXFR,IXFR_Update_time,NZ_Update_Time];
@@ -1031,7 +1281,7 @@ update_zone_inc(Zone) ->
   %io:fwrite(group_leader(),"Zone ~p IOC  ~p ~n",[Zone#rpz.zone_str,IOC]),
   Pid=self(),
 	ioc2rpz_fun:logMessage("Process PID ~p incremental update ~p started ~n",[Pid, Zone#rpz.zone_str]),
-  NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','_'},'$2','$3'},[],['true']}]),
+  NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','_'},'$2','$3','_'},[],['true']}]),
   CTime=ioc2rpz_fun:curr_serial_60(), %erlang:system_time(seconds),
   ioc2rpz_fun:logMessage("Updating zone ~p inc. Last IXFR update ~p seconds ago, last non-zero update ~p seconds ago~n",[Zone#rpz.zone_str,(CTime - Zone#rpz.ixfr_update_time),(CTime-Zone#rpz.ixfr_nz_update_time)]),
   ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=updating, ixfr_update_time=CTime, pid=Pid}}]),
@@ -1047,7 +1297,7 @@ update_zone_inc(Zone) ->
 					?logDebugMSG("Rebuilding AXFR zone ~p. New IOCs ~p~n",[Zone#rpz.zone_str,NewIOCs]),
           {ok, NRules, NIOCs} = rebuild_axfr_zone(Zone#rpz{serial=CTime}),
 					?logDebugMSG("AXFR zone ~p was rebuilded. ~p rules ~p indicators. Parsed ~p indicators.~n",[Zone#rpz.zone_str, NRules, NIOCs,length(IOC)]),
-          NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','_'},'$2','$3'},[],['true']}]),
+          NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','_'},'$2','$3','_'},[],['true']}]),
           ioc2rpz_fun:logMessage("Zone ~p records before ~p after ~p. ~n",[Zone#rpz.zone_str, NRbefore, NRafter]),
           ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, serial=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, pid=undefined, ioc_count=NIOCs, rule_count=NRules}}]),
           ioc2rpz_db:delete_old_db_pkt(Zone#rpz{serial=CTime}),
@@ -1151,3 +1401,74 @@ merge_rpz_stats_test() ->
     %% unmatched zone returned unchanged (zeroed stats kept)
     ?assert(Unchanged#rpz.ioc_count =:= 0),
     ?assert(Unchanged#rpz.serial =:= 0) ].
+
+%% Verifies track_enabled/2 effective-state resolution (design §3.1b, R2/R3/R7):
+%% per-feed value precedence, inheritance of the server global default when the
+%% feed is `undefined', `auto' being multi-source only, and the >63-source
+%% capacity force-disable.
+track_enabled_test() ->
+  Srv_off  = #srv{track_sources=off},
+  Srv_on   = #srv{track_sources=on},
+  Srv_auto = #srv{track_sources=auto},
+  Multi  = ["s0","s1","s2"],
+  Single = ["s0"],
+  %% >63 sources (64 sources) to exercise the capacity check.
+  Big = [lists:flatten(io_lib:format("s~p",[I])) || I <- lists:seq(0,63)],
+  %% Per-feed value wins regardless of the server default.
+  ZfeedTrue  = #rpz{sources=Single, track_sources=true},
+  ZfeedFalse = #rpz{sources=Multi,  track_sources=false},
+  ZfeedAutoM = #rpz{sources=Multi,  track_sources=auto},
+  ZfeedAutoS = #rpz{sources=Single, track_sources=auto},
+  %% undefined ⇒ inherit the server global default.
+  ZinhMulti  = #rpz{sources=Multi,  track_sources=undefined},
+  ZinhSingle = #rpz{sources=Single, track_sources=undefined},
+  %% >63 sources (Big has 64): as of task 14 these are TRACKED BY DEFAULT using a
+  %% binary-bitmap mask (design §8), no longer force-disabled by capacity_ok/1.
+  ZbigTrue   = #rpz{sources=Big, track_sources=true},
+  ZbigAuto   = #rpz{sources=Big, track_sources=auto},
+  [ %% per-feed forced true/false
+    ?assert(track_enabled(ZfeedTrue,  Srv_off) =:= true),
+    ?assert(track_enabled(ZfeedFalse, Srv_on)  =:= false),
+    %% per-feed auto: multi-source true, single-source false
+    ?assert(track_enabled(ZfeedAutoM, Srv_off) =:= true),
+    ?assert(track_enabled(ZfeedAutoS, Srv_on)  =:= false),
+    %% undefined inherits global off ⇒ false regardless of source count
+    ?assert(track_enabled(ZinhMulti,  Srv_off) =:= false),
+    ?assert(track_enabled(ZinhSingle, Srv_off) =:= false),
+    %% undefined inherits global on ⇒ true (even single-source)
+    ?assert(track_enabled(ZinhSingle, Srv_on)  =:= true),
+    ?assert(track_enabled(ZinhMulti,  Srv_on)  =:= true),
+    %% undefined inherits global auto ⇒ multi-source only
+    ?assert(track_enabled(ZinhMulti,  Srv_auto) =:= true),
+    ?assert(track_enabled(ZinhSingle, Srv_auto) =:= false),
+    %% >63 sources are now TRACKED BY DEFAULT (task 14, design §8): a binary
+    %% bitmap mask covers larger feeds, so forced-true and auto-multi both
+    %% resolve to true rather than being force-disabled by the capacity check.
+    ?assert(track_enabled(ZbigTrue, Srv_off) =:= true),
+    ?assert(track_enabled(ZbigAuto, Srv_off) =:= true) ].
+
+%% Verifies source_index_list/1 produces 0-based {Index, SourceName} pairs.
+source_index_list_test() ->
+  Zempty  = #rpz{sources=[]},
+  Zsingle = #rpz{sources=["only"]},
+  Zmulti  = #rpz{sources=["a","b","c"]},
+  [ ?assert(source_index_list(Zempty)  =:= []),
+    ?assert(source_index_list(Zsingle) =:= [{0,"only"}]),
+    ?assert(source_index_list(Zmulti)  =:= [{0,"a"},{1,"b"},{2,"c"}]) ].
+
+%% Verifies source_list_changed/2 (task 3.2, R6): a matching stored signature
+%% ⇒ no change (false); a differing signature ⇒ change (true); a missing
+%% (`undefined') stored signature (legacy pre-upgrade row / no row) ⇒ treated as
+%% a change (true) so exactly one AXFR rebuild re-derives masks.
+source_list_changed_test() ->
+  Sources    = [<<"abuse-ch">>, <<"internal-list">>],
+  MatchSig   = ioc2rpz_db:source_signature(Sources),
+  ReorderSig = ioc2rpz_db:source_signature([<<"internal-list">>, <<"abuse-ch">>]),
+  OtherSig   = ioc2rpz_db:source_signature([<<"abuse-ch">>]),
+  [ %% matching signature ⇒ no change
+    ?assert(source_list_changed(Sources, MatchSig)   =:= false),
+    %% reordered/different membership ⇒ change (positional masks invalidated)
+    ?assert(source_list_changed(Sources, ReorderSig) =:= true),
+    ?assert(source_list_changed(Sources, OtherSig)   =:= true),
+    %% missing/undefined stored signature ⇒ change (force one rebuild)
+    ?assert(source_list_changed(Sources, undefined)  =:= true) ].

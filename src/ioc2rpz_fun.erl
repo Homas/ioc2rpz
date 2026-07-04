@@ -19,7 +19,9 @@
 -include_lib("ioc2rpz.hrl").
 -export([logMessage/2,logMessageCEF/2,strs_to_binary/1,curr_serial/0,curr_serial_60/0,constr_ixfr_url/3,ip_to_bin/1,read_local_actions/1,split_bin_bytes/2,split_tail/2,rsplit_tail/2,
          bin_to_lowcase/1,ip_in_list/2,intersection/2,bin_to_hexstr/1,conv_to_Mb/1,q_class/1,q_type/1,split/2,msg_CEF/1,base64url_decode/1,get_cipher_suites/1,
-         str_to_ip/1,check_rate_limit/1,check_rate_limit/2,cleanup_rate_limit_table/0,constant_time_compare/2,json_escape/1,validate_shell_cmd/1]).
+         str_to_ip/1,check_rate_limit/1,check_rate_limit/2,cleanup_rate_limit_table/0,constant_time_compare/2,json_escape/1,validate_shell_cmd/1,
+         mask_new/0,mask_new/1,mask_set/2,mask_or/2,mask_bits/1,mask_from_indices/1,mask_from_indices/2,
+         mask_to_bitmap/1,mask_to_integer/1,mask_repr_for/1,mask_is_empty/1]).
 
 %% @doc Logs a formatted message to the group leader with a timestamp prefix.
 %% Delegates to {@link logMessage/3} using `group_leader()' as the destination.
@@ -718,6 +720,187 @@ validate_shell_executable(Exe) ->
       end
   end.
 
+%%%===================================================================
+%%% Source-attribution mask abstraction (IOC Source Attribution, R7)
+%%%
+%%% A per-zone positional source mask records which sources contributed an
+%%% indicator: bit `i' (0-based) corresponds to the `i'-th source in the zone's
+%%% #rpz.sources list. Two interchangeable representations are supported:
+%%%
+%%%   * INTEGER  — a non-negative Erlang integer. This is the default and is
+%%%                used for feeds with =< ?MaskFixnumBits (63) sources, where the
+%%%                mask stays a single machine word. Erlang integers are
+%%%                arbitrary precision, so an integer mask is ALWAYS correct even
+%%%                for large indices; the threshold is purely about memory.
+%%%   * BITMAP   — a tagged tuple `{bitmap, Binary}' whose bytes hold the bits
+%%%                little-endian (bit `i' lives in byte `i div 8', bit `i rem 8'
+%%%                of that byte, LSB first). Preferred above the fixnum threshold
+%%%                so a wide mask costs ~ceil(N/8) bytes instead of a bignum
+%%%                (design §8).
+%%%
+%%% The two share the SAME bit numbering: interpreting a bitmap's bytes as a
+%%% little-endian integer yields the equivalent integer mask, so conversion is
+%%% loss-free in both directions. All helpers accept either representation.
+%%%===================================================================
+
+%% @doc Returns a new, empty mask in the default (integer) representation.
+%% @returns The empty mask `0'.
+-spec mask_new() -> non_neg_integer().
+mask_new() -> 0.
+
+%% @doc Returns a new, empty mask in the requested representation.
+%% `integer' ⇒ `0'; `bitmap' ⇒ `{bitmap, <<>>}'.
+%% @param Repr `integer' | `bitmap'.
+-spec mask_new(integer | bitmap) -> non_neg_integer() | {bitmap, binary()}.
+mask_new(integer) -> 0;
+mask_new(bitmap)  -> {bitmap, <<>>}.
+
+%% @doc Returns a mask with bit `Index' (0-based) set, preserving the input
+%% representation. For an integer mask this is `Mask bor (1 bsl Index)', which is
+%% correct for arbitrarily large `Index'. For a bitmap mask the underlying binary
+%% is grown as needed and the bit set in place.
+%% @param Mask  An integer or `{bitmap, Binary}' mask.
+%% @param Index The 0-based bit index to set.
+%% @returns The updated mask, same representation as the input.
+-spec mask_set(non_neg_integer() | {bitmap, binary()}, non_neg_integer()) ->
+  non_neg_integer() | {bitmap, binary()}.
+mask_set(Mask, Index) when is_integer(Mask), is_integer(Index), Index >= 0 ->
+  Mask bor (1 bsl Index);
+mask_set({bitmap, Bin}, Index) when is_integer(Index), Index >= 0 ->
+  {bitmap, bitmap_set_bit(Bin, Index)}.
+
+%% @doc Bitwise-OR of two masks. Handles integer⊕integer and bitmap⊕bitmap
+%% directly; a mixed pair is normalized to bitmaps first so the result is a
+%% bitmap. Two integers yield an integer; any bitmap operand yields a bitmap.
+%% @param MaskA First mask (integer or `{bitmap, _}').
+%% @param MaskB Second mask (integer or `{bitmap, _}').
+%% @returns The OR-combined mask.
+-spec mask_or(non_neg_integer() | {bitmap, binary()},
+              non_neg_integer() | {bitmap, binary()}) ->
+  non_neg_integer() | {bitmap, binary()}.
+mask_or(A, B) when is_integer(A), is_integer(B) ->
+  A bor B;
+mask_or({bitmap, BinA}, {bitmap, BinB}) ->
+  {bitmap, bitmap_or(BinA, BinB)};
+mask_or(A, B) ->
+  %% mixed integer/bitmap: normalize both to bitmaps and OR.
+  {bitmap, BinA} = mask_to_bitmap(A),
+  {bitmap, BinB} = mask_to_bitmap(B),
+  {bitmap, bitmap_or(BinA, BinB)}.
+
+%% @doc Returns the ascending list of set bit indices (0-based) for either
+%% representation.
+%% @param Mask An integer or `{bitmap, Binary}' mask.
+%% @returns A sorted list of the set bit positions.
+-spec mask_bits(non_neg_integer() | {bitmap, binary()}) -> [non_neg_integer()].
+mask_bits(Mask) when is_integer(Mask), Mask >= 0 ->
+  int_bits(Mask, 0);
+mask_bits({bitmap, Bin}) ->
+  bitmap_bits(Bin, 0).
+
+%% @doc Returns `true' when the mask has no bits set (untracked / empty).
+-spec mask_is_empty(non_neg_integer() | {bitmap, binary()}) -> boolean().
+mask_is_empty(0) -> true;
+mask_is_empty(Mask) when is_integer(Mask) -> false;
+mask_is_empty({bitmap, Bin}) -> bitmap_is_zero(Bin).
+
+%% @doc Builds a mask from a list of 0-based indices, choosing the representation
+%% automatically: integer when the highest index is < ?MaskFixnumBits, otherwise
+%% a bitmap (design §8).
+%% @param Indices A list of non-negative bit indices.
+%% @returns The constructed mask.
+-spec mask_from_indices([non_neg_integer()]) ->
+  non_neg_integer() | {bitmap, binary()}.
+mask_from_indices([]) -> mask_new();
+mask_from_indices(Indices) ->
+  Repr = mask_repr_for(lists:max(Indices) + 1),
+  mask_from_indices(Indices, Repr).
+
+%% @doc Builds a mask from a list of 0-based indices in the requested
+%% representation (`integer' | `bitmap').
+%% @param Indices A list of non-negative bit indices.
+%% @param Repr    `integer' | `bitmap'.
+%% @returns The constructed mask.
+-spec mask_from_indices([non_neg_integer()], integer | bitmap) ->
+  non_neg_integer() | {bitmap, binary()}.
+mask_from_indices(Indices, Repr) ->
+  lists:foldl(fun(I, M) -> mask_set(M, I) end, mask_new(Repr), Indices).
+
+%% @doc Converts any mask to the bitmap representation `{bitmap, Binary}'.
+%% An already-bitmap mask is returned unchanged.
+%% @param Mask An integer or `{bitmap, Binary}' mask.
+%% @returns The equivalent `{bitmap, Binary}' mask.
+-spec mask_to_bitmap(non_neg_integer() | {bitmap, binary()}) -> {bitmap, binary()}.
+mask_to_bitmap({bitmap, Bin}) -> {bitmap, Bin};
+mask_to_bitmap(Mask) when is_integer(Mask), Mask >= 0 ->
+  {bitmap, int_to_le_bytes(Mask)}.
+
+%% @doc Converts any mask to the integer representation.
+%% An already-integer mask is returned unchanged.
+%% @param Mask An integer or `{bitmap, Binary}' mask.
+%% @returns The equivalent non-negative integer mask.
+-spec mask_to_integer(non_neg_integer() | {bitmap, binary()}) -> non_neg_integer().
+mask_to_integer(Mask) when is_integer(Mask), Mask >= 0 -> Mask;
+mask_to_integer({bitmap, Bin}) -> le_bytes_to_int(Bin).
+
+%% @doc Chooses the mask representation for a feed with `NSources' sources
+%% (design §8, R7). Feeds within the fixnum budget stay `integer' (fast, one
+%% word); larger feeds use `bitmap' so they can still be tracked without a
+%% growing bignum per indicator.
+%% @param NSources The number of sources in the feed.
+%% @returns `integer' when `NSources =< ?MaskFixnumBits', otherwise `bitmap'.
+-spec mask_repr_for(non_neg_integer()) -> integer | bitmap.
+mask_repr_for(NSources) when NSources =< ?MaskFixnumBits -> integer;
+mask_repr_for(_NSources) -> bitmap.
+
+%%% --- internal mask helpers ---
+
+%% @private Ascending set-bit indices of a non-negative integer.
+int_bits(0, _Pos) -> [];
+int_bits(N, Pos) when N band 1 =:= 1 -> [Pos | int_bits(N bsr 1, Pos + 1)];
+int_bits(N, Pos) -> int_bits(N bsr 1, Pos + 1).
+
+%% @private Set bit `Index' in a little-endian byte bitmap, growing as needed.
+bitmap_set_bit(Bin, Index) ->
+  ByteI = Index div 8,
+  BitI  = Index rem 8,
+  Grown = bitmap_grow(Bin, ByteI + 1),
+  <<Pre:ByteI/binary, Byte, Post/binary>> = Grown,
+  <<Pre/binary, (Byte bor (1 bsl BitI)), Post/binary>>.
+
+%% @private Zero-pad a binary on the right so it is at least `NBytes' long.
+bitmap_grow(Bin, NBytes) when byte_size(Bin) >= NBytes -> Bin;
+bitmap_grow(Bin, NBytes) ->
+  Pad = NBytes - byte_size(Bin),
+  <<Bin/binary, 0:(Pad*8)>>.
+
+%% @private Byte-wise OR of two little-endian bitmaps (shorter zero-extended).
+bitmap_or(A, B) ->
+  Len = max(byte_size(A), byte_size(B)),
+  Ap = bitmap_grow(A, Len),
+  Bp = bitmap_grow(B, Len),
+  <<Ai:Len/unit:8>> = Ap,
+  <<Bi:Len/unit:8>> = Bp,
+  <<(Ai bor Bi):Len/unit:8>>.
+
+%% @private Ascending set-bit indices of a little-endian byte bitmap.
+bitmap_bits(<<>>, _Base) -> [];
+bitmap_bits(<<Byte, Rest/binary>>, Base) ->
+  int_bits(Byte, Base) ++ bitmap_bits(Rest, Base + 8).
+
+%% @private `true' when every byte of the bitmap is zero.
+bitmap_is_zero(<<>>) -> true;
+bitmap_is_zero(<<0, Rest/binary>>) -> bitmap_is_zero(Rest);
+bitmap_is_zero(_) -> false.
+
+%% @private Encode a non-negative integer as little-endian bytes (no trailing 0).
+int_to_le_bytes(0) -> <<>>;
+int_to_le_bytes(N) when N > 0 -> <<(N band 16#FF), (int_to_le_bytes(N bsr 8))/binary>>.
+
+%% @private Decode a little-endian byte binary back to an integer.
+le_bytes_to_int(<<>>) -> 0;
+le_bytes_to_int(<<Byte, Rest/binary>>) -> Byte bor (le_bytes_to_int(Rest) bsl 8).
+
 %%%%
 %%%% EUnit tests
 %%%%
@@ -842,4 +1025,163 @@ validate_shell_cmd_test() -> [
 	?assertMatch({error, command_substitution}, validate_shell_cmd(<<"/usr/bin/curl http://example.com/$(cat /etc/shadow)">>)),
 	?assertMatch({error, command_substitution}, validate_shell_cmd(<<"/usr/bin/curl `cat /etc/shadow`">>)),
 	?assertMatch({error, output_redirection}, validate_shell_cmd(<<"/usr/bin/curl http://example.com > /etc/passwd">>))
+].
+
+%% Verifies the source-attribution mask abstraction (IOC Source Attribution,
+%% R7). INTEGER path (small indices): mask_new/mask_set/mask_or/mask_bits and the
+%% representation chooser mask_repr_for/1. A couple of bitmap sanity checks are
+%% included here; the full >63 bitmap-path coverage is task 14.2.
+mask_new_test() -> [
+	?assertEqual(0, mask_new()),
+	?assertEqual(0, mask_new(integer)),
+	?assertEqual({bitmap, <<>>}, mask_new(bitmap)),
+	?assert(mask_is_empty(mask_new())),
+	?assert(mask_is_empty(mask_new(bitmap)))
+].
+
+mask_set_integer_test() -> [
+	%% single bit
+	?assertEqual(1, mask_set(mask_new(), 0)),
+	?assertEqual(2, mask_set(mask_new(), 1)),
+	?assertEqual(8, mask_set(mask_new(), 3)),
+	%% setting the same bit twice is idempotent
+	?assertEqual(1, mask_set(mask_set(mask_new(), 0), 0)),
+	%% accumulating bits: 0 and 2 => binary 101 = 5
+	?assertEqual(5, mask_set(mask_set(mask_new(), 0), 2)),
+	?assert(not mask_is_empty(mask_set(mask_new(), 0)))
+].
+
+mask_or_integer_test() -> [
+	?assertEqual(0, mask_or(0, 0)),
+	?assertEqual(3, mask_or(1, 2)),
+	%% overlapping bits collapse (1 | 3 = 3)
+	?assertEqual(3, mask_or(1, 3)),
+	?assertEqual(2#1011, mask_or(2#1001, 2#0010))
+].
+
+mask_bits_integer_test() -> [
+	?assertEqual([], mask_bits(0)),
+	?assertEqual([0], mask_bits(1)),
+	?assertEqual([1], mask_bits(2)),
+	%% 5 = 101 => bits 0 and 2, ascending
+	?assertEqual([0,2], mask_bits(5)),
+	?assertEqual([0,1,3], mask_bits(2#1011)),
+	%% round-trip: build from indices, read back the same indices
+	?assertEqual([0,2,4], mask_bits(mask_from_indices([4,0,2])))
+].
+
+mask_repr_for_test() -> [
+	?assertEqual(integer, mask_repr_for(0)),
+	?assertEqual(integer, mask_repr_for(1)),
+	?assertEqual(integer, mask_repr_for(?MaskFixnumBits)),
+	?assertEqual(bitmap,  mask_repr_for(?MaskFixnumBits + 1)),
+	?assertEqual(bitmap,  mask_repr_for(100))
+].
+
+%% Sanity checks for the bitmap representation and cross-representation
+%% equivalence (fuller >63 coverage is task 14.2). The integer and bitmap
+%% representations share the same bit numbering, so conversions are loss-free
+%% and mask_bits/1 agrees across both.
+mask_bitmap_basic_test() -> [
+	?assertEqual([0,2], mask_bits(mask_set(mask_set(mask_new(bitmap), 0), 2))),
+	%% integer<->bitmap conversion is loss-free
+	?assertEqual(5, mask_to_integer(mask_to_bitmap(5))),
+	?assertEqual([0,2], mask_bits(mask_to_bitmap(5))),
+	%% a high index (>63) is tracked correctly in bitmap form
+	?assertEqual([100], mask_bits(mask_set(mask_new(bitmap), 100))),
+	%% bitmap OR
+	?assertEqual([0,1,2],
+		mask_bits(mask_or(mask_set(mask_new(bitmap), 0),
+		                  mask_set(mask_set(mask_new(bitmap), 1), 2)))),
+	%% mixed integer/bitmap OR normalizes to a bitmap and stays correct
+	?assertEqual([0,2], mask_bits(mask_or(1, mask_set(mask_new(bitmap), 2))))
+].
+
+%% Task 14.2 (R7/R8): comprehensive coverage of the >63-source BITMAP path.
+%% Sets bits well beyond the fixnum threshold (64, 100, 200) in a bitmap mask
+%% and reads them back via mask_bits/1, including the interior boundary bit 63.
+mask_bitmap_high_bits_test() -> [
+	%% single high bits, each read back exactly
+	?assertEqual([64],  mask_bits(mask_set(mask_new(bitmap), 64))),
+	?assertEqual([100], mask_bits(mask_set(mask_new(bitmap), 100))),
+	?assertEqual([200], mask_bits(mask_set(mask_new(bitmap), 200))),
+	%% accumulate low + boundary + high bits; ascending order preserved
+	?assertEqual([0,63,64,100,200],
+		mask_bits(mask_set(mask_set(mask_set(mask_set(mask_set(
+			mask_new(bitmap), 200), 0), 100), 63), 64))),
+	%% setting a high bit twice is idempotent
+	?assertEqual([100],
+		mask_bits(mask_set(mask_set(mask_new(bitmap), 100), 100))),
+	%% the boundary bit 63 (first bit that forces bitmap) is tracked correctly
+	?assertEqual([63], mask_bits(mask_set(mask_new(bitmap), 63)))
+].
+
+%% Task 14.2 (R7): mask_or/2 with high bits set. Two bitmap masks OR to the
+%% union of their (high + low) bits, and a mixed integer+bitmap OR normalizes to
+%% a bitmap and yields the same union spanning >63 bits.
+mask_or_bitmap_high_bits_test() -> [
+	%% bitmap OR bitmap: union of low+high bits, ascending, de-duplicated
+	?assertEqual([0,64,65,128],
+		mask_bits(mask_or(
+			mask_set(mask_set(mask_new(bitmap), 0), 64),
+			mask_set(mask_set(mask_new(bitmap), 65), 128)))),
+	%% overlapping high bit collapses in the union
+	?assertEqual([64,100],
+		mask_bits(mask_or(
+			mask_set(mask_set(mask_new(bitmap), 64), 100),
+			mask_set(mask_new(bitmap), 100)))),
+	%% mixed integer (low bits 0,2) OR bitmap (high bit 70): union spans >63 bits
+	?assertEqual([0,2,70],
+		mask_bits(mask_or(2#101, mask_set(mask_new(bitmap), 70)))),
+	%% mixed the other way round (bitmap first) is symmetric
+	?assertEqual([0,2,70],
+		mask_bits(mask_or(mask_set(mask_new(bitmap), 70), 2#101)))
+].
+
+%% Task 14.2 (R7): mask_from_indices/1 auto-selects the representation. A max
+%% index >= 63 (i.e. NSources = max+1 > ?MaskFixnumBits) yields a {bitmap,_}
+%% mask; a max index <= 62 stays an integer. Bits round-trip either way.
+mask_from_indices_auto_repr_test() -> [
+	%% max index 62 => NSources 63 =< 63 => integer representation
+	?assert(is_integer(mask_from_indices([0,62]))),
+	?assertEqual([0,62], mask_bits(mask_from_indices([0,62]))),
+	%% max index 63 => NSources 64 > 63 => bitmap representation
+	?assertMatch({bitmap, _}, mask_from_indices([0,63])),
+	?assertEqual([0,63], mask_bits(mask_from_indices([0,63]))),
+	%% larger max index stays bitmap and reads back correctly (unsorted input)
+	?assertMatch({bitmap, _}, mask_from_indices([100,0,64])),
+	?assertEqual([0,64,100], mask_bits(mask_from_indices([100,0,64]))),
+	%% explicit bitmap request works for small indices too
+	?assertMatch({bitmap, _}, mask_from_indices([0,2], bitmap)),
+	?assertEqual([0,2], mask_bits(mask_from_indices([0,2], bitmap)))
+].
+
+%% Task 14.2 (R7): round-trip conversions for values spanning >63 bits. Starting
+%% from a bitmap with high bits, mask_to_integer then mask_to_bitmap preserves
+%% the bit set; starting from a large integer (1 bsl 100) the same holds.
+mask_bitmap_roundtrip_test() ->
+	BM = mask_from_indices([0,63,64,100,200], bitmap),
+	Bits = [0,63,64,100,200],
+	[ %% bitmap -> integer preserves the set bits
+	  ?assertEqual(Bits, mask_bits(mask_to_integer(BM))),
+	  %% bitmap -> integer -> bitmap is loss-free
+	  ?assertEqual(Bits, mask_bits(mask_to_bitmap(mask_to_integer(BM)))),
+	  %% integer -> bitmap for a value above the fixnum range (1 bsl 100)
+	  ?assertEqual([100], mask_bits(mask_to_bitmap(1 bsl 100))),
+	  ?assertEqual([0,100], mask_bits(mask_to_bitmap((1 bsl 100) bor 1))),
+	  %% integer <-> bitmap agree on set bits for a >63-bit value
+	  ?assertEqual(mask_bits((1 bsl 100) bor (1 bsl 64) bor 1),
+	               mask_bits(mask_to_bitmap((1 bsl 100) bor (1 bsl 64) bor 1))) ].
+
+%% Task 14.2 (R7): mask_is_empty/1 on the bitmap path. An empty bitmap and a
+%% zero-byte-padded bitmap (e.g. left over after growth) both report empty,
+%% while any set high bit reports non-empty.
+mask_is_empty_bitmap_test() -> [
+	?assert(mask_is_empty({bitmap, <<>>})),
+	%% zero-byte-padded binary is still "empty" (all bits clear)
+	?assert(mask_is_empty({bitmap, <<0,0,0>>})),
+	?assert(mask_is_empty({bitmap, <<0:64>>})),
+	%% a set high bit (>63) makes it non-empty
+	?assert(not mask_is_empty(mask_set(mask_new(bitmap), 100))),
+	?assert(not mask_is_empty(mask_set(mask_new(bitmap), 64)))
 ].

@@ -41,8 +41,9 @@
 %% @end
 -module(ioc2rpz_db).
 -include_lib("ioc2rpz.hrl").
+-include_lib("eunit/include/eunit.hrl").
 -export([init_db/3,db_table_info/2,read_db_pkt/1,write_db_pkt/2,delete_db_pkt/1,delete_old_db_pkt/1,read_db_record/3,write_db_record/3,delete_old_db_record/1,saveZones/0,loadZones/0,loadZones/1,
-        get_zone_info/2,clean_DB/1,save_zone_info/1,get_allzones_info/2, lookup_db_record/2,cleanup_hotcache/0]).
+        get_zone_info/2,clean_DB/1,save_zone_info/1,get_allzones_info/2, lookup_db_record/2,cleanup_hotcache/0,source_signature/1]).
 
 
 %% @doc Initializes the database storage backend.
@@ -257,24 +258,63 @@ delete_old_db_pkt(mnesia,_Zone) ->
 read_db_record(Zone,Serial,Type) -> %ixfr
   read_db_record(?DBStorage,Zone,Serial,Type).
 read_db_record(ets,Zone,Serial,all) ->
-  ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3'},[{'>','$3',Serial},{'=<','$3',Zone#rpz.serial}],['$$']},{{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3'},[{'>','$2',Serial},{'=<','$2',Zone#rpz.serial}],['$$']}]);
+  %% Task 15.1 / R6 upgrade tolerance: ALSO match legacy pre-upgrade rows whose
+  %% value has only 2 elements {AddSerial,ExpSerial} (no 4th mask element). Such
+  %% rows are read as mask 0 (unknown) — the mask is not projected here ('$$'
+  %% yields [IOC,AddSerial,ExpSerial,IoCType]) — and stay readable until the
+  %% source-signature-forced AXFR (task 3) rewrites the zone in the new
+  %% 3-value-element shape. A stored object matches exactly one value arity, so
+  %% unioning the new (mask) and legacy clauses never duplicates a row. This is
+  %% only needed for the first post-upgrade load of a ?SaveETS-persisted table.
+  ets:select(rpz_ixfr_table,[
+    {{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3','_'},[{'>','$3',Serial},{'=<','$3',Zone#rpz.serial}],['$$']},
+    {{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3','_'},[{'>','$2',Serial},{'=<','$2',Zone#rpz.serial}],['$$']},
+    {{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3'},[{'>','$3',Serial},{'=<','$3',Zone#rpz.serial}],['$$']},
+    {{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3'},[{'>','$2',Serial},{'=<','$2',Zone#rpz.serial}],['$$']}
+  ]);
 
 read_db_record(ets,Zone,Serial,updated) ->
 %  io:fwrite(group_leader(),"Read updated records. Zone ~p Serial ~p ~n",[Zone,Serial]),
-  ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3'},[{'=<','$3',Serial},{'>=','$3',Zone#rpz.serial}],['$$']},{{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3'},[{'=<','$2',Serial},{'>','$2',Zone#rpz.serial}],['$$']}]);
+  %% Task 15.1 / R6 upgrade tolerance: trailing legacy 2-value-element clauses
+  %% keep pre-upgrade rows readable (mask 0) until the forced AXFR rewrites them.
+  ets:select(rpz_ixfr_table,[
+    {{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3','_'},[{'=<','$3',Serial},{'>=','$3',Zone#rpz.serial}],['$$']},
+    {{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3','_'},[{'=<','$2',Serial},{'>','$2',Zone#rpz.serial}],['$$']},
+    {{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3'},[{'=<','$3',Serial},{'>=','$3',Zone#rpz.serial}],['$$']},
+    {{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3'},[{'=<','$2',Serial},{'>','$2',Zone#rpz.serial}],['$$']}
+  ]);
 
 
 read_db_record(ets,Zone,Serial,new) ->
 %  io:fwrite(group_leader(),"Read expired records. Zone ~p Serial ~p ~n",[Zone,Serial]),
-  ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3'},[{'>','$2',Serial},{'>','$3',Zone#rpz.serial}],['$$']},{{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3'},[{'==','$3',0},{'>','$2',Serial}],['$$']}]);
+  %% Task 15.1 / R6 upgrade tolerance: trailing legacy 2-value-element clauses
+  %% keep pre-upgrade rows readable (mask 0) until the forced AXFR rewrites them.
+  ets:select(rpz_ixfr_table,[
+    {{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3','_'},[{'>','$2',Serial},{'>','$3',Zone#rpz.serial}],['$$']},
+    {{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3','_'},[{'==','$3',0},{'>','$2',Serial}],['$$']},
+    {{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3'},[{'>','$2',Serial},{'>','$3',Zone#rpz.serial}],['$$']},
+    {{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3'},[{'==','$3',0},{'>','$2',Serial}],['$$']}
+  ]);
 
 read_db_record(ets,Zone,Serial,expired) ->
 %  io:fwrite(group_leader(),"Read expired records. Zone ~p Serial ~p ~n",[Zone,Serial]),
-  ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3'},[{'=<','$2',Serial},{'>=','$3',Serial},{'=<','$3',Zone#rpz.serial}],['$$']}]);
+  %% Task 15.1 / R6 upgrade tolerance: trailing legacy 2-value-element clause
+  %% keeps pre-upgrade rows readable (mask 0) until the forced AXFR rewrites them.
+  ets:select(rpz_ixfr_table,[
+    {{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3','_'},[{'=<','$2',Serial},{'>=','$3',Serial},{'=<','$3',Zone#rpz.serial}],['$$']},
+    {{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3'},[{'=<','$2',Serial},{'>=','$3',Serial},{'=<','$3',Zone#rpz.serial}],['$$']}
+  ]);
 
 
 read_db_record(ets,Zone,_Serial,active) -> %All not expired
-  ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3'},[{'>','$3',Zone#rpz.serial},{'>=','$2',Zone#rpz.serial_ixfr}],['$$']},{{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3'},[{'==','$3',0},{'>=','$2',Zone#rpz.serial_ixfr}],['$$']}]);
+  %% Task 15.1 / R6 upgrade tolerance: trailing legacy 2-value-element clauses
+  %% keep pre-upgrade rows readable (mask 0) until the forced AXFR rewrites them.
+  ets:select(rpz_ixfr_table,[
+    {{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3','_'},[{'>','$3',Zone#rpz.serial},{'>=','$2',Zone#rpz.serial_ixfr}],['$$']},
+    {{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3','_'},[{'==','$3',0},{'>=','$2',Zone#rpz.serial_ixfr}],['$$']},
+    {{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3'},[{'>','$3',Zone#rpz.serial},{'>=','$2',Zone#rpz.serial_ixfr}],['$$']},
+    {{{ioc,Zone#rpz.zone,'$1','$4'},'$2','$3'},[{'==','$3',0},{'>=','$2',Zone#rpz.serial_ixfr}],['$$']}
+  ]);
 
 read_db_record(mnesia,_Zone,_Serial,all) -> ok;
 read_db_record(mnesia,_Zone,_Serial,updated) -> ok;
@@ -291,7 +331,7 @@ read_db_record(mnesia,_Zone,_Serial,active) -> ok.
 %% with the zone's current serial as the add-serial.
 %%
 %% For IXFR updates: computes the delta between the new IOC list and existing
-%% records in the table using `ordsets:subtract/2', then calls `update_db_record/8'
+%% records in the table using `ordsets:subtract/2', then calls `update_db_record/9'
 %% for each new or changed indicator to handle insert/update/expiry logic.
 %%
 %% @param Zone An `#rpz{}' record with caching enabled
@@ -308,9 +348,13 @@ write_db_record(ets,Zone,IOCs,axfr) ->
   CTime=erlang:system_time(seconds),
 
   %clean up after closing the issue 17
-  NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[],['true']}]), % to debug issue 17
-  [ets:insert(rpz_ixfr_table, {{ioc,Zone#rpz.zone,IOC,IoCType},Zone#rpz.serial,IOCExp}) || {IOC,IOCExp,IoCType} <- IOCs, (IOCExp > CTime) or (IOCExp == 0)],
-  NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1'},'$2','$3'},[],['true']}]), % to debug issue 17
+  %% Store the per-zone source mask as the 4th value element (design §3.2/§6.1):
+  %%   {{ioc,Zone,IOC,IoCType}, Serial, IOCExp, Mask}
+  %% Defensive: accept both 4-tuples {IOC,Exp,Type,Mask} and legacy 3-tuples
+  %% {IOC,Exp,Type} (⇒ Mask=0) so residual 3-tuple callers stay safe during staging.
+  NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','_'},'$2','$3','$4'},[],['true']}]), % to debug issue 17
+  [ets:insert(rpz_ixfr_table, {{ioc,Zone#rpz.zone,IOC,IoCType},Zone#rpz.serial,IOCExp,Mask}) || {IOC,IOCExp,IoCType,Mask} <- [normalize_ioc_mask(IOCEntry) || IOCEntry <- IOCs], (IOCExp > CTime) or (IOCExp == 0)],
+  NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','_'},'$2','$3','$4'},[],['true']}]), % to debug issue 17
    ?logDebugMSG("AXFR update ets. Zone ~p. Before ~p After ~p Indicators ~p~n",[Zone#rpz.zone_str, NRbefore, NRafter,length(IOCs)]), % to debug issue 17
 	{ok,0}; %length(IOCs)
 
@@ -320,13 +364,30 @@ write_db_record(mnesia,_Zone,{_IOC,_IOCExp,_IoCType},axfr) ->
 write_db_record(ets,Zone,IOCs,ixfr) when IOCs /= [] ->
   CTime=erlang:system_time(seconds),
 	?logDebugMSG("Fetching zone ~p from ets~n",[Zone#rpz.zone_str]),
-	IOCDB=ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3','$4'},[],[{{'$1','$4','$2'}}]}]),
+	%% IXFR diff projection (design §6.2, R5/R6). The stored value now carries a
+	%% 4th element (Mask, '$5') since task 7 (AXFR mask storage). Match that extra
+	%% element with a wildcard so IOCDB is not silently empty; keep the projection
+	%% at the 3-tuple {IOC,ExpSerial,IoCType} so the mask is EXCLUDED from the diff
+	%% and never fabricates spurious serial deltas.
+	IOCDB=ets:select(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','$2'},'$3','$4','$5'},[],[{{'$1','$4','$2'}}]}]),
 	?logDebugMSG("Finding new or updated records~n",[]),
-	IOCNEW=ordsets:subtract(ordsets:from_list(IOCs),ordsets:from_list(IOCDB)),
+	%% Project the incoming 4-tuples {IOC,Exp,Type,Mask} to 3-tuples {IOC,Exp,Type}
+	%% for the diff so serial/diff logic is identical to the pre-attribution path
+	%% (masks never perturb the delta). normalize_ioc_mask/1 tolerates residual
+	%% 3-tuple callers during staging.
+	IOCs3=[{I,E,T} || {I,E,T,_M} <- [normalize_ioc_mask(IOCEntry) || IOCEntry <- IOCs]],
+	IOCNEW=ordsets:subtract(ordsets:from_list(IOCs3),ordsets:from_list(IOCDB)),
 
 %	?logDebugMSG("Update ets. New ~p, DB ~p, Delta ~p~n IOCs ~p~n IOCDB ~p~n IOCNEW ~p~n",[ordsets:size(IOCs),ordsets:size(IOCDB),ordsets:size(IOCNEW),IOCs,IOCDB,IOCNEW]),
 	?logDebugMSG("Update ets. New ~p, DB ~p, Delta ~p~n",[length(IOCs),length(IOCDB),ordsets:size(IOCNEW)]),
-  [update_db_record(?DBStorage,Zone#rpz.zone,Zone#rpz.serial,IOC,IOCExp,IoCType,ets:lookup(rpz_ixfr_table, {ioc,Zone#rpz.zone,IOC,IoCType}),CTime) || {IOC,IOCExp,IoCType} <- IOCNEW],
+	%% Recover each new indicator's Mask (task 8.2, R5/R6). The diff key is the
+	%% 3-tuple {IOC,ExpSerial,IoCType} (mask excluded so serials don't churn), so
+	%% build a {IOC,Exp,Type} => Mask lookup from the incoming 4-tuples and pass
+	%% the mask into update_db_record so new/updated IXFR rows persist it. Duplicate
+	%% keys with differing masks are OR-combined (merge_dedup merges upstream, so
+	%% this is belt-and-suspenders). Absent ⇒ 0 (untracked).
+	IOCMaskMap=lists:foldl(fun({I,E,T,M},Acc) -> maps:update_with({I,E,T}, fun(Old) -> Old bor M end, M, Acc) end, #{}, [normalize_ioc_mask(IOCEntry) || IOCEntry <- IOCs]),
+  [update_db_record(?DBStorage,Zone#rpz.zone,Zone#rpz.serial,IOC,IOCExp,IoCType,maps:get({IOC,IOCExp,IoCType},IOCMaskMap,0),ets:lookup(rpz_ixfr_table, {ioc,Zone#rpz.zone,IOC,IoCType}),CTime) || {IOC,IOCExp,IoCType} <- IOCNEW],
 	{ok,ordsets:size(IOCNEW)};
 
 write_db_record(ets,Zone,IOCs,ixfr) when IOCs == [] ->
@@ -339,24 +400,39 @@ write_db_record(mnesia,_Zone,_IOCs,ixfr) ->
 write_db_record(_DBStorage,_Zone,_IOCs,_XFR) ->
 	{ok,0}. %non cached zones
 
-update_db_record(ets, _Zone, _Serial, _IOC, IOCExp, _IoCType, [], CTime) when IOCExp > 0,IOCExp =< CTime ->
+%% @private
+%% @doc Normalizes an in-flight indicator tuple to the 4-tuple
+%% `{IOC, IOCExp, IoCType, Mask}' form. Accepts the new 4-tuple as-is and
+%% tolerates legacy 3-tuples `{IOC, IOCExp, IoCType}' by defaulting `Mask' to 0
+%% (untracked). See design §3.3 / §6.1.
+normalize_ioc_mask({IOC,IOCExp,IoCType,Mask}) -> {IOC,IOCExp,IoCType,Mask};
+normalize_ioc_mask({IOC,IOCExp,IoCType}) -> {IOC,IOCExp,IoCType,0}.
+
+%% update_db_record/9 (task 8.2, R5/R6): the `Mask' argument (7th position, after
+%% IoCType) carries the incoming per-source bitmask for the new/updated indicator.
+%% The stored `rpz_ixfr_table' object is now the 4-element value
+%% {{ioc,Zone,IOC,IoCType}, Serial, IOCExp, Mask} (task 7), so the existing-row
+%% lookups match 4 value elements and inserts/deletes carry the mask. Note
+%% ets:delete_object requires an EXACT object match, hence the stored OMask is
+%% captured and reused in the delete pattern.
+update_db_record(ets, _Zone, _Serial, _IOC, IOCExp, _IoCType, _Mask, [], CTime) when IOCExp > 0,IOCExp =< CTime ->
 	%?logDebugMSG("Bypassing ~p ~p ~p ~p ~p ~n",[Serial, IOC, IOCExp, false, CTime]),
 	ok; % do not add new but expired indicators
 
-update_db_record(ets, Zone, _Serial, IOC, IOCExp, IoCType, [{{ioc,_,_,_},OSerial,ExpTime}], CTime) when ExpTime < IOCExp, IOCExp >= CTime ->
-	ets:delete_object(rpz_ixfr_table,{{ioc,Zone,IOC,IoCType},OSerial,ExpTime}),ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC,IoCType},OSerial,IOCExp});
+update_db_record(ets, Zone, _Serial, IOC, IOCExp, IoCType, Mask, [{{ioc,_,_,_},OSerial,ExpTime,OMask}], CTime) when ExpTime < IOCExp, IOCExp >= CTime ->
+	ets:delete_object(rpz_ixfr_table,{{ioc,Zone,IOC,IoCType},OSerial,ExpTime,OMask}),ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC,IoCType},OSerial,IOCExp,Mask bor OMask});
 
-update_db_record(ets, Zone, Serial, IOC, IOCExp, IoCType, [{{ioc,_,_,_},_OSerial,ExpTime}], CTime) when IOCExp > 0, IOCExp > CTime, ExpTime == 0 ->
-	ets:select_delete(rpz_ixfr_table,[{{{ioc,Zone,IOC,IoCType},'_','_'},[],[true]}]),ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC,IoCType},Serial,IOCExp});
+update_db_record(ets, Zone, Serial, IOC, IOCExp, IoCType, Mask, [{{ioc,_,_,_},_OSerial,ExpTime,_OMask}], CTime) when IOCExp > 0, IOCExp > CTime, ExpTime == 0 ->
+	ets:select_delete(rpz_ixfr_table,[{{{ioc,Zone,IOC,IoCType},'_','_','_'},[],[true]}]),ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC,IoCType},Serial,IOCExp,Mask});
 
-update_db_record(ets, Zone, Serial, IOC, IOCExp, IoCType, [], CTime) when IOCExp > CTime ; IOCExp == 0 ->
+update_db_record(ets, Zone, Serial, IOC, IOCExp, IoCType, Mask, [], CTime) when IOCExp > CTime ; IOCExp == 0 ->
 	%?logDebugMSG("Update ~p ~p ~p ~p ~p ~n",[Serial, IOC, IOCExp, false, CTime]),
-	ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC,IoCType},Serial,IOCExp}); %insert for duplicate_bag
+	ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC,IoCType},Serial,IOCExp,Mask}); %insert for duplicate_bag
 
-update_db_record(ets, Zone, Serial, IOC, IOCExp, IoCType, Update, CTime) -> %ok; %not new but IOCExp =< CTime, e.g. IOCExp=0 and we cached an indicator with a real expiration time (ExpTime)
+update_db_record(ets, Zone, Serial, IOC, IOCExp, IoCType, _Mask, Update, CTime) -> %ok; %not new but IOCExp =< CTime, e.g. IOCExp=0 and we cached an indicator with a real expiration time (ExpTime)
 	?logDebugMSG("Not expected update ~p ~p ~p ~p ~p ~p ~p ~n",[Zone, Serial, IOC, IOCExp, IoCType, Update, CTime]);
 
-update_db_record(mnesia, _Zone, _Serial, _IOC, _IOCExp, _IoCType, _Update, _CTime) -> ok.
+update_db_record(mnesia, _Zone, _Serial, _IOC, _IOCExp, _IoCType, _Mask, _Update, _CTime) -> ok.
 
 %%%
 %%% Lookup if an indicator is in the DB.
@@ -382,7 +458,17 @@ lookup_db_record(IOC, Recurs) ->
 	lookup_db_record(?DBStorage, IOC, Recurs).
 
 lookup_db_record(ets, IOC, false) ->
-	{ok,[{IOC,ets:select(rpz_ixfr_table,[{{{ioc,'$0',IOC, '_'},'$2','$3'},[],[{{'$0','$2','$3'}}]}])}]};
+	%% Task 15.1 / R6 upgrade tolerance: the second (legacy) match-spec clause
+	%% matches pre-upgrade rows that have only 2 value elements
+	%% {AddSerial,ExpSerial} and projects a mask of 0 (unknown), so a legacy row
+	%% is still returned (as {Zone,AddSerial,ExpSerial,0}) instead of being
+	%% invisible until the source-signature-forced AXFR (task 3) rewrites the
+	%% zone. A stored object matches exactly one value arity, so the two clauses
+	%% never both fire for the same row.
+	Rows = ets:select(rpz_ixfr_table,[
+		{{{ioc,'$0',IOC, '_'},'$2','$3','$4'},[],[{{'$0','$2','$3','$4'}}]},
+		{{{ioc,'$0',IOC, '_'},'$2','$3'},[],[{{'$0','$2','$3',0}}]}]),
+	{ok,[{IOC,merge_zone_masks(Rows)}]};
 
 lookup_db_record(mnesia, IOC, false) ->
 	{ok,[{IOC,[]}]};
@@ -392,7 +478,9 @@ lookup_db_record(ets, IOC, true) ->
 			%ioc2rpz_fun:logMessage("Checking IOC ~s ~n",[IOC]),
 			{ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}(\\/[0-9]{1,3})?)$|(:)"),
       case re:run(IOC,MP,[global,notempty,{capture,[1],binary}]) of
-        {match,_} -> {ok,[{IOC,ets:select(rpz_ixfr_table,[{{{ioc,'$0',IOC, '_'},'$2','$3'},[],[{{'$0','$2','$3'}}]}])}]};
+        %% Task 15.1 / R6: legacy 2-value-element clause projects mask 0 (see the
+        %% `false` clause above) so pre-upgrade IP rows stay readable.
+        {match,_} -> {ok,[{IOC,merge_zone_masks(ets:select(rpz_ixfr_table,[{{{ioc,'$0',IOC, '_'},'$2','$3','$4'},[],[{{'$0','$2','$3','$4'}}]},{{{ioc,'$0',IOC, '_'},'$2','$3'},[],[{{'$0','$2','$3',0}}]}]))}]};
         _ ->  lookup_db_record(ets,IOC,<<"">>,ioc2rpz_fun:rsplit_tail(IOC, <<".">>),[])
       end;
 
@@ -407,7 +495,27 @@ lookup_db_record(ets,IOC, _FQDN, [], Result) ->
 lookup_db_record(ets,IOC, FQDN, [Label|REST], Result) ->
 	NFQDN = if FQDN == <<"">> -> Label; true ->  <<Label/binary,".",FQDN/binary>> end,
   %ioc2rpz_fun:logMessage("Checking ~p ~n",[NFQDN]),
-	lookup_db_record(ets, IOC, NFQDN, REST, Result ++ [{NFQDN,ets:select(rpz_ixfr_table,[{{{ioc,'$0',NFQDN,'_'},'$2','$3'},[],[{{'$0','$2','$3'}}]}])}]).
+	%% Task 15.1 / R6: legacy 2-value-element clause projects mask 0 (see the
+	%% `false` clause) so pre-upgrade parent-label rows stay readable.
+	lookup_db_record(ets, IOC, NFQDN, REST, Result ++ [{NFQDN,merge_zone_masks(ets:select(rpz_ixfr_table,[{{{ioc,'$0',NFQDN,'_'},'$2','$3','$4'},[],[{{'$0','$2','$3','$4'}}]},{{{ioc,'$0',NFQDN,'_'},'$2','$3'},[],[{{'$0','$2','$3',0}}]}]))}]).
+
+%% @doc Groups raw `{Zone, AddSerial, ExpSerial, Mask}' rows (as returned by a
+%% `duplicate_bag' select) by `{Zone, AddSerial, ExpSerial}' and OR-combines the
+%% source `Mask' across rows that share that key. Produces one
+%% `{Zone, AddSerial, ExpSerial, Mask}' tuple per distinct
+%% `{Zone, AddSerial, ExpSerial}', so the returned mask reflects all
+%% currently-contributing sources for a zone (design §6.4). Genuinely-distinct
+%% serial rows stay separate, preserving the current API cardinality. The result
+%% is sorted for a stable ordering.
+%% @end
+merge_zone_masks(Rows) ->
+	Merged = lists:foldl(
+		fun({Zone,AddSerial,ExpSerial,Mask}, Acc) ->
+			Key = {Zone,AddSerial,ExpSerial},
+			maps:update_with(Key, fun(M) -> M bor Mask end, Mask, Acc)
+		end, #{}, Rows),
+	lists:sort([{Zone,AddSerial,ExpSerial,Mask}
+		|| {{Zone,AddSerial,ExpSerial},Mask} <- maps:to_list(Merged)]).
 
 
 %% @doc Deletes old IOC records from the IXFR cache for a given zone.
@@ -427,13 +535,19 @@ delete_old_db_record(Zone) ->
 
 delete_old_db_record(ets, Zone) when Zone#rpz.serial == 42 ->
   %?logDebugMSG("Removing IXFR zone ~p ~n",[Zone#rpz.zone_str]),
-  ets:match_delete(rpz_ixfr_table,{{ioc,Zone#rpz.zone,'_'},'_','_'}),
-  ets:match_delete(rpz_ixfr_table,{{ixfr_rpz_cfg,Zone#rpz.zone},'_','_','_','_'});
+  %% IOC objects now carry a 4-element key {ioc,Zone,IOC,IoCType} plus 3 value
+  %% elements {AddSerial,ExpSerial,Mask}. (task 9.2, design §6.5, R1)
+  ets:match_delete(rpz_ixfr_table,{{ioc,Zone#rpz.zone,'_','_'},'_','_','_'}),
+  %% ixfr_rpz_cfg rows: match_delete needs an exact arity, so issue one delete
+  %% per known shape. Current rows carry 6 value elements (task 3.1 added the
+  %% source signature); legacy pre-upgrade rows carry 5 value elements.
+  ets:match_delete(rpz_ixfr_table,{{ixfr_rpz_cfg,Zone#rpz.zone},'_','_','_','_','_','_'}),
+  ets:match_delete(rpz_ixfr_table,{{ixfr_rpz_cfg,Zone#rpz.zone},'_','_','_','_','_'});
 
 delete_old_db_record(ets, Zone) ->
-  NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','_'},'$2','$3'},[],['true']}]),
-  ets:select_delete(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'_','_'},'$1','_'},[{'<','$1',Zone#rpz.serial}],[true]}]),
-  NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','_'},'$2','$3'},[],['true']}]),
+  NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','_'},'$2','$3','_'},[],['true']}]),
+  ets:select_delete(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'_','_'},'$1','_','_'},[{'<','$1',Zone#rpz.serial}],[true]}]),
+  NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','_'},'$2','$3','_'},[],['true']}]),
   if NRbefore /= NRafter -> ?logDebugMSG("Delete old records from zone ~p.  before ~p after ~p ~n",[Zone#rpz.zone_str, NRbefore, NRafter]); true -> ok end;
 delete_old_db_record(mnesia, _Zone) ->
 ok.
@@ -475,7 +589,13 @@ get_zone_info(Zone,DB) ->
 get_zone_info(ets,Zone,axfr) ->
   ets:match(rpz_axfr_table,{{axfr_rpz_cfg,Zone#rpz.zone},'$0','$1','$2','$3','$4','$5','$6','$7','$8','$9'});
 get_zone_info(ets,Zone,ixfr) ->
-  ets:match(rpz_ixfr_table,{{ixfr_rpz_cfg,Zone#rpz.zone},'$0','$1','$2','$3','$4'});
+  %% Prefer the new 6-field row (trailing source-list signature, '$5'); fall
+  %% back to the legacy 5-field row for pre-upgrade cached zones so loading
+  %% still works. (Full migration tolerance is task 15.)
+  case ets:match(rpz_ixfr_table,{{ixfr_rpz_cfg,Zone#rpz.zone},'$0','$1','$2','$3','$4','$5'}) of
+    [] -> ets:match(rpz_ixfr_table,{{ixfr_rpz_cfg,Zone#rpz.zone},'$0','$1','$2','$3','$4'});
+    New -> New
+  end;
 get_zone_info(mnesia,_Zone,axfr) ->
   ok;
 get_zone_info(mnesia,_Zone,ixfr) ->
@@ -496,6 +616,10 @@ get_allzones_info(DB) ->
 get_allzones_info(ets,axfr) ->
   ets:match(rpz_axfr_table,{{axfr_rpz_cfg,'$0'},'$1','$2','$3','$4','$5','$6','$7','$8','$9','$10'});
 get_allzones_info(ets,ixfr) ->
+  %% New 6-field rows (with trailing source signature '$6') and legacy 5-field
+  %% rows. A row matches exactly one pattern by its arity, so concatenating the
+  %% two matches covers both without duplicates.
+  ets:match(rpz_ixfr_table,{{ixfr_rpz_cfg,'$0'},'$1','$2','$3','$4','$5','$6'}) ++
   ets:match(rpz_ixfr_table,{{ixfr_rpz_cfg,'$0'},'$1','$2','$3','$4','$5'});
 get_allzones_info(mnesia,axfr) ->
   ok;
@@ -580,9 +704,29 @@ save_axfr_zone_info(mnesia,_Zone) ->
 save_ixfr_zone_info(Zone) ->
   save_ixfr_zone_info(?DBStorage,Zone).
 save_ixfr_zone_info(ets,Zone) ->
-  ets:insert(rpz_ixfr_table, {{ixfr_rpz_cfg,Zone#rpz.zone},Zone#rpz.zone_str,Zone#rpz.serial,Zone#rpz.serial_ixfr,Zone#rpz.ixfr_update_time,Zone#rpz.ixfr_nz_update_time});
+  %% Append the ordered-source-name signature as the trailing element so a
+  %% source-list change (added/removed/reordered sources) is detectable across
+  %% restarts. The compare/forceAXFR logic reads it in task 3.2.
+  ets:insert(rpz_ixfr_table, {{ixfr_rpz_cfg,Zone#rpz.zone},Zone#rpz.zone_str,Zone#rpz.serial,Zone#rpz.serial_ixfr,Zone#rpz.ixfr_update_time,Zone#rpz.ixfr_nz_update_time,source_signature(Zone#rpz.sources)});
 save_ixfr_zone_info(mnesia,_Zone) ->
   ok.
+
+%% @doc Computes an order-sensitive signature of a zone's source list.
+%%
+%% Source masks are per-zone positional (bit i = i-th entry of the source
+%% list), so reordering or editing the list invalidates stored masks. This
+%% signature is a SHA-256 over the ordered source names; any add, removal, or
+%% reorder yields a different value, which the zone-load path uses to force an
+%% AXFR rebuild (design.md §7.2).
+%%
+%% `#rpz.sources' is the ordered list of source names, so the ordered list is
+%% hashed directly.
+%%
+%% @param Sources The zone's ordered `#rpz.sources' list of source names
+%% @returns A 32-byte binary hash
+%% @end
+source_signature(Sources) ->
+  crypto:hash(sha256, term_to_binary(Sources)).
 
 tab2file(ets,Tbl_Name,File_Name) ->
   ets:tab2file(Tbl_Name,File_Name,[{extended_info,[object_count,md5sum]},{sync,true}]);
@@ -591,3 +735,429 @@ tab2file(_DBStorage,_Tbl_Name,_File_Name) -> ok.
 file2tab(ets,File_Name) ->
   ets:file2tab(File_Name,[{verify,true}]);
 file2tab(_DBStorage,_File_Name) -> ok.
+
+%%%%
+%%%% EUnit tests
+%%%%
+
+-ifdef(TEST).
+
+%% Same ordered source list ⇒ identical signature (deterministic).
+source_signature_same_list_test() ->
+  Sources = [<<"abuse-ch">>, <<"internal-list">>, <<"partner-feed">>],
+  ?assertEqual(source_signature(Sources), source_signature(Sources)).
+
+%% Reordering the source list ⇒ different signature (order-sensitive), because
+%% masks are positional and reordering invalidates them.
+source_signature_reorder_differs_test() ->
+  A = [<<"abuse-ch">>, <<"internal-list">>],
+  B = [<<"internal-list">>, <<"abuse-ch">>],
+  ?assertNotEqual(source_signature(A), source_signature(B)).
+
+%% Adding/removing a source ⇒ different signature.
+source_signature_membership_differs_test() ->
+  A = [<<"abuse-ch">>, <<"internal-list">>],
+  B = [<<"abuse-ch">>, <<"internal-list">>, <<"partner-feed">>],
+  ?assertNotEqual(source_signature(A), source_signature(B)).
+
+%% Signature is a 32-byte SHA-256 binary.
+source_signature_shape_test() ->
+  Sig = source_signature([<<"s0">>, <<"s1">>]),
+  ?assert(is_binary(Sig)),
+  ?assertEqual(32, byte_size(Sig)).
+
+%% Helper: create a fresh rpz_ixfr_table matching init_db's type
+%% (duplicate_bag, public, named_table) for AXFR write tests.
+setup_ixfr_table() ->
+  catch ets:delete(rpz_ixfr_table),
+  ets:new(rpz_ixfr_table, [duplicate_bag, public, named_table]).
+
+teardown_ixfr_table(_) ->
+  catch ets:delete(rpz_ixfr_table),
+  ok.
+
+%% AXFR write stores the source mask as the 4th value element:
+%%   {{ioc,Zone,IOC,Type}, Serial, Exp, Mask}      (design §3.2/§6.1, R1/R5)
+write_db_record_axfr_stores_mask_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     Zone = #rpz{zone = <<"rpz.example">>, zone_str = "rpz.example", serial = 1572419220},
+     IOC = <<"bad.example.com">>,
+     Type = fqdn,
+     Exp = 0,
+     Mask = 5,
+     {ok,0} = write_db_record(ets, Zone, [{IOC,Exp,Type,Mask}], axfr),
+     Objs = ets:lookup(rpz_ixfr_table, {ioc, Zone#rpz.zone, IOC, Type}),
+     ?assertEqual([{{ioc, Zone#rpz.zone, IOC, Type}, Zone#rpz.serial, Exp, Mask}], Objs)
+   end}.
+
+%% Defensive path: a legacy 3-tuple {IOC,Exp,Type} is tolerated and stored
+%% with Mask = 0.
+write_db_record_axfr_legacy_3tuple_mask0_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     Zone = #rpz{zone = <<"rpz.example">>, zone_str = "rpz.example", serial = 42},
+     IOC = <<"legacy.example.com">>,
+     Type = fqdn,
+     Exp = 0,
+     {ok,0} = write_db_record(ets, Zone, [{IOC,Exp,Type}], axfr),
+     Objs = ets:lookup(rpz_ixfr_table, {ioc, Zone#rpz.zone, IOC, Type}),
+     ?assertEqual([{{ioc, Zone#rpz.zone, IOC, Type}, Zone#rpz.serial, Exp, 0}], Objs)
+   end}.
+
+%% IXFR diff stability (design §6.2, R5/R6): the mask (4th stored value element)
+%% MUST NOT perturb the serial/diff logic. Pre-populate the table via the AXFR
+%% path (which stores 4-element masked objects), then run the IXFR path with the
+%% SAME indicators as 4-tuples — the delta must be 0 (nothing looks "new").
+write_db_record_ixfr_same_set_no_delta_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     Zone = #rpz{zone = <<"rpz.example">>, zone_str = "rpz.example",
+                 cache = <<"true">>, serial = 1572419220},
+     IOCs = [{<<"a.example.com">>,0,fqdn,1}, {<<"b.example.com">>,0,fqdn,2}],
+     {ok,0} = write_db_record(ets, Zone, IOCs, axfr),
+     ?assertEqual({ok,0}, write_db_record(ets, Zone, IOCs, ixfr))
+   end}.
+
+%% Mask-only differences MUST NOT create a spurious delta on IXFR: the diff
+%% projects to {IOC,Exp,Type}, so re-feeding the same indicators with different
+%% mask values still yields 0 new (design §6.2, R5/R6).
+write_db_record_ixfr_mask_only_change_no_delta_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     Zone = #rpz{zone = <<"rpz.example">>, zone_str = "rpz.example",
+                 cache = <<"true">>, serial = 1572419220},
+     Stored = [{<<"a.example.com">>,0,fqdn,1}, {<<"b.example.com">>,0,fqdn,2}],
+     {ok,0} = write_db_record(ets, Zone, Stored, axfr),
+     %% Same {IOC,Exp,Type} pairs, only the masks differ.
+     Incoming = [{<<"a.example.com">>,0,fqdn,4}, {<<"b.example.com">>,0,fqdn,8}],
+     ?assertEqual({ok,0}, write_db_record(ets, Zone, Incoming, ixfr))
+   end}.
+
+%% IXFR insert of a NEW indicator persists the incoming mask as the 4th value
+%% element (task 8.2, R5/R6). Start from an empty table so the indicator is
+%% brand new; the plain-insert clause of update_db_record/9 must carry the mask.
+write_db_record_ixfr_new_indicator_stores_mask_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     Zone = #rpz{zone = <<"rpz.example">>, zone_str = "rpz.example",
+                 cache = <<"true">>, serial = 1572419220},
+     IOC = <<"new.example.com">>,
+     Incoming = [{IOC,0,fqdn,6}],
+     ?assertEqual({ok,1}, write_db_record(ets, Zone, Incoming, ixfr)),
+     Objs = ets:lookup(rpz_ixfr_table, {ioc, Zone#rpz.zone, IOC, fqdn}),
+     ?assertEqual([{{ioc, Zone#rpz.zone, IOC, fqdn}, Zone#rpz.serial, 0, 6}], Objs)
+   end}.
+
+%% Round-trip (task 8.2, R5/R6): AXFR pre-populates masked rows; an IXFR with the
+%% SAME set produces 0 new (no churn), and a follow-up IXFR that adds a new
+%% indicator stores that indicator's mask as the 4th value element.
+write_db_record_ixfr_roundtrip_adds_new_mask_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     Zone = #rpz{zone = <<"rpz.example">>, zone_str = "rpz.example",
+                 cache = <<"true">>, serial = 1572419220},
+     Base = [{<<"a.example.com">>,0,fqdn,1}, {<<"b.example.com">>,0,fqdn,2}],
+     {ok,0} = write_db_record(ets, Zone, Base, axfr),
+     %% Same set via IXFR ⇒ no new indicators (no serial churn).
+     ?assertEqual({ok,0}, write_db_record(ets, Zone, Base, ixfr)),
+     %% Now add a new indicator with its own mask.
+     NewIOC = <<"c.example.com">>,
+     Added = Base ++ [{NewIOC,0,fqdn,4}],
+     ?assertEqual({ok,1}, write_db_record(ets, Zone, Added, ixfr)),
+     Objs = ets:lookup(rpz_ixfr_table, {ioc, Zone#rpz.zone, NewIOC, fqdn}),
+     ?assertEqual([{{ioc, Zone#rpz.zone, NewIOC, fqdn}, Zone#rpz.serial, 0, 4}], Objs)
+   end}.
+
+%% read_db_record/4 match specs must match the new 4-element masked objects
+%% ({key, AddSerial, ExpSerial, Mask}) and still return the pre-change 4-element
+%% '$$' shape [IOC, AddSerial, ExpSerial, IoCType] — the mask is excluded via a
+%% trailing wildcard in the match spec (task 9.1, design §6.3, R1).
+read_db_record_active_masked_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     Z = <<"rpz.example">>,
+     Zone = #rpz{zone = Z, zone_str = "rpz.example", serial = 100, serial_ixfr = 10},
+     %% Active (never expires): Exp=0, AddSerial >= serial_ixfr.
+     A = {{ioc, Z, <<"a.example.com">>, fqdn}, 20, 0, 5},
+     %% Active (expires in the future): Exp > serial, AddSerial >= serial_ixfr.
+     B = {{ioc, Z, <<"b.example.com">>, fqdn}, 15, 200, 6},
+     %% NOT active (already expired: Exp =< serial).
+     C = {{ioc, Z, <<"c.example.com">>, fqdn}, 15, 50, 7},
+     ets:insert(rpz_ixfr_table, [A, B, C]),
+     Got = lists:sort(read_db_record(ets, Zone, 0, active)),
+     Expected = lists:sort([[<<"a.example.com">>, 20, 0, fqdn],
+                            [<<"b.example.com">>, 15, 200, fqdn]]),
+     ?assertEqual(Expected, Got)
+   end}.
+
+%% Second type (expired) also matches the 4-element objects and returns the
+%% 4-element [IOC, AddSerial, ExpSerial, IoCType] shape with the mask excluded.
+read_db_record_expired_masked_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     Z = <<"rpz.example">>,
+     Zone = #rpz{zone = Z, zone_str = "rpz.example", serial = 150},
+     %% Expired: AddSerial =< Serial, Serial =< ExpSerial =< zone serial.
+     E = {{ioc, Z, <<"e.example.com">>, fqdn}, 50, 120, 9},
+     %% NOT expired (Exp > zone serial).
+     F = {{ioc, Z, <<"f.example.com">>, fqdn}, 50, 200, 3},
+     ets:insert(rpz_ixfr_table, [E, F]),
+     Got = read_db_record(ets, Zone, 100, expired),
+     ?assertEqual([[<<"e.example.com">>, 50, 120, fqdn]], Got)
+   end}.
+
+%% delete_old_db_record/1 (non-42) removes only IOC rows whose AddSerial is
+%% strictly older than the zone serial, leaving current rows intact. The stored
+%% objects are 4-element masked rows {key, AddSerial, ExpSerial, Mask}; the
+%% match specs must include the 3rd value wildcard for the mask (task 9.2,
+%% design §6.5, R1).
+delete_old_db_record_removes_stale_only_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     Z = <<"rpz.example">>,
+     Zone = #rpz{zone = Z, zone_str = "rpz.example", serial = 100},
+     %% Stale: AddSerial < 100.
+     S1 = {{ioc, Z, <<"stale1.example.com">>, fqdn}, 50, 0, 1},
+     S2 = {{ioc, Z, <<"stale2.example.com">>, fqdn}, 99, 0, 2},
+     %% Current: AddSerial >= 100.
+     C1 = {{ioc, Z, <<"cur1.example.com">>, fqdn}, 100, 0, 4},
+     C2 = {{ioc, Z, <<"cur2.example.com">>, fqdn}, 120, 0, 8},
+     ets:insert(rpz_ixfr_table, [S1, S2, C1, C2]),
+     delete_old_db_record(ets, Zone),
+     ?assertEqual([], ets:lookup(rpz_ixfr_table, {ioc, Z, <<"stale1.example.com">>, fqdn})),
+     ?assertEqual([], ets:lookup(rpz_ixfr_table, {ioc, Z, <<"stale2.example.com">>, fqdn})),
+     ?assertEqual([C1], ets:lookup(rpz_ixfr_table, {ioc, Z, <<"cur1.example.com">>, fqdn})),
+     ?assertEqual([C2], ets:lookup(rpz_ixfr_table, {ioc, Z, <<"cur2.example.com">>, fqdn}))
+   end}.
+
+%% delete_old_db_record/1 with serial==42 fully removes ALL IOC rows for the
+%% zone (regardless of AddSerial) and the current 6-value-element ixfr_rpz_cfg
+%% row (task 9.2, design §6.5, R1).
+delete_old_db_record_serial42_full_cleanup_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     Z = <<"rpz.example">>,
+     Zone = #rpz{zone = Z, zone_str = "rpz.example", serial = 42},
+     I1 = {{ioc, Z, <<"a.example.com">>, fqdn}, 50, 0, 1},
+     I2 = {{ioc, Z, <<"b.example.com">>, fqdn}, 60, 200, 2},
+     %% Current cfg row: 6 value elements (zone_str, serial, serial_ixfr,
+     %% ixfr_update_time, ixfr_nz_update_time, SourceSignature).
+     Cfg = {{ixfr_rpz_cfg, Z}, "rpz.example", 60, 55, 111, 222, <<"sig">>},
+     %% A row for a different zone must survive.
+     Other = {{ioc, <<"other.example">>, <<"x.example.com">>, fqdn}, 10, 0, 1},
+     ets:insert(rpz_ixfr_table, [I1, I2, Cfg, Other]),
+     delete_old_db_record(ets, Zone),
+     ?assertEqual([], ets:lookup(rpz_ixfr_table, {ioc, Z, <<"a.example.com">>, fqdn})),
+     ?assertEqual([], ets:lookup(rpz_ixfr_table, {ioc, Z, <<"b.example.com">>, fqdn})),
+     ?assertEqual([], ets:lookup(rpz_ixfr_table, {ixfr_rpz_cfg, Z})),
+     ?assertEqual([Other], ets:lookup(rpz_ixfr_table, {ioc, <<"other.example">>, <<"x.example.com">>, fqdn}))
+   end}.
+
+%% serial==42 cleanup also removes a legacy 5-value-element ixfr_rpz_cfg row
+%% (pre task 3.1) so upgraded caches are fully purged (task 9.2, R1).
+delete_old_db_record_serial42_legacy_cfg_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     Z = <<"rpz.example">>,
+     Zone = #rpz{zone = Z, zone_str = "rpz.example", serial = 42},
+     %% Legacy cfg row: 5 value elements (no source signature).
+     LegacyCfg = {{ixfr_rpz_cfg, Z}, "rpz.example", 60, 55, 111, 222},
+     ets:insert(rpz_ixfr_table, [LegacyCfg]),
+     delete_old_db_record(ets, Zone),
+     ?assertEqual([], ets:lookup(rpz_ixfr_table, {ixfr_rpz_cfg, Z}))
+   end}.
+
+%% lookup_db_record/2 exact (false) lookup returns per-zone
+%% {Zone, AddSerial, ExpSerial, Mask} tuples. Rows sharing the same
+%% {Zone, AddSerial, ExpSerial} have their masks OR-ed; each zone yields its own
+%% entry (design §6.4, R1). Uses the new 4-element masked objects.
+lookup_db_record_false_ors_masks_per_zone_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     IOC = <<"bad.example.com">>,
+     Za = <<"rpz.a">>,
+     Zb = <<"rpz.b">>,
+     %% Zone A: two rows, SAME {Zone,AddSerial,ExpSerial} but different masks
+     %% (1 and 4) -> must OR to 5.
+     RowA1 = {{ioc, Za, IOC, fqdn}, 100, 0, 1},
+     RowA2 = {{ioc, Za, IOC, fqdn}, 100, 0, 4},
+     %% Zone B: a single row with its own mask -> separate entry.
+     RowB  = {{ioc, Zb, IOC, fqdn}, 200, 0, 2},
+     ets:insert(rpz_ixfr_table, [RowA1, RowA2, RowB]),
+     {ok, [{IOC, Matches}]} = lookup_db_record(ets, IOC, false),
+     ?assertEqual([{Za,100,0,5}, {Zb,200,0,2}], lists:sort(Matches))
+   end}.
+
+%% lookup_db_record/2 recursive (true) IP lookup returns per-zone
+%% {Zone, AddSerial, ExpSerial, Mask} tuples with masks OR-ed across rows that
+%% share the same {Zone, AddSerial, ExpSerial} (task 10.2, design §6.4, R1).
+lookup_db_record_true_ip_ors_masks_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     IOC = <<"192.0.2.1">>,
+     Z   = <<"rpz.a">>,
+     %% Two rows, SAME {Zone,AddSerial,ExpSerial} but different masks
+     %% (1 and 4) -> must OR to 5.
+     Row1 = {{ioc, Z, IOC, ip}, 100, 0, 1},
+     Row2 = {{ioc, Z, IOC, ip}, 100, 0, 4},
+     ets:insert(rpz_ixfr_table, [Row1, Row2]),
+     {ok, [{IOC, Matches}]} = lookup_db_record(ets, IOC, true),
+     ?assertEqual([{Z,100,0,5}], lists:sort(Matches))
+   end}.
+
+%% lookup_db_record/2 recursive (true) FQDN lookup accumulates parent-label
+%% matches as {Zone, AddSerial, ExpSerial, Mask} 4-tuples with per-zone mask
+%% OR-ing (task 10.2, design §6.4, R1). A parent entry (example.com) is matched
+%% when querying a child (evil.example.com).
+lookup_db_record_true_fqdn_recursive_parent_mask_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     Parent = <<"example.com">>,
+     Child  = <<"evil.example.com">>,
+     Z      = <<"rpz.a">>,
+     %% Two parent rows sharing {Zone,AddSerial,ExpSerial}, masks 2 and 8 -> 10.
+     Row1 = {{ioc, Z, Parent, fqdn}, 300, 0, 2},
+     Row2 = {{ioc, Z, Parent, fqdn}, 300, 0, 8},
+     ets:insert(rpz_ixfr_table, [Row1, Row2]),
+     {ok, Result} = lookup_db_record(Child, true),
+     %% The accumulated entry for the parent label carries the OR-ed mask.
+     ?assertEqual([{Z,300,0,10}], proplists:get_value(Parent, Result))
+   end}.
+
+%% End-to-end round-trip (task 10.3, design §6.1/§6.4, R1): drive the actual
+%% AXFR WRITE path with TWO entries for the SAME {IOC,fqdn} carrying different
+%% masks (1 and 4) at the SAME serial/exp. The AXFR write inserts one row per
+%% incoming tuple into the duplicate_bag, so the table holds two rows; a `false`
+%% (exact) lookup MUST OR the masks and return {Zone,Serial,Exp,5}. This proves
+%% the DB layer OR-combines whatever rows are present, independent of pre-merge.
+lookup_db_record_axfr_roundtrip_two_rows_or_mask_false_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     Zone = #rpz{zone = <<"rpz.example">>, zone_str = "rpz.example", serial = 1572419220},
+     IOC = <<"bad.example.com">>,
+     Exp = 0,
+     %% Two rows, same {IOC,fqdn}, same serial/exp, masks 1 and 4.
+     {ok,0} = write_db_record(ets, Zone, [{IOC,Exp,fqdn,1}, {IOC,Exp,fqdn,4}], axfr),
+     {ok, [{IOC, Matches}]} = lookup_db_record(ets, IOC, false),
+     ?assertEqual([{Zone#rpz.zone, Zone#rpz.serial, Exp, 5}], Matches)
+   end}.
+
+%% Same AXFR-write round-trip as above, verified through the recursive (`true`)
+%% lookup path for an FQDN: the two rows written for {IOC,fqdn} must OR to 5 in
+%% the accumulated per-label result (task 10.3, design §6.4, R1).
+lookup_db_record_axfr_roundtrip_two_rows_or_mask_true_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     Zone = #rpz{zone = <<"rpz.example">>, zone_str = "rpz.example", serial = 1572419220},
+     IOC = <<"bad.example.com">>,
+     Exp = 0,
+     {ok,0} = write_db_record(ets, Zone, [{IOC,Exp,fqdn,1}, {IOC,Exp,fqdn,4}], axfr),
+     {ok, Result} = lookup_db_record(ets, IOC, true),
+     ?assertEqual([{Zone#rpz.zone, Zone#rpz.serial, Exp, 5}], proplists:get_value(IOC, Result))
+   end}.
+
+%% A single PRE-MERGED row (mask already OR-ed to 5 by the build-time merge)
+%% written through the AXFR path must ALSO yield 5 on lookup — proving both the
+%% "one row" and "two rows" cases converge on the same result (task 10.3, R1).
+lookup_db_record_axfr_roundtrip_premerged_mask_false_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     Zone = #rpz{zone = <<"rpz.example">>, zone_str = "rpz.example", serial = 1572419220},
+     IOC = <<"bad.example.com">>,
+     Exp = 0,
+     {ok,0} = write_db_record(ets, Zone, [{IOC,Exp,fqdn,5}], axfr),
+     {ok, [{IOC, Matches}]} = lookup_db_record(ets, IOC, false),
+     ?assertEqual([{Zone#rpz.zone, Zone#rpz.serial, Exp, 5}], Matches)
+   end}.
+
+%% IXFR diff unaffected + lookup still correct (task 10.3, design §6.2/§6.4,
+%% R5/R6): after an AXFR populate, an IXFR write with the SAME {IOC,Exp,Type}
+%% set (even with different masks) yields {ok,0} (no spurious delta), and a
+%% subsequent lookup STILL returns the correct OR-ed mask from the stored rows.
+write_db_record_ixfr_same_set_lookup_ors_mask_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     Zone = #rpz{zone = <<"rpz.example">>, zone_str = "rpz.example",
+                 cache = <<"true">>, serial = 1572419220},
+     IOC = <<"bad.example.com">>,
+     Exp = 0,
+     %% AXFR populate: two rows for the same {IOC,fqdn}, masks 1 and 4 -> 5.
+     {ok,0} = write_db_record(ets, Zone, [{IOC,Exp,fqdn,1}, {IOC,Exp,fqdn,4}], axfr),
+     %% IXFR with the SAME {IOC,Exp,Type} set (different masks) -> no delta.
+     ?assertEqual({ok,0}, write_db_record(ets, Zone, [{IOC,Exp,fqdn,2}, {IOC,Exp,fqdn,8}], ixfr)),
+     %% Lookup still returns the OR of the rows actually present (the AXFR rows).
+     {ok, [{IOC, Matches}]} = lookup_db_record(ets, IOC, false),
+     ?assertEqual([{Zone#rpz.zone, Zone#rpz.serial, Exp, 5}], Matches)
+   end}.
+
+%% Untracked / single-source write→lookup (task 10.3, R3): an AXFR write with
+%% Mask=0 (tracking disabled or single-source feed) round-trips to a lookup that
+%% returns mask 0, so attribution is reported as "unknown" downstream.
+lookup_db_record_axfr_roundtrip_untracked_mask0_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     Zone = #rpz{zone = <<"rpz.example">>, zone_str = "rpz.example", serial = 1572419220},
+     IOC = <<"plain.example.com">>,
+     Exp = 0,
+     {ok,0} = write_db_record(ets, Zone, [{IOC,Exp,fqdn,0}], axfr),
+     {ok, [{IOC, Matches}]} = lookup_db_record(ets, IOC, false),
+     ?assertEqual([{Zone#rpz.zone, Zone#rpz.serial, Exp, 0}], Matches)
+   end}.
+
+%% Task 15.1 / R6 upgrade tolerance: a legacy PRE-UPGRADE row has only 2 value
+%% elements {AddSerial,ExpSerial} (no mask). read_db_record(active) MUST tolerate
+%% such a row alongside new 3-value-element rows and still return it in the
+%% pre-change '$$' shape [IOC,AddSerial,ExpSerial,IoCType] (mask excluded), rather
+%% than crashing or silently dropping it.
+read_db_record_active_tolerates_legacy_row_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     Z = <<"rpz.example">>,
+     Zone = #rpz{zone = Z, zone_str = "rpz.example", serial = 100, serial_ixfr = 10},
+     %% New 3-value-element (masked) active row.
+     New = {{ioc, Z, <<"new.example.com">>, fqdn}, 20, 0, 5},
+     %% Legacy 2-value-element (pre-upgrade) active row: no 4th mask element.
+     Legacy = {{ioc, Z, <<"legacy.example.com">>, fqdn}, 15, 0},
+     ets:insert(rpz_ixfr_table, [New, Legacy]),
+     Got = lists:sort(read_db_record(ets, Zone, 0, active)),
+     Expected = lists:sort([[<<"new.example.com">>, 20, 0, fqdn],
+                            [<<"legacy.example.com">>, 15, 0, fqdn]]),
+     ?assertEqual(Expected, Got)
+   end}.
+
+%% Task 15.1 / R6 upgrade tolerance: an exact (false) lookup MUST tolerate a
+%% legacy 2-value-element row and return it with mask 0 (unknown), alongside a
+%% new 3-value-element row from another zone. This proves legacy rows stay
+%% readable during the first post-upgrade load instead of being invisible until
+%% the forced AXFR rewrites them.
+lookup_db_record_false_tolerates_legacy_row_mask0_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     IOC = <<"bad.example.com">>,
+     Za = <<"rpz.legacy">>,
+     Zb = <<"rpz.new">>,
+     %% Legacy pre-upgrade row: 2 value elements {AddSerial,ExpSerial}, no mask.
+     Legacy = {{ioc, Za, IOC, fqdn}, 100, 0},
+     %% New masked row (3 value elements) in a different zone.
+     New = {{ioc, Zb, IOC, fqdn}, 200, 0, 2},
+     ets:insert(rpz_ixfr_table, [Legacy, New]),
+     {ok, [{IOC, Matches}]} = lookup_db_record(ets, IOC, false),
+     %% Legacy row surfaces with mask 0; new row keeps its mask.
+     ?assertEqual([{Za,100,0,0}, {Zb,200,0,2}], lists:sort(Matches))
+   end}.
+
+%% Task 15.1 / R6: the recursive (true) IP lookup path is also legacy-tolerant —
+%% a legacy 2-value-element IP row resolves to mask 0 rather than being dropped.
+lookup_db_record_true_ip_tolerates_legacy_row_mask0_test_() ->
+  {setup, fun setup_ixfr_table/0, fun teardown_ixfr_table/1,
+   fun() ->
+     IOC = <<"192.0.2.1">>,
+     Z   = <<"rpz.legacy">>,
+     Legacy = {{ioc, Z, IOC, ip}, 100, 0},
+     ets:insert(rpz_ixfr_table, [Legacy]),
+     {ok, [{IOC, Matches}]} = lookup_db_record(ets, IOC, true),
+     ?assertEqual([{Z,100,0,0}], lists:sort(Matches))
+   end}.
+
+-endif.

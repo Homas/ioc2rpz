@@ -1261,18 +1261,27 @@ send_zone(_,Socket,{Questions,DNSId,OptB,OptE,_RH,_Rest,Zone,_QType,NSServ,MailA
 %% @returns `{ok, MD5, NRules, NIOCs}' on success, or
 %%          `{updateSOA, MD5, RuleCount, MaxIOC}' if zone data unchanged.
 send_zone_live(Socket,Op,Zone,PktH,Questions, SOAREC,NSRec,TSIG,Proto) ->
+  %% mrpz_from_ioc/2 now yields 4-tuples {IOC,Exp,Type,Mask} (task 6, R5).
   IOC = mrpz_from_ioc(Zone,axfr),
-  MD5=crypto:hash(md5,term_to_binary(IOC)),
+  %% 3-tuple projection for the wire and change-detection MD5. IOC is already
+  %% sorted (mrpz_from_ioc/2), so IOC3 preserves that order. Hashing IOC3 (mask
+  %% excluded) keeps ioc_md5 byte-for-byte identical to before, independent of
+  %% masks (design §5.3, R4/R5).
+  IOC3 = [{I,E,T} || {I,E,T,_M} <- IOC],
+  MD5=crypto:hash(md5,term_to_binary(IOC3)),
   case {Op, Zone#rpz.ioc_md5} of
     {cache, MD5} -> {updateSOA, MD5, Zone#rpz.rule_count, Zone#rpz.max_ioc}; %TODO looks like something was not finished
     _Else ->
 %      {ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3})$"), %
 			{ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}(\\/[0-9]{1,3})?)$|(:)"),
       PktHLen = 12+byte_size(Questions),
+      %% Persist the full 4-tuples {IOC,Exp,Type,Mask} so masks are stored per
+      %% task 7, R5 (write_db_record/axfr accepts the 4-tuple and stores the mask).
       ioc2rpz_db:write_db_record(Zone,IOC,axfr),
       ioc2rpz_db:delete_old_db_record(Zone),
 			T_ZIP_L=init_T_ZIP_L(Zone),
-      {ok, NRules, NIOCs}=send_packets(Socket,IOC, [], 0, 0, true, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,0,Op,0,true,Proto),
+      %% send_packets receives the 3-tuple projection — wire output unchanged (R4).
+      {ok, NRules, NIOCs}=send_packets(Socket,IOC3, [], 0, 0, true, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,0,Op,0,true,Proto),
 		  ioc2rpz_fun:logMessage("Live zone ~p, ~p rules, ~p IOCs ~n", [Zone#rpz.zone_str, NRules, NIOCs]),
       ets:delete(T_ZIP_L),
       {ok,MD5, NRules, NIOCs}
@@ -1564,6 +1573,74 @@ remove_WL(IOC,WL) ->
   %%%TODO add ioc_type {E,Exp,IOC_Type}
   [X || {E,_Exp,_IoCType} = X <- ordsets:to_list(ordsets:from_list(IOC)), not gb_sets:is_element(E, WLSet)]. % TODO duplicates gb_sets vs ordsets
 
+%% @doc Mask-preserving dedup for the in-flight 4-tuple indicator list
+%% (design §5.2). Replaces the `ordsets:from_list/1' dedup with a
+%% sort-then-linear-merge that collapses consecutive entries sharing the same
+%% `{IOC, IoCType}' key: the surviving `Exp' is the largest of the run (via
+%% {@link exp_max/2}, where `0' = never expires wins) and the surviving `Mask'
+%% is the bitwise OR (`bor') of the run's masks. Sorting is by
+%% `{IOC, IoCType}' only (Exp/Mask do not participate in ordering). This is a
+%% sort-then-merge (≈0.62s at 3M), NOT a per-key map fold (≈5s, disallowed).
+%% @param List4 A list of `{IOC, Exp, IoCType, Mask}' 4-tuples.
+%% @returns The deduped, mask-merged list sorted by `{IOC, IoCType}'.
+merge_dedup(List4) ->
+  Sorted = lists:sort(fun({A,_,At,_},{B,_,Bt,_}) -> {A,At} =< {B,Bt} end, List4),
+  merge_runs(Sorted).
+
+%% @doc Collapses consecutive equal `{IOC, IoCType}' entries in a list already
+%% sorted by `{IOC, IoCType}'. For each run, keeps the largest `Exp' (see
+%% {@link exp_max/2}: `0' = never expires dominates) and the `bor' of masks.
+%% Handles empty and single-element inputs.
+%% @param Sorted A list of `{IOC, Exp, IoCType, Mask}' sorted by `{IOC,IoCType}'.
+%% @returns The merged list of 4-tuples.
+merge_runs([]) -> [];
+merge_runs([H|T]) -> merge_runs(T, H, []).
+
+%% merge_runs(Rest, Current, Acc) — Current accumulates the run for the current
+%% {IOC,IoCType} key; Acc holds already-finalized entries (reversed).
+merge_runs([], Cur, Acc) ->
+  lists:reverse([Cur|Acc]);
+merge_runs([{I,E,T,M}|Rest], {I,CE,T,CM}, Acc) ->
+  %% Same {IOC,IoCType} run: fold in max Exp and OR masks.
+  merge_runs(Rest, {I,exp_max(E,CE),T,M bor CM}, Acc);
+merge_runs([H|Rest], Cur, Acc) ->
+  %% New key: finalize the previous run and start a fresh one.
+  merge_runs(Rest, H, [Cur|Acc]).
+
+%% @doc Returns the "largest" expiration of two indicator expirations, honoring
+%% the codebase-wide convention that `Exp == 0' means "never expires" and is
+%% therefore the LARGEST possible expiration (see the `(IOCExp > Serial) orelse
+%% (IOCExp == 0)' guards in send_packets/write_db_record/read_db_record). A plain
+%% `erlang:max/2' is WRONG here: `erlang:max(0,100) == 100' would make a
+%% never-expiring indicator wrongly expire at 100 when two sources list the same
+%% {IOC,IoCType} with different expirations. This matches the legacy remove_WL/2
+%% effect, where the duplicate never-expire (0) row kept the indicator active.
+%% @param A An expiration serial (`0' = never expires).
+%% @param B An expiration serial (`0' = never expires).
+%% @returns `0' if either is `0', otherwise `erlang:max(A,B)'.
+exp_max(0, _) -> 0;
+exp_max(_, 0) -> 0;
+exp_max(A, B) -> erlang:max(A, B).
+
+%% @doc Whitelist-aware variant of {@link merge_dedup/1}. First merges/dedups
+%% the 4-tuples, then drops any survivor whose IOC value is present in the
+%% whitelist. Consistent with `remove_WL/2', the whitelist comparison is on the
+%% IOC value ONLY; masks ride along unchanged on survivors. Whitelist entries
+%% may be `{IOC,Exp,Type}' 3-tuples or `{IOC,Exp,Type,Mask}' 4-tuples (only the
+%% IOC value is used).
+%% @param List4 A list of `{IOC, Exp, IoCType, Mask}' 4-tuples.
+%% @param WL The whitelist (3- or 4-tuples), or `[]'.
+%% @returns The deduped, mask-merged, whitelist-filtered list of 4-tuples.
+merge_dedup(List4, []) ->
+  merge_dedup(List4);
+merge_dedup(List4, WL) ->
+  WLSet = gb_sets:from_list([wl_ioc(X) || X <- WL]),
+  [X || {I,_E,_T,_M} = X <- merge_dedup(List4), not gb_sets:is_element(I, WLSet)].
+
+%% @doc Extracts the IOC value from a whitelist entry (3- or 4-tuple).
+wl_ioc({E,_Exp,_Type}) -> E;
+wl_ioc({E,_Exp,_Type,_Mask}) -> E.
+
 %% @doc Checks if a source is currently being updated by another process.
 %% If no other process holds the source (pid is `[]'), claims it by updating
 %% the ETS config table with the current process PID. If another process is
@@ -1603,9 +1680,98 @@ check_source_updating(_Source, SRC, Pid, false) -> % if the proces is not alive 
 %% sources (via `mrpz_from_ioc/4') and subtracts whitelisted indicators.
 %% @param Zone The `#rpz{}' record containing source and whitelist references.
 %% @param UType The update type: `axfr' for full zone, `ixfr' for incremental.
-%% @returns A deduplicated, whitelist-filtered list of `{IOC, Expiry, Type}' tuples.
+%% @returns A deduplicated, whitelist-filtered list of `{IOC, Expiry, Type, Mask}'
+%%   4-tuples, sorted so the 3-tuple projection matches the legacy ordering
+%%   (task 6, R5). Callers project to 3-tuples for the wire/MD5 and forward the
+%%   4-tuples to storage.
 mrpz_from_ioc(Zone,UType) -> %Zone - RPZ zone
-  remove_WL(mrpz_from_ioc(Zone#rpz.sources,Zone,UType,[]),mrpz_from_ioc(Zone#rpz.whitelist,Zone,axfr,[])).% -- WL.
+  %% Resolve the effective per-zone tracking flag ONCE per zone build (design
+  %% §3.1b, §5.1) and thread it down the /6 recursion so every source of the
+  %% zone uses the same resolved flag. The full #srv{} record (carrying the
+  %% server global default) is the 7th element of the cfg_table {srv,...} row.
+  %% track_enabled/2 resolves per-feed value → server global default → built-in
+  %% off, then applies auto (multi-source only) and the >63-source capacity
+  %% check (R2/R3/R7). When the row is absent (e.g. in unit tests) default Track
+  %% to false so tagging simply emits mask 0.
+  Srv = case ets:match(cfg_table,{srv,'_','_','_','_','_','$7'}) of
+    [[S]] -> S;
+    _ -> undefined
+  end,
+  Track = case Srv of
+    #srv{} -> ioc2rpz_sup:track_enabled(Zone, Srv);
+    _ -> false
+  end,
+  %% Observability (task 16, R8): log the effective per-zone tracking decision
+  %% ONCE per zone build. mrpz_from_ioc/2 runs on EVERY AXFR/IXFR build, so this
+  %% is deliberately a single concise operator-facing line (logMessage/2) — never
+  %% per-indicator. The >63-source capacity decision (R7/§8) is warned on the same
+  %% build path so it is emitted only when the zone is actually built.
+  log_track_decision(Zone, Srv, Track),
+  %% Only the SOURCES call uses the real Track flag; the WHITELIST call uses
+  %% Track=false (whitelist entries are not tagged — masks irrelevant, subtracted).
+  SrcIOC = mrpz_from_ioc(Zone#rpz.sources,Zone,UType,[],0,Track),
+  WLIOC  = mrpz_from_ioc(Zone#rpz.whitelist,Zone,axfr,[]),
+  %% Mask-preserving dedup (design §5.2): merge_dedup/2 sorts by {IOC,IoCType},
+  %% collapses runs (max Exp, bor masks) and subtracts the whitelist on IOC
+  %% value only. With Track=false every mask is 0, so this dedups identically to
+  %% the previous ordsets path while now carrying merged masks. The 4-tuple flow
+  %% through to storage/wire is wired in tasks 6-10; for now project back to the
+  %% existing 3-tuple shape that send_zone_live/send_packets/write_db_record
+  %% expect, AFTER merging so mask merging is exercised and correct.
+  Merged = merge_dedup(SrcIOC, WLIOC),
+  %% Return the merged 4-tuples {IOC, Exp, IoCType, Mask} (task 6, R4/R5). The
+  %% caller (send_zone_live/9, and via task 8 the IXFR path in ioc2rpz_sup)
+  %% projects back to 3-tuples where masks are not wanted (wire + change-detection
+  %% MD5), and forwards the 4-tuples to storage.
+  %%
+  %% Ordering must keep the 3-tuple projection byte-for-byte identical to the old
+  %% remove_WL/2 path (task 5.2, R1/R5). remove_WL produced
+  %% `ordsets:to_list(ordsets:from_list/1)` order, i.e. the standard term order of
+  %% the full 3-tuple {IOC, Exp, IoCType}. Sorting the 4-tuples in standard term
+  %% order compares I, then E, then T, then M. merge_dedup/2 has already collapsed
+  %% every {IOC,IoCType} run to a single survivor, so each {IOC,IoCType} — and
+  %% therefore each {IOC,Exp,IoCType} — is unique; the trailing Mask element is
+  %% never reached as a tiebreaker. Hence `lists:sort/1' on the 4-tuples yields a
+  %% list whose 3-tuple projection equals the old `lists:sort/1' of the 3-tuples
+  %% exactly (including the same-IOC/different-IoCType corner case, since {I,E,T}
+  %% still fully orders those). lists:sort/1 is a natural merge sort (~O(n) on the
+  %% already-nearly-sorted projection), so this adds negligible build time (R5).
+  lists:sort(Merged).
+
+%% @doc Log the effective source-attribution decision for a zone, once per build
+%% (task 16, R8). This is called from mrpz_from_ioc/2 which runs on every
+%% AXFR/IXFR build, so each clause emits exactly ONE concise operator-facing
+%% line via logMessage/2 (operators want to see the tracking state); no
+%% per-indicator logging. Messages:
+%%   * enabled  — "Source attribution ENABLED for zone X (N sources)"
+%%   * skipped  — auto-mode feed that resolves to off because it is single-source
+%%   * disabled — any other off result (per-feed false, global off, etc.)
+%% When tracking is enabled and the feed exceeds ?MaskFixnumBits sources, an
+%% additional warning notes the wide binary-bitmap mask representation is in use
+%% (R7, design §8) — emitted here (the build path) so it fires only on a real build.
+log_track_decision(Zone, _Srv, true) ->
+  NSources = length(Zone#rpz.sources),
+  ioc2rpz_fun:logMessage("Source attribution ENABLED for zone ~s (~p sources)~n",[Zone#rpz.zone_str, NSources]),
+  if NSources > ?MaskFixnumBits ->
+       ioc2rpz_fun:logMessage("Warning: zone ~s has ~p sources (> ~p); using wide bitmap source mask~n",[Zone#rpz.zone_str, NSources, ?MaskFixnumBits]);
+     true -> ok
+  end;
+log_track_decision(Zone, Srv, false) ->
+  %% Resolve the effective mode to distinguish "skipped (single-source)" (auto +
+  %% single source) from a plain "disabled". Mirrors the resolution in
+  %% ioc2rpz_sup:track_enabled/2 (per-feed value → server global default →
+  %% built-in off) without re-deriving the boolean.
+  Eff = case Zone#rpz.track_sources of
+    undefined when is_record(Srv, srv) -> Srv#srv.track_sources;
+    undefined -> off;
+    V -> V
+  end,
+  case {Eff, length(Zone#rpz.sources)} of
+    {auto, N} when N =< 1 ->
+      ioc2rpz_fun:logMessage("Source attribution skipped (single-source) for zone ~s~n",[Zone#rpz.zone_str]);
+    _ ->
+      ioc2rpz_fun:logMessage("Source attribution disabled for zone ~s~n",[Zone#rpz.zone_str])
+  end.
 
 %% @doc Recursively fetches IOCs from a list of source names.
 %% For each source, checks the hot cache first; if cached and not expired,
@@ -1618,7 +1784,25 @@ mrpz_from_ioc(Zone,UType) -> %Zone - RPZ zone
 %% @param UType The update type: `axfr' or `ixfr'.
 %% @param IOC The accumulated list of IOC tuples from previous sources.
 %% @returns A list of `{IOC, Expiry, Type}' tuples from all sources.
-mrpz_from_ioc([SRC|REST], RPZ,UType, IOC) -> %List of the sources, RPZ zone, UType - AXFR/IXFR update type, IOC - list of accumulated IOCs
+%%
+%% This `/4' arity is the external contract (exported and called from
+%% `ioc2rpz_sup:load_hotsources'/`ioc2rpz_rest'). It delegates to the internal
+%% recursion, which threads a 0-based source-position `Index' (used to compute
+%% `1 bsl Index') and a `Track' boolean. The `/4' default path uses `Track=false'
+%% (hot-source preload does not need masks); callers that need real masks (see
+%% `mrpz_from_ioc/2') invoke the internal arity directly with the resolved flag.
+mrpz_from_ioc(Sources, RPZ, UType, IOC) ->
+  mrpz_from_ioc(Sources, RPZ, UType, IOC, 0, false).
+
+%% @doc Internal recursion that also threads the 0-based source `Index'.
+%% `Index' tracks each source's position within the original source list being
+%% iterated so masks stay aligned with `Zone#rpz.sources' positions. It advances
+%% by one on every step, for both the matched-source and the skipped-source
+%% (`[]' not found) clauses.
+%% @param Index The 0-based position of `SRC' in the iterated source list.
+%% @param Track Boolean — when `true' each fetched indicator is tagged with the
+%%   per-source bit `1 bsl Index'; when `false' the mask is `0'.
+mrpz_from_ioc([SRC|REST], RPZ,UType, IOC, Index, Track) -> %List of the sources, RPZ zone, UType - AXFR/IXFR update type, IOC - list of accumulated IOCs, Index - 0-based source position, Track - source-attribution flag
   CTime=RPZ#rpz.serial, %CTime=ioc2rpz_fun:curr_serial(),
   case ets:match(cfg_table,{[source,SRC],'$2'}) of
     [[Source]] ->
@@ -1659,14 +1843,33 @@ mrpz_from_ioc([SRC|REST], RPZ,UType, IOC) -> %List of the sources, RPZ zone, UTy
 
   end,
       ets:update_element(cfg_table, [source,SRC], [{2, Source#source{ioc_count=length(IOC1), pid=[]}}]),
-      mrpz_from_ioc(REST,RPZ,UType,IOC1 ++ IOC);
+      %% Tag AFTER the cache read (the cache stays source-pure/untagged). This
+      %% covers both the AXFR and IXFR branches above since both set `IOC1'.
+      %% Length is unchanged by tagging, so ioc_count above stays correct.
+      IOC1T = tag_ioc(IOC1, Track, Index),
+      mrpz_from_ioc(REST,RPZ,UType,IOC1T ++ IOC, Index+1, Track);
     [] ->
       ioc2rpz_fun:logMessage("Error: source ~p not found in config (removed?). Skipping.~n",[SRC]),
-      mrpz_from_ioc(REST,RPZ,UType,IOC)
+      mrpz_from_ioc(REST,RPZ,UType,IOC, Index+1, Track)
   end;
 
-mrpz_from_ioc([],_RPZ,_UType,IOC) ->
+mrpz_from_ioc([],_RPZ,_UType,IOC, _Index, _Track) ->
   IOC.
+
+%% @doc Tags a source's untagged `{IOC,Exp,Type}' list into the in-flight
+%% 4-tuple `{IOC,Exp,Type,Mask}' form (design §3.3, §5.1).
+%% When `Track' is `true' every element gets the per-source bit `1 bsl Index';
+%% when `false' the mask is `0'. Applied AFTER the hot-cache read so the cache
+%% remains source-pure and shareable across zones.
+%% @param IOC1 The untagged `{IOC,Exp,Type}' list from cache or `get_ioc'.
+%% @param Track Boolean tracking flag for the zone.
+%% @param Index 0-based source position, used to compute the bit.
+%% @returns A list of `{IOC,Exp,Type,Mask}' 4-tuples.
+tag_ioc(IOC1, true, Index) ->
+  Bit = 1 bsl Index,
+  [{I,E,T,Bit} || {I,E,T} <- IOC1];
+tag_ioc(IOC1, false, _Index) ->
+  [{I,E,T,0} || {I,E,T} <- IOC1].
 
 %% @doc Generates DNS RPZ rule resource records for a given domain and action.
 %% This is the core RPZ rule generator that converts an IOC domain name and
@@ -2079,6 +2282,181 @@ reverse_IP_test() ->[
 remove_WL_test() -> [
 	?assert(remove_WL([{<<"yellowcabnc.com">>,0,"fqdn"},{<<"google1.com">>,0,"fqdn"},{<<"example1.com">>,0,"fqdn"},{<<"exa1.com">>,0,"fqdn"}],[{<<"yellowcabnc.com">>,0,"fqdn"},{<<"google.com">>,0,"fqdn"},{<<"example.com">>,0,"fqdn"}]) =:= [{<<"exa1.com">>,0,"fqdn"}, {<<"example1.com">>,0,"fqdn"},{<<"google1.com">>,0,"fqdn"}]),
 	?assert(remove_WL([{<<"yellowcabnc.com">>,10,"fqdn"},{<<"google.com">>,0,"fqdn"},{<<"ioc2rpz.ru">>,10,"fqdn"}],[{<<"yellowcabnc.com">>,0,"fqdn"},{<<"google.com">>,0,"fqdn"},{<<"isc.com">>,0,"fqdn"},{<<"example.com">>,0,"fqdn"}]) =:= [{<<"ioc2rpz.ru">>,10,"fqdn"}])
+].
+
+%% Verifies the mask-preserving sort+merge dedup (design §5.2, R1/R5):
+%% duplicate {IOC,IoCType} collapse to one entry with max Exp and bor of masks;
+%% same IOC value with different IoCType stay distinct; empty/single inputs.
+merge_dedup_test() -> [
+	%% empty and single-element inputs
+	?assert(merge_dedup([]) =:= []),
+	?assert(merge_dedup([{<<"a.com">>,5,"fqdn",2}]) =:= [{<<"a.com">>,5,"fqdn",2}]),
+	%% duplicate {IOC,Type}: keep max Exp, OR masks (1 bor 4 = 5)
+	?assert(merge_dedup([{<<"a.com">>,5,"fqdn",1},{<<"a.com">>,9,"fqdn",4}])
+		=:= [{<<"a.com">>,9,"fqdn",5}]),
+	%% three in a run: max Exp=10, masks 1 bor 2 bor 8 = 11
+	?assert(merge_dedup([{<<"a.com">>,1,"fqdn",1},{<<"a.com">>,10,"fqdn",2},{<<"a.com">>,7,"fqdn",8}])
+		=:= [{<<"a.com">>,10,"fqdn",11}]),
+	%% mask OR across 3 duplicates with adjacent bits: 1 bor 2 bor 4 = 7
+	?assert(merge_dedup([{<<"a.com">>,1,"fqdn",1},{<<"a.com">>,2,"fqdn",2},{<<"a.com">>,3,"fqdn",4}])
+		=:= [{<<"a.com">>,3,"fqdn",7}]),
+	%% same IOC value, different IoCType => NOT merged (distinct keys), sorted by {IOC,Type}
+	?assert(merge_dedup([{<<"a.com">>,5,"ip",1},{<<"a.com">>,7,"fqdn",2}])
+		=:= [{<<"a.com">>,7,"fqdn",2},{<<"a.com">>,5,"ip",1}]),
+	%% distinct IOCs retained and sorted by IOC value
+	?assert(merge_dedup([{<<"b.com">>,0,"fqdn",1},{<<"a.com">>,0,"fqdn",2}])
+		=:= [{<<"a.com">>,0,"fqdn",2},{<<"b.com">>,0,"fqdn",1}]),
+	%% Track=false path: all masks 0, still dedups (max Exp) identically
+	?assert(merge_dedup([{<<"a.com">>,3,"fqdn",0},{<<"a.com">>,8,"fqdn",0}])
+		=:= [{<<"a.com">>,8,"fqdn",0}])
+].
+
+%% Verifies the whitelist-aware variant (design §5.2): whitelist subtraction
+%% compares on the IOC value only and preserves masks on survivors; empty WL
+%% behaves like merge_dedup/1; WL entries may be 3- or 4-tuples.
+merge_dedup_wl_test() -> [
+	%% empty whitelist == merge_dedup/1
+	?assert(merge_dedup([{<<"a.com">>,5,"fqdn",1},{<<"a.com">>,9,"fqdn",4}], [])
+		=:= [{<<"a.com">>,9,"fqdn",5}]),
+	%% whitelisted IOC value removed; survivor keeps merged mask (1 bor 2 = 3)
+	?assert(merge_dedup(
+			[{<<"a.com">>,5,"fqdn",1},{<<"a.com">>,9,"fqdn",2},{<<"bad.com">>,0,"fqdn",8}],
+			[{<<"bad.com">>,0,"fqdn"}])
+		=:= [{<<"a.com">>,9,"fqdn",3}]),
+	%% WL compares on IOC value only: different Type in WL still removes the IOC value
+	?assert(merge_dedup(
+			[{<<"a.com">>,5,"fqdn",1},{<<"b.com">>,0,"fqdn",2}],
+			[{<<"a.com">>,0,"ip"}])
+		=:= [{<<"b.com">>,0,"fqdn",2}]),
+	%% WL entries may be 4-tuples (mask ignored for the comparison)
+	?assert(merge_dedup(
+			[{<<"a.com">>,5,"fqdn",1},{<<"b.com">>,0,"fqdn",2}],
+			[{<<"a.com">>,0,"fqdn",99}])
+		=:= [{<<"b.com">>,0,"fqdn",2}]),
+	%% Task 5.3 / R1: whitelist subtraction keeps the OR of ALL masks in the run
+	%% on the survivor across 3+ duplicates (1 bor 2 bor 4 = 7); a whitelisted
+	%% IOC value is dropped regardless of its own mask.
+	?assert(merge_dedup(
+			[{<<"a.com">>,5,"fqdn",1},{<<"a.com">>,9,"fqdn",2},{<<"a.com">>,3,"fqdn",4},
+			 {<<"bad.com">>,0,"fqdn",8}],
+			[{<<"bad.com">>,0,"fqdn"}])
+		=:= [{<<"a.com">>,9,"fqdn",7}])
+].
+
+%% Task 5.3 / R1: the surviving Exp of a collapsed {IOC,IoCType} run is the
+%% "largest" expiration where `0' = never-expires DOMINATES any finite serial.
+%% This pins the exp_max/2 semantics (a plain erlang:max/2 would be a bug:
+%% erlang:max(0,100) == 100 would drop a never-expiring indicator). The Exp==0
+%% sentinel is honored codebase-wide by the `(IOCExp > Serial) orelse
+%% (IOCExp == 0)' guards in send_packets/write_db_record/read_db_record.
+merge_dedup_exp0_test() -> [
+	%% 0 (never expires) must win over a finite Exp, regardless of run order.
+	?assert(merge_dedup([{<<"a.com">>,0,"fqdn",1},{<<"a.com">>,100,"fqdn",4}])
+		=:= [{<<"a.com">>,0,"fqdn",5}]),
+	?assert(merge_dedup([{<<"a.com">>,100,"fqdn",1},{<<"a.com">>,0,"fqdn",4}])
+		=:= [{<<"a.com">>,0,"fqdn",5}]),
+	%% 0 dominates across a 3-element run too; masks still OR (1 bor 2 bor 4 = 7).
+	?assert(merge_dedup([{<<"a.com">>,50,"fqdn",1},{<<"a.com">>,0,"fqdn",2},{<<"a.com">>,90,"fqdn",4}])
+		=:= [{<<"a.com">>,0,"fqdn",7}]),
+	%% Two finite Exps: the numeric max wins when neither is 0.
+	?assert(merge_dedup([{<<"a.com">>,50,"fqdn",1},{<<"a.com">>,90,"fqdn",2}])
+		=:= [{<<"a.com">>,90,"fqdn",3}])
+].
+
+%% Task 5.3 / R1: direct unit test of the exp_max/2 helper — `0' (never expires)
+%% dominates any finite serial; otherwise the numeric maximum wins.
+exp_max_test() -> [
+	?assert(exp_max(0, 100) =:= 0),
+	?assert(exp_max(100, 0) =:= 0),
+	?assert(exp_max(0, 0) =:= 0),
+	?assert(exp_max(5, 9) =:= 9),
+	?assert(exp_max(9, 5) =:= 9),
+	?assert(exp_max(7, 7) =:= 7)
+].
+
+%% Reproduces the Track=false projection performed by mrpz_from_ioc/2: dedup the
+%% masked 4-tuples with the whitelist, project back to legacy 3-tuples, and
+%% restore standard term order. This is the exact transformation whose output
+%% must stay byte-for-byte identical to the old remove_WL/2 path for untracked
+%% feeds (task 5.2). Used only by the equivalence tests below.
+track_false_project(In4, WL) ->
+	lists:sort([{I,E,T} || {I,E,T,_M} <- merge_dedup(In4, WL)]).
+
+%% Task 5.2 / R1 / R5: for a Track=false input (all masks 0) with NO duplicate
+%% {IOC,IoCType} keys, the new merge_dedup+project+sort pipeline MUST yield the
+%% SAME sequence as the legacy remove_WL/2 (ordsets:from_list) on the 3-tuple
+%% projection — guaranteeing byte-for-byte unchanged wire output / ioc_md5 for
+%% untracked feeds and upgrades.
+merge_dedup_track_false_equiv_test() ->
+	%% Helper: strip masks to feed the legacy oracle.
+	P3 = fun(In4) -> [{I,E,T} || {I,E,T,_M} <- In4] end,
+	%% 1) Distinct IOCs, mixed order, all masks 0, empty WL.
+	In1 = [{<<"b.com">>,0,"fqdn",0},{<<"a.com">>,10,"fqdn",0},{<<"c.com">>,5,"fqdn",0}],
+	%% 2) Same IOC value under two IoCTypes with Exp ordering OPPOSITE to the
+	%%    type ordering — the exact case where {IOC,Type} order would diverge
+	%%    from the legacy {IOC,Exp,Type} order. The final lists:sort/1 must fix it.
+	In2 = [{<<"x.com">>,100,"fqdn",0},{<<"x.com">>,50,"ip",0},{<<"a.com">>,0,"fqdn",0}],
+	%% 3) IPs and fqdns interleaved, all unique keys.
+	In3 = [{<<"1.2.3.4">>,0,"ip",0},{<<"z.com">>,7,"fqdn",0},{<<"1.2.3.4">>,0,"ip",0}],
+	[
+		?assert(track_false_project(In1, []) =:= remove_WL(P3(In1), [])),
+		?assert(track_false_project(In2, []) =:= remove_WL(P3(In2), [])),
+		?assert(track_false_project(In3, []) =:= remove_WL(P3(In3), [])),
+		%% Explicit expected value for the tricky In2 case: legacy term order puts
+		%% {x.com,50,"ip"} before {x.com,100,"fqdn"} (Exp 50 < 100).
+		?assert(track_false_project(In2, [])
+			=:= [{<<"a.com">>,0,"fqdn"},{<<"x.com">>,50,"ip"},{<<"x.com">>,100,"fqdn"}])
+	].
+
+%% Task 5.2 / R1: whitelist-path equivalence for the no-duplicate case. With all
+%% masks 0 and unique {IOC,Type} keys, the new pipeline with a non-empty
+%% whitelist must match the legacy remove_WL/2 (subtraction on IOC value only).
+merge_dedup_track_false_wl_equiv_test() ->
+	P3 = fun(In4) -> [{I,E,T} || {I,E,T,_M} <- In4] end,
+	In = [{<<"bad.com">>,0,"fqdn",0},{<<"good.com">>,10,"fqdn",0},
+	      {<<"keep.com">>,5,"fqdn",0},{<<"1.2.3.4">>,0,"ip",0}],
+	WL = [{<<"bad.com">>,0,"fqdn"},{<<"1.2.3.4">>,0,"ip"}],
+	[
+		?assert(track_false_project(In, WL) =:= remove_WL(P3(In), WL)),
+		?assert(track_false_project(In, [])  =:= remove_WL(P3(In), []))
+	].
+
+%% Task 5.2 / R1 (documented, intentional divergence): when the SAME {IOC,Type}
+%% appears with DIFFERENT Exp values, the legacy code kept both distinct 3-tuples
+%% whereas the new behavior collapses them into ONE entry with the max Exp. This
+%% test pins that accepted change so a future regression is caught. This is the
+%% desired R1 invariant ("one stored entry per unique {IOC,IoCType} per zone").
+merge_dedup_collapse_vs_legacy_test() ->
+	In4 = [{<<"a.com">>,5,"fqdn",0},{<<"a.com">>,9,"fqdn",0}],
+	Legacy = remove_WL([{I,E,T} || {I,E,T,_M} <- In4], []),
+	New = track_false_project(In4, []),
+	[
+		%% Legacy keeps two entries (dedup on the full 3-tuple).
+		?assert(Legacy =:= [{<<"a.com">>,5,"fqdn"},{<<"a.com">>,9,"fqdn"}]),
+		%% New collapses to one entry with max Exp (R1) — intentionally different.
+		?assert(New =:= [{<<"a.com">>,9,"fqdn"}]),
+		?assert(New =/= Legacy)
+	].
+
+%% Verifies per-source bit tagging (design §3.3, §5.1): with Track=true each
+%% {IOC,Exp,Type} becomes {IOC,Exp,Type, 1 bsl Index}; with Track=false the mask
+%% is 0. Length and element order are preserved.
+tag_ioc_test() -> [
+	%% Track=true, index 0 => bit 1
+	?assert(tag_ioc([{<<"a.com">>,0,"fqdn"},{<<"b.com">>,10,"fqdn"}], true, 0)
+		=:= [{<<"a.com">>,0,"fqdn",1},{<<"b.com">>,10,"fqdn",1}]),
+	%% Track=true, index 3 => bit 8 (1 bsl 3)
+	?assert(tag_ioc([{<<"a.com">>,0,"fqdn"}], true, 3)
+		=:= [{<<"a.com">>,0,"fqdn",8}]),
+	%% Track=true, index 5 => bit 32
+	?assert(tag_ioc([{<<"c.com">>,7,"fqdn"}], true, 5)
+		=:= [{<<"c.com">>,7,"fqdn",32}]),
+	%% Track=false => mask 0 regardless of index
+	?assert(tag_ioc([{<<"a.com">>,0,"fqdn"},{<<"b.com">>,10,"fqdn"}], false, 4)
+		=:= [{<<"a.com">>,0,"fqdn",0},{<<"b.com">>,10,"fqdn",0}]),
+	%% empty list stays empty
+	?assert(tag_ioc([], true, 2) =:= []),
+	?assert(tag_ioc([], false, 0) =:= [])
 ].
 
 rl_key_test() ->

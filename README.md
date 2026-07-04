@@ -645,7 +645,8 @@ Success:
           "wildcard": "true",
           "type": "fqdn",
           "rpz_serial": 1709000000,
-          "ioc_expiration": 0
+          "ioc_expiration": 0,
+          "sources": ["abuse-ch", "internal-list"]
         }
       ]
     }
@@ -653,6 +654,8 @@ Success:
 }
 ```
 Error: `{"status":"error", "ioc": "nonexistent.com"}`
+
+The additive `sources` field lists the contributing source name(s) per feed when source tracking is enabled; it is `null` when tracking is disabled or attribution is unknown. See [IOC Source Attribution](#ioc-source-attribution) for configuration and semantics.
 
 #### Unsupported Endpoints
 
@@ -738,11 +741,16 @@ ioc2rpz™ supports the following configuration parameters:
 - an email address for SOA record (in SOA format);
 - list of management TSIG keys (names only). Please refer [the management section](#ioc2rpz-management) for the details.
 - list of ACL IP addresses for REST API access control.
+- (optional) `TrackSources` — the server-level global default for source attribution: `off | auto | on` (default `off`). Applied to any feed whose own `track_sources` is unset. See [IOC Source Attribution](#ioc-source-attribution).
 
 Sample **srv** record:  
 ```
 {srv,{"ns1.example.com","support.email.example.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"],["acl_ip1","acl_ip2"]}}.
+
+%% With the optional global source-tracking default (5-field form):
+{srv,{"ns1.example.com","support.email.example.com",["dnsmkey_1"],["acl_ip1"],auto}}.
 ```
+The 4-field form remains valid and defaults `TrackSources` to `off`.
 ### **cert** record
 **cert** record is used to define a certificate and a private key for DNS over TLS, REST API, and DoH communications. For certificate generation and management, see [Certificate Setup](#certificate-setup).
 
@@ -887,7 +895,8 @@ RPZ term defines a response policy zone.
 - Incremental zone update time  (IXFR Time). Sources should support incremental updates. "0" means no incremental zone updates;
 - List of the sources;
 - List of DNS servers (IP addresses) which should be notified on an RPZ updates (see [DNS NOTIFY](#dns-notify));
-- List of whitelists.  
+- List of whitelists.
+- (optional) `TrackSources` — per-feed source attribution: `auto | true | false`. When present it overrides the server global default. When omitted (15-field form) the feed inherits the server default (`#srv` `TrackSources`, `off` unless configured). See [IOC Source Attribution](#ioc-source-attribution).
 
 #### RPZ Actions
 
@@ -917,7 +926,58 @@ Sample **rpz** record:
 {rpz,{"mixed.ioc2rpz",7202,3600,2592000,7200,"true","true","passthru",["dnsproxykey_1","dnsproxykey_2"],"mixed",86400,3600,["sample_fqdn","sample_expire","sample_ip"],[],["whitelist_1","whitelist_2"]}}.
 
 {rpz,{"mixed.ioc2rpz",7202,3600,2592000,7200,"true","true","passthru",["dnsproxykey_1","dnsproxykey_2",{groups,["public","ip2"]}],"mixed",86400,3600,["sample_fqdn","sample_expire","sample_ip"],[],["whitelist_1","whitelist_2"]}}.
+
+%% With explicit per-feed source tracking (16-field form; trailing `auto`):
+{rpz,{"mixed.ioc2rpz",7202,3600,2592000,7200,"true","true","passthru",["dnsproxykey_1"],"mixed",86400,3600,["sample_fqdn","sample_expire","sample_ip"],[],["whitelist_1"],auto}}.
 ```
+
+### IOC Source Attribution
+An RPZ feed is built by merging indicators from multiple sources. Source attribution lets the IOC-lookup API report **which source(s) inside a feed** contributed an indicator — useful for triaging a reported false positive. Tracking is **off by default** and controlled per feed with an optional server-level global default.
+
+**Configuration**
+
+- Per-feed: the optional trailing (16th) `TrackSources` element of the `{rpz,{...}}` tuple — `auto | true | false`.
+- Server global default: the optional trailing (5th) `TrackSources` element of the `{srv,{...}}` tuple — `off | auto | on` (default `off`).
+
+Both are optional and backward compatible: existing config files (15-field `rpz`, 4-field `srv`) load unchanged and behave as off.
+
+**Resolution precedence** — the effective state for a feed is resolved as:
+1. the feed's explicit `track_sources` value, if set;
+2. otherwise the server global default;
+3. otherwise the built-in default `off`.
+
+`auto` means: track only **multi-source** feeds. Single-source feeds are never masked — their one source name is returned directly (no tracking cost).
+
+**API — the additive `sources` field**
+
+The `/api/v1/ioc/:ioc` response gains a new `sources` field on each feed object. It is **additive and backward compatible**: all existing fields are unchanged, so old clients that ignore it keep working.
+
+- Tracked multi-source feed: a JSON array of the contributing source names.
+- Single-source feed: a single-element array with that one source name.
+- Tracking disabled, or attribution unknown (e.g. a pre-upgrade cached row before its one-time AXFR rebuild): `null` (JSON) / `(disabled)` or `(unavailable)` (TXT).
+
+```json
+{
+  "feed": "mixed.ioc2rpz",
+  "wildcard": "true",
+  "type": "fqdn",
+  "rpz_serial": 1709000000,
+  "ioc_expiration": 0,
+  "sources": ["abuse-ch", "internal-list"]
+}
+```
+Single-source feed: `"sources": ["sample_fqdn"]`. Tracking disabled/unknown: `"sources": null`.
+
+**Rollout (off by default)**
+
+Upgrading the binary changes nothing — no tracking, no zone rebuilds, unchanged API — until a `track_sources` value is set. Feeds are GUI-managed; the GUI/community site will write these optional config values and surface `sources` in a later update. Enabling tracking for a cached feed triggers a one-time AXFR rebuild to populate the source masks.
+
+**Limitations**
+
+- Attribution is only available for **cached** feeds (`cache = "true"`), since the API lookup reads the IXFR cache table.
+- Masks are authoritative after a full **AXFR** rebuild. On **IXFR** updates, masks for newly-added indicators are set correctly, but a mask change for an already-present indicator (a second source begins listing an existing IOC) may only reconcile on the next AXFR.
+- Source masks are per-zone positional (bit *i* = *i*-th source). **Reordering or editing a zone's source list forces a one-time AXFR rebuild** (detected via a source-signature check) so masks are re-derived.
+- Feeds with **more than 63 sources** use a wider binary bitmap mask (default) so attribution stays correct.
 
 <details>
 <summary><strong>Sample configuration file</strong> (click to expand)</summary>
