@@ -137,7 +137,7 @@
 %%%===================================================================
 
 %% Application version string: "major.minor.patch.build-YYYYMMDDNN"
--define(ioc2rpz_ver, "1.4.0.0-2026070401").
+-define(ioc2rpz_ver, "1.4.0.1-2026070701").
 
 %% DNS label compression pointer for the query name (QNAME) in responses.
 %% In a standard DNS response, the original QNAME from the question section
@@ -245,6 +245,17 @@
 %% to DNS messages for transaction signing (RFC 2845).
 -define(RT_TSIG,250).
 
+%% Classic DNS UDP message size limit (RFC 1035 §4.2.1). A UDP response that
+%% would exceed this is truncated and the TC bit is set so the client retries
+%% over TCP. Also the default #proto.edns_size for non-EDNS0 requests.
+-define(DNS_UDP_SIZE,512).
+
+%% Upper bound applied to a requestor's advertised EDNS0 (RFC 6891) UDP payload
+%% size. A client OPT record may advertise a large buffer; ioc2rpz honours it up
+%% to this cap so a single large UDP datagram cannot be abused for amplification
+%% and stays within common path MTUs / reassembly limits.
+-define(EDNS_MAX_UDP_SIZE,4096).
+
 %%%===================================================================
 %%% DNS Operation Codes — RFC 1035 §4.1.1
 %%%
@@ -349,7 +360,11 @@
 %%   qtype   — query type (e.g., ?T_SOA, ?T_AXFR)
 %%   qclass  — query class (e.g., ?C_IN)
 %%   keyname — TSIG key name used for authentication (or `undefined`)
--record(proto, {proto, tls, rip, rport, qname, qtype, qclass, keyname}).
+%%   edns_size — requestor's advertised UDP payload size (RFC 6891 EDNS0). Set
+%%               from the request's OPT pseudo-record when present, otherwise the
+%%               classic DNS limit `?DNS_UDP_SIZE` (512). Used by send_dns_udp/6
+%%               to decide when a UDP response must be truncated with the TC bit.
+-record(proto, {proto, tls, rip, rport, qname, qtype, qclass, keyname, edns_size = ?DNS_UDP_SIZE}).
 
 %%%===================================================================
 %%% Configuration Records

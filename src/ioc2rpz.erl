@@ -278,7 +278,9 @@ send_dns(_Socket,Pkt,[Proto,_Args]) when Proto#proto.proto == doh ->
 	{ok, Pkt};
 
 send_dns(Socket,Pkt,[Proto,Args]) when Proto#proto.proto == udp ->
-  send_dns_udp(Socket, Proto#proto.rip, Proto#proto.rport, Pkt, Args).
+  %Honour the requestor's EDNS0 (RFC 6891) UDP payload size when deciding the
+  %truncation threshold; falls back to ?DNS_UDP_SIZE (512) for non-EDNS clients.
+  send_dns_udp(Socket, Proto#proto.rip, Proto#proto.rport, Pkt, Proto#proto.edns_size, Args).
 
 %% @doc Sends a DNS response over a TCP socket.
 %% When Args is `addlen', prepends the 2-byte DNS TCP length prefix to the packet.
@@ -334,27 +336,33 @@ send_dns_tls(Socket, Pkt, []) -> %used to pass intermediate packets
     {error, Reason} -> {error, Reason} %passing a reason if send was failed
   end.
 
-%% @doc Sends a DNS response over UDP.
-%% Responses larger than 512 bytes are truncated with the TC bit set (RFC 1035 §4.2.1).
-%% The `gen_udp:send/4' return value is checked; failures are logged and returned.
+%% @doc Sends a DNS response over UDP, honouring EDNS0 (RFC 6891).
+%%
+%% `MaxSize' is the maximum UDP payload the client accepts: the requestor's
+%% advertised EDNS0 buffer size when the query carried an OPT record (capped at
+%% `?EDNS_MAX_UDP_SIZE'), or `?DNS_UDP_SIZE' (512) for a classic non-EDNS client.
+%% A response larger than `MaxSize' is truncated to `MaxSize' bytes with the TC
+%% (truncation) bit set (RFC 1035 §4.2.1 / RFC 6891 §6.2.4) so the client retries
+%% over TCP. The `gen_udp:send/4' return value is checked; failures are logged
+%% and returned.
 %% @param Socket The UDP socket.
 %% @param Dst The destination IP address tuple.
 %% @param Port The destination port number.
 %% @param Pkt The DNS response packet binary.
+%% @param MaxSize The maximum UDP payload size the client accepts.
 %% @param Args Unused arguments (reserved for future use).
 %% @returns `ok' on success, `{error, Reason}' on send failure.
-send_dns_udp(Socket, Dst, Port, Pkt, _Args) when byte_size(Pkt) > 512 ->
-  %RFC 1035 4.2.1: a UDP DNS response must not exceed 512 bytes. Oversized
-  %responses are truncated to 512 bytes and the TC (truncation) bit is set in
-  %the header so the client retries the query over TCP.
+send_dns_udp(Socket, Dst, Port, Pkt, MaxSize, _Args) when byte_size(Pkt) > MaxSize ->
+  %The response exceeds the client's (EDNS0-advertised or classic 512-byte) UDP
+  %limit. Truncate to MaxSize and set the TC bit so the client retries over TCP.
   <<DNSId:2/binary, FlagsB1:8, Rest/binary>> = Pkt,
   TCFlags = FlagsB1 bor 16#02, % set the TC bit (0x02) in the first flags byte
-  Truncated = binary:part(<<DNSId/binary, TCFlags:8, Rest/binary>>, 0, 512),
+  Truncated = binary:part(<<DNSId/binary, TCFlags:8, Rest/binary>>, 0, MaxSize),
   case gen_udp:send(Socket, Dst, Port, Truncated) of
     ok -> ok;
     {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. send_dns_udp. remote IP ~p error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, ip_to_str(Dst), Reason]), {error, Reason}
   end;
-send_dns_udp(Socket, Dst, Port, Pkt, _Args) ->
+send_dns_udp(Socket, Dst, Port, Pkt, _MaxSize, _Args) ->
   case gen_udp:send(Socket, Dst, Port, Pkt) of
     ok -> ok;
     {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. send_dns_udp. remote IP ~p error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, ip_to_str(Dst), Reason]), {error, Reason}
@@ -405,6 +413,10 @@ parse_dns_request(Socket, <<PH:4/bytes, _QDCOUNT:2/big-unsigned-unit:8,_ANCOUNT:
   {<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, Other_REC/binary>>,QName} = extract_label(Rest,<<>>),
   Question = <<QName/binary,0:8,QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8>>,
   QStr=dombin_to_str(QName),
+  %EDNS0 (RFC 6891): resolve the requestor's advertised UDP payload size from the
+  %request's OPT pseudo-record (if any) and carry it in #proto so send_dns_udp/6
+  %can raise the UDP truncation threshold above the classic 512 bytes.
+  Proto0 = Proto#proto{edns_size = edns_udp_size(NSCOUNT, ARCOUNT, Other_REC)},
   %2025-01-10 Resolve the RPZ zone once here so it is not looked up again in
   %process_dns_request/4 (addresses the "optimize passing processed data" TODO).
   RpzZone = rpz_zone(QName),
@@ -413,8 +425,8 @@ parse_dns_request(Socket, <<PH:4/bytes, _QDCOUNT:2/big-unsigned-unit:8,_ANCOUNT:
   %for everything else (prevents query-name-variation bypass). See rl_key/5.
   case ioc2rpz_fun:check_rate_limit(rl_key(Rip,QName,QType,QClass,RpzZone)) of
       true -> % Rate limit exceeded - send refused
-        ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(429),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr,ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]), % Log rate limiting event
-        send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?REFUSED:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto);
+        ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(429),[ip_to_str(Proto0#proto.rip),Proto0#proto.rport,?iif(Proto0#proto.tls == yes,tls,Proto0#proto.proto),QStr,ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]), % Log rate limiting event
+        send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?REFUSED:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto0);
 % 2025-01-11 A client (dig) expects a signed response. It may be not needed at all - to check RFC
 %        case ARCOUNT of 
 %          0 ->
@@ -428,7 +440,35 @@ parse_dns_request(Socket, <<PH:4/bytes, _QDCOUNT:2/big-unsigned-unit:8,_ANCOUNT:
 %          end;
       false -> % Rate limit not exceeded, process the request
         %2025-01-10 TODO optimize passing processed data
-        process_dns_request(Socket, Data, Proto, RpzZone)
+        process_dns_request(Socket, Data, Proto0, RpzZone)
+  end.
+
+%% @doc Extracts the requestor's EDNS0 (RFC 6891) UDP payload size from a DNS
+%% request's additional/authority section.
+%%
+%% In an OPT pseudo-record the CLASS field carries the requestor's UDP payload
+%% size. This reuses {@link parse_rr/3} to walk the records (handling label
+%% compression) and returns the advertised size clamped to
+%% `[?DNS_UDP_SIZE, ?EDNS_MAX_UDP_SIZE]'. When no OPT record is present (classic
+%% DNS) or the section cannot be parsed, `?DNS_UDP_SIZE' (512) is returned so the
+%% legacy truncation behaviour is preserved. Parsing errors are swallowed
+%% (defensive: this runs before rate limiting) and fall back to 512.
+%%
+%% @param NSCOUNT Authority record count from the DNS header.
+%% @param ARCOUNT Additional record count from the DNS header.
+%% @param RAW The raw authority+additional section bytes.
+%% @returns The effective UDP payload size in bytes.
+-spec edns_udp_size(integer(), integer(), binary()) -> pos_integer().
+edns_udp_size(NSCOUNT, ARCOUNT, RAW) ->
+  try parse_rr(NSCOUNT, ARCOUNT, RAW) of
+    {ok, RR, _TSIG, _SOA, _RAWN} ->
+      case [ C || #dns_RR{type=T, class=C} <- RR, T == ?T_OPT ] of
+        [Size | _] -> min(max(Size, ?DNS_UDP_SIZE), ?EDNS_MAX_UDP_SIZE);
+        []         -> ?DNS_UDP_SIZE
+      end;
+    _ -> ?DNS_UDP_SIZE
+  catch
+    _:_ -> ?DNS_UDP_SIZE
   end.
 
 %% @doc Processes a validated DNS request after rate limiting.
@@ -1104,7 +1144,7 @@ send_notify(Dst,Pkt,udp,NRuns,Zone) -> % TODO NRuns - will be used to resend Not
   case gen_udp:open(Port, [{active,false}]) of
   	{ok, Sock} ->
       DNSId = crypto:strong_rand_bytes(2),
-      send_dns_udp(Sock, Dst, 53, [DNSId,Pkt],[]),
+      send_dns_udp(Sock, Dst, 53, [DNSId,Pkt], ?DNS_UDP_SIZE, []),
 %      {Status,Pkt} = get_packet(Sock,Server,DNSId), %TODO wait for the response
       gen_udp:close(Sock);
     {error, eaddrinuse} when NRuns < 3 -> send_notify(Dst,Pkt,udp,NRuns+1,Zone);
@@ -2283,6 +2323,24 @@ remove_WL_test() -> [
 	?assert(remove_WL([{<<"yellowcabnc.com">>,0,"fqdn"},{<<"google1.com">>,0,"fqdn"},{<<"example1.com">>,0,"fqdn"},{<<"exa1.com">>,0,"fqdn"}],[{<<"yellowcabnc.com">>,0,"fqdn"},{<<"google.com">>,0,"fqdn"},{<<"example.com">>,0,"fqdn"}]) =:= [{<<"exa1.com">>,0,"fqdn"}, {<<"example1.com">>,0,"fqdn"},{<<"google1.com">>,0,"fqdn"}]),
 	?assert(remove_WL([{<<"yellowcabnc.com">>,10,"fqdn"},{<<"google.com">>,0,"fqdn"},{<<"ioc2rpz.ru">>,10,"fqdn"}],[{<<"yellowcabnc.com">>,0,"fqdn"},{<<"google.com">>,0,"fqdn"},{<<"isc.com">>,0,"fqdn"},{<<"example.com">>,0,"fqdn"}]) =:= [{<<"ioc2rpz.ru">>,10,"fqdn"}])
 ].
+
+%% Verifies EDNS0 (RFC 6891) requestor UDP payload-size extraction used by
+%% send_dns_udp/6. The OPT pseudo-record's CLASS field carries the advertised
+%% size; it is clamped to [?DNS_UDP_SIZE, ?EDNS_MAX_UDP_SIZE], and a request
+%% without an OPT record (or an unparsable section) falls back to 512.
+edns_udp_size_test() ->
+	%% root NAME (0), TYPE=OPT(41), CLASS=<advertised size>, TTL=0, RDLEN=0
+	Opt = fun(Size) -> <<0, ?T_OPT:16, Size:16, 0:32, 0:16>> end,
+	[ %% no additional records -> classic 512
+	  ?assertEqual(?DNS_UDP_SIZE, edns_udp_size(0, 0, <<>>)),
+	  %% OPT advertising 1232 (a common EDNS buffer) is honoured
+	  ?assertEqual(1232, edns_udp_size(0, 1, Opt(1232))),
+	  %% OPT advertising above the cap is clamped to ?EDNS_MAX_UDP_SIZE
+	  ?assertEqual(?EDNS_MAX_UDP_SIZE, edns_udp_size(0, 1, Opt(9000))),
+	  %% OPT advertising below 512 is raised to 512
+	  ?assertEqual(?DNS_UDP_SIZE, edns_udp_size(0, 1, Opt(200))),
+	  %% an unparsable additional section falls back safely to 512
+	  ?assertEqual(?DNS_UDP_SIZE, edns_udp_size(0, 1, <<255,255,255>>)) ].
 
 %% Verifies the mask-preserving sort+merge dedup (design §5.2, R1/R5):
 %% duplicate {IOC,IoCType} collapse to one entry with max Exp and bor of masks;

