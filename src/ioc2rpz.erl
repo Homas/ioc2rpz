@@ -250,9 +250,67 @@ terminate(_Reason, _Tab) ->
 code_change(_OldVersion, Tab, _Extra) ->
   {ok, Tab}.
 
+%%%-------------------------------------------------------------------
+%%% Sent bytes accounting
+%%%
+%%% A zone transfer is streamed as many packets by several mutually recursive
+%%% functions (send_cached_zone/9, send_packets/20, send_zone_live/9), none of
+%%% which carries a byte accumulator. Threading one through all of them would
+%%% touch every clause, so instead the byte total is kept in the process
+%%% dictionary of the connection process that owns the socket and is updated in
+%%% one place - send_dns/3, the single funnel for every outgoing DNS packet.
+%%%
+%%% Accounting is opt-in: add_sent_bytes/1 is a no-op until start_sent_bytes/0
+%%% has armed the counter for the current process. That keeps the counter out of
+%%% the way of the ordinary query path and of the zone caching processes (which
+%%% run send_packets/20 with DBOp == cache and never touch the socket).
+%%%-------------------------------------------------------------------
+
+%% @doc Process dictionary key holding the number of bytes sent by the current
+%% process for the operation being accounted.
+-define(SentBytesKey, ioc2rpz_sent_bytes).
+
+%% @doc Arms (or re-arms) the sent bytes counter for the current process.
+%% Call right before an operation whose on-wire size has to be reported.
+%% @returns `ok'.
+start_sent_bytes() ->
+  put(?SentBytesKey, 0),
+  ok.
+
+%% @doc Adds the on-wire size of a successfully sent packet to the counter.
+%% Does nothing when the counter was not armed by {@link start_sent_bytes/0}.
+%% @param Bytes The number of bytes handed to the socket.
+%% @returns `ok'.
+add_sent_bytes(Bytes) ->
+  case get(?SentBytesKey) of
+    undefined -> ok; %not accounting for this process/operation
+    Sent -> put(?SentBytesKey, Sent+Bytes), ok
+  end.
+
+%% @doc Returns the number of bytes sent since the counter was armed, `0' when
+%% accounting was never armed for the current process.
+%% @returns The byte total.
+sent_bytes() ->
+  case get(?SentBytesKey) of
+    undefined -> 0;
+    Sent -> Sent
+  end.
+
+%% @doc Computes the on-wire size of a DNS packet as handed to send_dns/3.
+%% With `addlen' the transport prepends a 2 byte TCP length prefix, so it is
+%% accounted for here; with `[]' the caller has already embedded the prefix in
+%% the packet itself.
+%% @param Pkt The packet binary or iolist.
+%% @param Args `addlen' or `[]'.
+%% @returns The number of bytes that go over the wire.
+wire_size(Pkt, addlen) -> iolist_size(Pkt)+2;
+wire_size(Pkt, _Args) -> iolist_size(Pkt).
+
 %% @doc Dispatches a DNS packet to the appropriate transport-specific send function.
 %% Routes to `send_dns_tcp/3', `send_dns_tls/3', or `send_dns_udp/5' based on
 %% the protocol and TLS flag in the Proto record.
+%% On a successful send the on-wire packet size is added to the sent bytes
+%% counter of the calling process (see {@link start_sent_bytes/0}).
 %% @param Socket The connection socket.
 %% @param Pkt The DNS response packet binary.
 %% @param ProtoArgs A list `[Proto, Args]' where Proto is a `#proto{}' record
@@ -263,14 +321,14 @@ send_dns(Socket,Pkt,[Proto,Args]) when Proto#proto.proto == tcp, Proto#proto.tls
   case send_dns_tcp(Socket,Pkt, Args) of
    {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. send_dns_tcp. remote IP ~p error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, ip_to_str(Proto#proto.rip), Reason]),
                       {error, Reason};
-   ok -> ok
+   ok -> add_sent_bytes(wire_size(Pkt,Args)), ok
   end;
 
 send_dns(Socket,Pkt,[Proto,Args]) when Proto#proto.proto == tcp, Proto#proto.tls == yes ->
   case send_dns_tls(Socket,Pkt, Args) of
    {error, Reason} -> ioc2rpz_fun:logMessage("~p:~p:~p. send_dns_tls. error: ~p ~n",[?MODULE, ?FUNCTION_NAME, ?LINE, Reason]),
                       {error, Reason};
-   ok -> ok
+   ok -> add_sent_bytes(wire_size(Pkt,Args)), ok
   end;
 
 send_dns(_Socket,Pkt,[Proto,_Args]) when Proto#proto.proto == doh ->
@@ -280,7 +338,11 @@ send_dns(_Socket,Pkt,[Proto,_Args]) when Proto#proto.proto == doh ->
 send_dns(Socket,Pkt,[Proto,Args]) when Proto#proto.proto == udp ->
   %Honour the requestor's EDNS0 (RFC 6891) UDP payload size when deciding the
   %truncation threshold; falls back to ?DNS_UDP_SIZE (512) for non-EDNS clients.
-  send_dns_udp(Socket, Proto#proto.rip, Proto#proto.rport, Pkt, Proto#proto.edns_size, Args).
+  case send_dns_udp(Socket, Proto#proto.rip, Proto#proto.rport, Pkt, Proto#proto.edns_size, Args) of
+    %an oversized response is truncated to edns_size before it is sent
+    ok -> add_sent_bytes(min(iolist_size(Pkt),Proto#proto.edns_size)), ok;
+    {error, Reason} -> {error, Reason}
+  end.
 
 %% @doc Sends a DNS response over a TCP socket.
 %% When Args is `addlen', prepends the 2-byte DNS TCP length prefix to the packet.
@@ -613,16 +675,20 @@ process_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:
               {QType,noauth} when QType == ?T_SOA;QType == ?T_IXFR,Proto#proto.proto == udp -> send_SOA(Socket, Zone, DNSId, OptB, OptE, Question, MailAddr, NSServ, [], Proto);
               {QType,valid} when QType == ?T_SOA;QType == ?T_IXFR,Proto#proto.proto == udp -> send_SOA(Socket, Zone, DNSId, OptB, OptE, Question, MailAddr, NSServ, TSIG1, Proto);
               {_,noauth} ->
+                  %arm the sent bytes counter so the transfer size can be reported
+                  %in the log line below (out=<bytes>), for both success and failure
+                  start_sent_bytes(),
                   case send_zone(Zone#rpz.cache,Socket,{Question,DNSId,OptB,OptE,<<QDCOUNT:2,ANCOUNT:2,NSCOUNT:2,ARCOUNT:2>>,Rest,Zone, QType,NSServ,MailAddr,[],SOA}, Proto) of
-                   ok -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(201),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),"",(erlang:system_time(millisecond)-STime)]);
-                   {error, closed} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(131),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),(erlang:system_time(millisecond)-STime),closed]);
-                   {error, Reason} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(131),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),(erlang:system_time(millisecond)-STime),Reason])
+                   ok -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(201),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),"",(erlang:system_time(millisecond)-STime),sent_bytes()]);
+                   {error, closed} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(131),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),(erlang:system_time(millisecond)-STime),closed,sent_bytes()]);
+                   {error, Reason} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(131),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),(erlang:system_time(millisecond)-STime),Reason,sent_bytes()])
                   end;
               {_,valid} ->
+                  start_sent_bytes(),
                   case send_zone(Zone#rpz.cache,Socket,{Question,DNSId,OptB,OptE,<<QDCOUNT:2,ANCOUNT:2,NSCOUNT:2,ARCOUNT:2>>,Rest,Zone,QType,NSServ,MailAddr,TSIG1,SOA}, Proto) of
-                   ok -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(201),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),(erlang:system_time(millisecond)-STime)]);
-                   {error, closed} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(131),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),(erlang:system_time(millisecond)-STime),closed]);
-                   {error, Reason} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(131),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),(erlang:system_time(millisecond)-STime),Reason])
+                   ok -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(201),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),(erlang:system_time(millisecond)-STime),sent_bytes()]);
+                   {error, closed} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(131),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),(erlang:system_time(millisecond)-STime),closed,sent_bytes()]);
+                   {error, Reason} -> ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(131),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name),(erlang:system_time(millisecond)-STime),Reason,sent_bytes()])
                   %%%%%%%%%% double check TSIG1 was replaced with TSIG
                   end;
               {_,TSIGV} -> send_TSIG_error(TSIGV, Socket, DNSId, OptB, OptE, Question, TSIG1, ["zone transfer failed",[Zone#rpz.zone_str,TSIGV],QStr, QType, QClass], Proto)

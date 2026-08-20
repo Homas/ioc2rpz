@@ -117,8 +117,12 @@ msg_CEF(109)    -> "|000109|Received DNS response|3|src=~s spt=~p proto=~p qname
 msg_CEF(120)    -> "|000120|RPZ not found|5|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
 msg_CEF(121)    -> "|000121|RPZ not ready|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p msg=~p~n";
 
-msg_CEF(130)    -> "|000130|RPZ transfer error|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p error=~p~n";
-msg_CEF(131)    -> "|000131|RPZ transfer error. Remote server closed connection|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p reason=~p~n";
+%out=<bytes> is the standard CEF field for the number of bytes sent to the
+%destination. For a zone transfer it is the total on-wire size of all DNS
+%response packets pushed to the client, including the 2 byte TCP length prefixes.
+%On a failed transfer it reflects what was successfully sent before the failure.
+msg_CEF(130)    -> "|000130|RPZ transfer error|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p error=~p out=~p~n";
+msg_CEF(131)    -> "|000131|RPZ transfer error. Remote server closed connection|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p reason=~p out=~p~n";
 
 
 msg_CEF(140)    -> "|000140|REST API Basic authentication failed|7|src=~s spt=~p username=~p path=~p msg=~p~n";
@@ -128,7 +132,7 @@ msg_CEF(146)    -> "|000146|MGMT request failed|7|src=~s spt=~p path=~p msg=~p~n
 msg_CEF(147)    -> "|000147|Unsupported request|7|src=~s spt=~p path=~p msg=~p~n";
 msg_CEF(148)    -> "|000148|Zone not found|7|src=~s spt=~p path=~p msg=~p~n";
 
-msg_CEF(201)    -> "|000201|RPZ transfer success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p~n";
+msg_CEF(201)    -> "|000201|RPZ transfer success|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p  tsigkey=~p transfer_time=~p out=~p~n";
 msg_CEF(202)    -> "|000202|DNS Query|3|src=~s spt=~p proto=~p qname=~p qtype=~p qclass=~p tsigkey=~p~n";
 
 msg_CEF(230)    -> "|000230|MGMT request|7|src=~s spt=~p path=~p msg=~p~n";

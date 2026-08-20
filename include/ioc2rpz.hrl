@@ -137,7 +137,7 @@
 %%%===================================================================
 
 %% Application version string: "major.minor.patch.build-YYYYMMDDNN"
--define(ioc2rpz_ver, "1.4.0.1-2026070701").
+-define(ioc2rpz_ver, "1.4.0.2-2026082001").
 
 %% DNS label compression pointer for the query name (QNAME) in responses.
 %% In a standard DNS response, the original QNAME from the question section
