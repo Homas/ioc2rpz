@@ -40,8 +40,9 @@ ioc2rpz_app (application)
 2. `ioc2rpz_sup:start_ioc2rpz_sup/1` starts the top-level supervisor
 3. `ioc2rpz_sup:init/1`:
    - Starts `ioc2rpz_db_sup` (ETS table heir)
-   - Calls `ioc2rpz_db:init_db/3` to create ETS tables
-   - Creates the `rate_limits` ETS table
+   - Calls `ioc2rpz_db:init_db/3` to create ETS tables, including `rate_limits`
+     (via `init_rate_limit_table/1`, which is idempotent so an inherited table
+     does not abort startup)
    - Reads configuration via `read_config3/1`
    - Starts `inets` and `ssl` applications
    - Loads hot sources into cache
@@ -49,7 +50,7 @@ ioc2rpz_app (application)
    - Sets up periodic timers:
      - `load_hotsources/1` every 60 seconds
      - `update_all_zones/1` every 60 seconds
-     - `ioc2rpz_fun:cleanup_rate_limit_table/0` every `?RATE_LIMIT_WINDOW` (10 seconds) — removes expired `rate_limits` entries
+     - `ioc2rpz_fun:cleanup_rate_limit_table/0` every `?RATE_LIMIT_WINDOW` (60 seconds) — removes `rate_limits` entries whose own window has elapsed
      - `ioc2rpz_db:cleanup_hotcache/0` every `?HotCacheTime` (900 seconds) — removes expired `rpz_hotcache_table` packet entries
    - Returns child specs for TCP, UDP, TLS, and REST supervisors
 
@@ -95,7 +96,7 @@ Accept calls use a 30-second timeout (`gen_tcp:accept/2` and `ssl:transport_acce
 - DNS management commands over DNS (reload-cfg, update-rpz, terminate)
 - IOC-to-RPZ record conversion (`mrpz_from_ioc/2`, `mrpz_from_ioc/4`)
 - DNS packet construction and sending (`send_dns_tcp/3`, `send_dns_tls/3`, `send_dns_udp/5`)
-- Rate limiting enforcement via `ioc2rpz_fun:check_rate_limit/1`
+- Rate limiting enforcement via `ioc2rpz_fun:check_rate_limit/3`, with the key built by `rl_key/5`, the effective limit and window resolved by `rl_limits/2` (RPZ zone → server → macro default), and management-ACL sources exempted by `mgmt_acl_ip/1`
 - DNS NOTIFY message sending
 - Sample zone serving (`send_sample_zone/9`)
 
@@ -134,7 +135,7 @@ Accept calls use a 30-second timeout (`gen_tcp:accept/2` and `ssl:transport_acce
 - Logging: standard messages (`logMessage/2`) and CEF format (`logMessageCEF/2`)
 - CEF event message definitions (`msg_CEF/1`) for security event logging
 - DNS utilities: IP conversion, domain name handling, query type/class names
-- Rate limiting: `check_rate_limit/1` (and `check_rate_limit/2`) using the `rate_limits` ETS table; periodic cleanup via `cleanup_rate_limit_table/0`
+- Rate limiting: `check_rate_limit/3` (and `check_rate_limit/2`, which uses the default window) against the `rate_limits` ETS table, counting atomically with `ets:update_counter/4` and rolling the window over with a compare-and-swap; periodic cleanup via `cleanup_rate_limit_table/0`
 - Binary/string conversions, base64url decoding
 - JSON string escaping for REST responses (`json_escape/1`)
 - TLS cipher suite selection (`get_cipher_suites/1`)
@@ -241,10 +242,11 @@ Accept calls use a 30-second timeout (`gen_tcp:accept/2` and `ssl:transport_acce
 
 1. Client connects via UDP/TCP/TLS/DoH
 2. `parse_dns_request/3` validates the DNS packet structure
-3. Rate limiting checked via an intelligent (hybrid) key from `rl_key/5`: granular `{IP, QName, QType}` for provisioned zones (SOA/AXFR/IXFR) and recognized management (CHAOS/TXT) requests, aggregate `{IP}` for everything else (unknown zone / unsupported qtype / unrecognized name) to prevent query-name-variation bypass
-4. TSIG signature validated if present (for zone transfers)
-5. Zone looked up in `cfg_table`
-6. Response served:
+3. The query name is lower-cased (RFC 4343) for the zone lookup and the rate-limit key; the original case is kept for the echoed question section and the logs
+4. Rate limiting checked via an intelligent (hybrid) key from `rl_key/5`: granular `{IP, QName, QType}` for provisioned zones (SOA/AXFR/IXFR) and recognized management (CHAOS/TXT) requests, aggregate `{IP}` for everything else (unknown zone / unsupported qtype / unrecognized name) to prevent query-name-variation bypass. The limit and window for that key come from `rl_limits/2` (RPZ zone → server → macro default); sources in the management ACL are exempt
+5. TSIG signature validated if present (for zone transfers)
+6. Zone looked up in `cfg_table`
+7. Response served:
    - **SOA**: Returns zone serial, SOA timers, NS record
    - **AXFR**: Streams pre-built packets from `rpz_axfr_table`
    - **IXFR**: Generates incremental transfer from `rpz_ixfr_table`
@@ -307,21 +309,6 @@ Sources marked with `keep_in_cache=true` are pre-loaded into `rpz_hotcache_table
 | `{SourceName, axfr\|ixfr}` | `{IOCList, Timestamp, Metadata}` | Cached source IOC data |
 | `{pkthotcache, ZoneBin, PktNumber}` | `{PacketData, Timestamp, Metadata}` | Cached zone packets |
 
-### rate_limits
-- **Type**: `set`, public, named
-- **Purpose**: Tracks per-client request counts for DNS rate limiting
-- **Created in**: `ioc2rpz_sup:init/1`
-- **Cleanup**: Expired entries are swept periodically by `ioc2rpz_fun:cleanup_rate_limit_table/0`
-
-The key is chosen per request by `ioc2rpz:rl_key/5` (intelligent/hybrid scheme):
-
-| Key Pattern | Value | Description |
-|---|---|---|
-| `{IP, QName, QType}` | `{LastRequestTime, RequestCount}` | **Granular** bucket for provisioned zones (class `IN` + `SOA`/`AXFR`/`IXFR`) and recognized management requests (class `CHAOS` + `TXT`). Limited by `?MAX_REQUESTS_PER_WINDOW`. |
-| `{IP}` | `{LastRequestTime, RequestCount}` | **Aggregate** per-IP bucket for everything else (unknown/unprovisioned zone, unsupported QTYPE, wrong class, unrecognized management name). Limited by `?MAX_UNKNOWN_REQUESTS_PER_WINDOW`. Prevents query-name-variation bypass. |
-
-`ioc2rpz_fun:check_rate_limit/1` selects the threshold by key shape: a 1-tuple `{IP}` uses the aggregate limit, a 3-tuple `{IP, QName, QType}` uses the granular limit.
-
 ### stat_table
 - **Type**: `ordered_set`, public, named
 - **Purpose**: Stores server and query statistics
@@ -329,16 +316,22 @@ The key is chosen per request by `ioc2rpz:rl_key/5` (intelligent/hybrid scheme):
 - **Heir**: `ioc2rpz_db_sup` process
 
 ### rate_limits
-- **Type**: `set`, public, named (created via `ets:new(?RATE_LIMIT_TABLE, ...)`)
-- **Purpose**: Tracks DNS query rates per client for rate limiting
-- **Created in**: `ioc2rpz_sup:init/1`
+- **Type**: `set`, public, named (`set` is required — the counter is bumped with `ets:update_counter/4`)
+- **Purpose**: Tracks per-client request counts for DNS rate limiting
+- **Created in**: `ioc2rpz_db:init_db/3` via `init_rate_limit_table/1` (idempotent: an existing table is kept rather than raising `badarg`)
+- **Heir**: `ioc2rpz_db_sup` process — the table survives the death of the process that created it
+- **Cleanup**: `ioc2rpz_fun:cleanup_rate_limit_table/0` runs every `?RATE_LIMIT_WINDOW` and deletes every entry whose OWN window has elapsed. The cutoff is per row, not global, because windows are configurable per zone: sweeping a longer-window key early would reset its counter and let its limit be exceeded
 
-| Key Pattern | Value | Description |
-|---|---|---|
-| `{IP, QName, QType}` | `{LastRequestTime, RequestCount}` | Per-query rate tracking |
+Entries are `{Key, WindowStart, Count, WindowMs}`. The key is chosen per request by `ioc2rpz:rl_key/5` (intelligent/hybrid scheme):
 
-- **Window**: 10 seconds (`?RATE_LIMIT_WINDOW`)
-- **Max requests**: 1 per window (`?MAX_REQUESTS_PER_WINDOW`)
+| Key Pattern | Description |
+|---|---|
+| `{IP, QName, QType}` | **Granular** bucket for provisioned zones (class `IN` + `SOA`/`AXFR`/`IXFR`) and recognized management requests (class `CHAOS` + `TXT`). Limited by the zone's `max_requests`, else the server's, else `?MAX_REQUESTS_PER_WINDOW`. |
+| `{IP}` | **Aggregate** per-IP bucket for everything else (unknown/unprovisioned zone, unsupported QTYPE, wrong class, unrecognized management name). Limited by the server's `max_unknown_requests`, else `?MAX_UNKNOWN_REQUESTS_PER_WINDOW`. Prevents query-name-variation bypass. |
+
+`ioc2rpz:rl_limits/2` resolves the limit and window that apply to a key — per option, with the precedence RPZ zone → server → macro default — and passes them to `ioc2rpz_fun:check_rate_limit/3`.
+
+**Concurrency**: every DNS request runs in its own process (UDP packets are spawned, TCP/TLS connections have one worker each), so the counter is incremented with a single atomic `ets:update_counter/4` and the window rollover uses a compare-and-swap (`ets:select_replace/2`). A read-modify-write would lose increments under load and let the limit be overshot several-fold.
 
 ## Configuration File Format
 
@@ -348,6 +341,11 @@ The configuration file uses Erlang term syntax (parsed via `file:consult/1`). Ea
 
 ```erlang
 {srv, {NameServer, Email, ManagementKeys, ACL}}.
+
+%% With optional trailing elements (either one, both, in any order)
+{srv, {NameServer, Email, ManagementKeys, ACL, TrackSources}}.
+{srv, {NameServer, Email, ManagementKeys, ACL, {rate_limit, Options}}}.
+{srv, {NameServer, Email, ManagementKeys, ACL, TrackSources, {rate_limit, Options}}}.
 ```
 
 | Field | Type | Description |
@@ -355,7 +353,9 @@ The configuration file uses Erlang term syntax (parsed via `file:consult/1`). Ea
 | `NameServer` | string | NS record FQDN (e.g., `"ns1.rpz-proxy.com"`) |
 | `Email` | string | SOA email in DNS format (e.g., `"support.rpz-proxy.com"`) |
 | `ManagementKeys` | list | TSIG key names and/or `{groups, [GroupNames]}` for REST API auth |
-| `ACL` | list of strings | IP addresses allowed to access management interfaces |
+| `ACL` | list of strings | IP addresses allowed to access management interfaces. Also exempt from DNS rate limiting |
+| `TrackSources` | atom | Optional. Global source-attribution default: `off \| auto \| on` (default `off`) |
+| `{rate_limit, Options}` | tuple | Optional. `Options` is a proplist of `{window, Seconds}`, `{max_requests, N}`, `{max_unknown_requests, N}`; each is optional and falls back to its macro default |
 
 ### TLS Certificate
 
@@ -437,11 +437,16 @@ Same tuple structure as sources but without IXFR_URL:
 ```erlang
 {rpz, {Zone, Refresh, Retry, Expiration, NegTTL, Cache, Wildcards, Action,
        AuthKeys, IoCType, AXFR_Time, IXFR_Time, Sources, NotifyList, Whitelists}}.
+
+%% With optional trailing elements (either one, both, in any order)
+{rpz, {..., Whitelists, TrackSources}}.
+{rpz, {..., Whitelists, {rate_limit, Options}}}.
+{rpz, {..., Whitelists, TrackSources, {rate_limit, Options}}}.
 ```
 
 | Field | Type | Description |
 |---|---|---|
-| `Zone` | string | Zone FQDN (e.g., `"malware.ioc2rpz"`) |
+| `Zone` | string | Zone FQDN (e.g., `"malware.ioc2rpz"`). Canonicalised to lower case (RFC 4343) |
 | `Refresh` | integer | SOA refresh timer (seconds) |
 | `Retry` | integer | SOA retry timer (seconds) |
 | `Expiration` | integer | SOA expiration timer (seconds) |
@@ -456,6 +461,8 @@ Same tuple structure as sources but without IXFR_URL:
 | `Sources` | list of strings | Source names to include in this zone |
 | `NotifyList` | list of strings | IP addresses to send DNS NOTIFY after updates |
 | `Whitelists` | list of strings | Whitelist names to apply |
+| `TrackSources` | atom | Optional. Per-feed source attribution: `auto \| true \| false`. Omitted ⇒ inherit the server default |
+| `{rate_limit, Options}` | tuple | Optional. `Options` is a proplist of `{window, Seconds}` and `{max_requests, N}`; each is optional and inherited from the server level, then the macro default, when omitted |
 
 #### RPZ Actions
 
@@ -500,8 +507,10 @@ Included files are merged into the main configuration. All tuple types are suppo
 | `?HotCacheTime` | 900 | Default hot cache TTL (seconds) |
 | `?Src_Retry` | 3 | Source download retry count |
 | `?Src_Retry_TimeOut` | 3 | Retry delay (seconds) |
-| `?RATE_LIMIT_WINDOW` | 10000 | Rate limit window (milliseconds) |
-| `?MAX_REQUESTS_PER_WINDOW` | 1 | Max requests per IP per window |
+| `?RATE_LIMIT_WINDOW` | 60000 | Default rate limit window (milliseconds). Fallback for an unconfigured `window` |
+| `?MAX_REQUESTS_PER_WINDOW` | 6 | Default max requests per window, granular bucket. Fallback for an unconfigured `max_requests` |
+| `?MAX_UNKNOWN_REQUESTS_PER_WINDOW` | 1 | Default max requests per window, aggregate per-IP bucket. Fallback for an unconfigured `max_unknown_requests` |
+| `?RATE_LIMIT_CAS_ATTEMPTS` | 3 | Window-rollover retries before a request is denied |
 | `?ShellMaxRespSize` | 2 GB | Maximum shell command response size |
 | `?SourcePullTimeout` | 300000 | Source download timeout (milliseconds) |
 | `?TLSVersion` | `'tlsv1.2-1.3'` | Supported TLS versions |

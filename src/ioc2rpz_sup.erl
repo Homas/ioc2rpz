@@ -403,23 +403,31 @@ read_config3([{include,Filename}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sour
   read_config3(REST,RType, Srv, KeysI ++ Keys,Key_GroupsI ++ Key_Groups, WhiteListsI ++ WhiteLists, SourcesI ++ Sources, RPZI ++ RPZ);
 
 
-%%% Extended server clause with an optional global track_sources default (off | auto | on).
-%%% A 5-element {srv,{...}} tuple won't collide with the 4-element clause below; Erlang matches
-%%% clauses in order. Absent (4-element tuple) ⇒ track_sources stays at its `off` default.
-read_config3([{srv,{Serv,Email,MKeys,ACL,TrackSources}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
+%%% Server clause. The 4 mandatory fields (name, email, management keys, ACL) may
+%%% be followed by up to two OPTIONAL trailing elements, in any order:
+%%%   - the global track_sources default (off | auto | on), and/or
+%%%   - {rate_limit,[{window,Seconds},{max_requests,N},{max_unknown_requests,N}]}
+%%% Anything that is not a {rate_limit,...} tuple is taken as the track_sources
+%%% value, which preserves the previous 5-element behaviour. An absent element
+%%% leaves the corresponding #srv field at its default, so plain 4-element
+%%% tuples keep parsing exactly as before.
+read_config3([{srv,SrvCfg}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ)
+    when is_tuple(SrvCfg), tuple_size(SrvCfg) >= 4, tuple_size(SrvCfg) =< 6 ->
+  [Serv,Email,MKeys,ACL|Opts] = tuple_to_list(SrvCfg),
   {ok,ServB}=ioc2rpz:domstr_to_bin(list_to_binary(Serv),0),
   {ok,EmailB}=ioc2rpz:domstr_to_bin(list_to_binary(Email),0),
   MKeysX=[ioc2rpz:domstr_to_bin(list_to_binary(X),0)|| X <- MKeys, is_list(X)], MKeysB=[X || {_,X} <- MKeysX], %keys group support
 	KeyGroups=lists:append([ Y || {groups, Y} <- [ X || X <- MKeys, is_tuple(X) ], is_list(Y) ]),
-  TrackSourcesV=validate_track_sources(TrackSources),
-  read_config3(REST,RType,Srv#srv{server=ServB,email=EmailB,mkeys=MKeysB,acl=ACL,key_groups=KeyGroups,track_sources=TrackSourcesV},Keys,Key_Groups,WhiteLists,Sources,RPZ);
-
-read_config3([{srv,{Serv,Email,MKeys,ACL}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
-  {ok,ServB}=ioc2rpz:domstr_to_bin(list_to_binary(Serv),0),
-  {ok,EmailB}=ioc2rpz:domstr_to_bin(list_to_binary(Email),0),
-  MKeysX=[ioc2rpz:domstr_to_bin(list_to_binary(X),0)|| X <- MKeys, is_list(X)], MKeysB=[X || {_,X} <- MKeysX], %keys group support
-	KeyGroups=lists:append([ Y || {groups, Y} <- [ X || X <- MKeys, is_tuple(X) ], is_list(Y) ]),
-  read_config3(REST,RType,Srv#srv{server=ServB,email=EmailB,mkeys=MKeysB,acl=ACL,key_groups=KeyGroups},Keys,Key_Groups,WhiteLists,Sources,RPZ);
+  Srv1 = Srv#srv{server=ServB,email=EmailB,mkeys=MKeysB,acl=ACL,key_groups=KeyGroups},
+  Srv2 = case cfg_opt_track_sources(Opts) of
+           undefined -> Srv1;
+           TrackSources -> Srv1#srv{track_sources=validate_track_sources(TrackSources)}
+         end,
+  Srv3 = case cfg_opt_rate_limit(Opts) of
+           undefined -> Srv2;
+           RateLimit -> Srv2#srv{rate_limit=validate_rate_limit(srv,RateLimit)}
+         end,
+  read_config3(REST,RType,Srv3,Keys,Key_Groups,WhiteLists,Sources,RPZ);
 
 read_config3([{cert,{Certfile,Keyfile,CAcertfile}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,Sources,RPZ) ->
 %%% TODO validate the certificate
@@ -464,14 +472,19 @@ read_config3([{source,{Name,AXFR,IXFR,REGEX,UserID,Max_Count,HotCacheTime,HotCac
   read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,[#source{name=Name,axfr_url=AXFR,ixfr_url=parse_ixfr_url(AXFR,IXFR),regex=REGEX,userid=UserID,max_ioc=Max_Count,hotcache_time=HotCacheTime,hotcacheixfr_time=HotCacheTimeIXFR,pid=[],ioc_type=IocType,keep_in_cache=KeepInCache}|Sources],RPZ);
 
 
-%%% Extended 16-field rpz clause carrying an explicit per-feed track_sources
-%%% value as the trailing (16th) tuple element (auto | true | false). It does
-%%% everything the 15-field clause below does, but also sets #rpz.track_sources
-%%% to the validated value. A 16-element {rpz,{...}} tuple won't collide with
-%%% the 15-element clause below; Erlang matches clauses in order. An
-%%% unrecognised value defaults to `undefined` (⇒ inherit the server global
-%%% default). Existing 15-field configs are unaffected (R2).
-read_config3([{rpz,{Zone0, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards, Action, AKeys, IOCType, AXFR_Time, IXFR_Time, Sources, NotifyList, Whitelist, TrackSources}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,RPZ) ->
+%%% RPZ clause. The 15 mandatory fields may be followed by up to two OPTIONAL
+%%% trailing elements, in any order:
+%%%   - the per-feed track_sources value (auto | true | false), and/or
+%%%   - {rate_limit,[{window,Seconds},{max_requests,N}]}
+%%% Anything that is not a {rate_limit,...} tuple is taken as the track_sources
+%%% value, which preserves the previous 16-element behaviour. An absent element
+%%% leaves the corresponding #rpz field `undefined` (⇒ inherit: track_sources
+%%% from the server global default, rate limits from the server level and then
+%%% the macro defaults), so plain 15-element tuples keep parsing exactly as
+%%% before (R2).
+read_config3([{rpz,RPZCfg}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,RPZ)
+    when is_tuple(RPZCfg), tuple_size(RPZCfg) >= 15, tuple_size(RPZCfg) =< 17 ->
+  [Zone0, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards, Action, AKeys, IOCType, AXFR_Time, IXFR_Time, Sources, NotifyList, Whitelist | Opts] = tuple_to_list(RPZCfg),
   %RFC 4343: zone names are case-insensitive. Canonicalise to lower case here so
   %the cfg_table key matches the (also lower-cased) query name in
   %ioc2rpz:rpz_zone/1 whatever case the config file or the client used.
@@ -500,44 +513,20 @@ read_config3([{rpz,{Zone0, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards
    [{LAction,LData}] when LAction=="redirect_ip" -> {list_to_binary(LAction),ioc2rpz_fun:ip_to_bin(LData)};
    _ -> ioc2rpz_fun:read_local_actions(Action)
   end,
-  TrackSourcesV=validate_feed_track_sources(TrackSources),
-  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,[#rpz{zone=ZoneB, zone_str=Zone, soa_timers=SOATimers, cache=list_to_binary(Cache), wildcards=list_to_binary(Wildcards), action=ZAction, akeys=AKeysB, ioc_type=list_to_binary(IOCType), axfr_time=AXFR_Time, ixfr_time=IXFR_Time, sources=Sources, notifylist=NotifyListIP, whitelist=Whitelist, serial=Serial, status=Status, update_time=Update_time, ixfr_update_time=IXFR_Update_time, ixfr_nz_update_time=NZ_Update_Time, serial_ixfr=Serial_IXFR, key_groups=KeyGroups, ioc_count=IOC_count, rule_count=Rules_count, track_sources=TrackSourcesV}|RPZ]);
+  %optional trailing elements: absent ⇒ leave the field `undefined` so the zone
+  %inherits (track_sources from the server default, rate limits from the server
+  %level and then the macros)
+  TrackSourcesV = case cfg_opt_track_sources(Opts) of
+                    undefined -> undefined;
+                    TrackSources -> validate_feed_track_sources(TrackSources)
+                  end,
+  RateLimitV = case cfg_opt_rate_limit(Opts) of
+                 undefined -> undefined;
+                 RateLimit -> validate_rate_limit(rpz,RateLimit)
+               end,
+  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,[#rpz{zone=ZoneB, zone_str=Zone, soa_timers=SOATimers, cache=list_to_binary(Cache), wildcards=list_to_binary(Wildcards), action=ZAction, akeys=AKeysB, ioc_type=list_to_binary(IOCType), axfr_time=AXFR_Time, ixfr_time=IXFR_Time, sources=Sources, notifylist=NotifyListIP, whitelist=Whitelist, serial=Serial, status=Status, update_time=Update_time, ixfr_update_time=IXFR_Update_time, ixfr_nz_update_time=NZ_Update_Time, serial_ixfr=Serial_IXFR, key_groups=KeyGroups, ioc_count=IOC_count, rule_count=Rules_count, track_sources=TrackSourcesV, rate_limit=RateLimitV}|RPZ]);
 
 %%% Existing 15-field rpz clause (source attribution not specified). It builds
-%%% #rpz{...} WITHOUT setting track_sources, so the field keeps its record
-%%% default of `undefined` (⇒ inherit the server global default,
-%%% #srv.track_sources, which is `off` unless configured). This preserves
-%%% backward compatibility: existing config files load unchanged and behave as
-%%% off — no tracking, no rebuilds, unchanged API (R2/R4).
-read_config3([{rpz,{Zone0, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards, Action, AKeys, IOCType, AXFR_Time, IXFR_Time, Sources, NotifyList, Whitelist}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,RPZ) ->
-  %see the 16-field clause above: zone names are canonicalised to lower case
-  Zone = zone_name_lowcase(Zone0),
-  {ok,ZoneB} = ioc2rpz:domstr_to_bin(list_to_binary(Zone),0),
-  AKeysX=[ioc2rpz:domstr_to_bin(list_to_binary(X),0)|| X <- AKeys, is_list(X) ], AKeysB=[X || {_,X} <- AKeysX],
-	KeyGroups=lists:append([ Y || {groups, Y} <- [ X || X <- AKeys, is_tuple(X) ], is_list(Y) ]),
-  SOATimers = <<Refresh:32,Retry:32,Expiration:32,Neg_ttl:32>>,
-  %TODO update config to support protocol
-  %temporary fix for issue #35
-  NotifyListIP = [{udp,ioc2rpz_fun:str_to_ip(IPStr)} || IPStr <- NotifyList ],
-  ZoneInfoReq = #rpz{zone=ZoneB,axfr_time=AXFR_Time, zone_str=Zone,ixfr_time=AXFR_Time, cache=Cache},
-  case {Cache,load_zone_info(ZoneInfoReq)} of
-    {"true",[ready = Status0,Serial,_Soa_timersC,_CacheC,_WildcardsC,_SourcesC,_Ioc_md5,Update_time,IOC_count,Rules_count, ready,_Serial,Serial_IXFR,IXFR_Update_time,NZ_Update_Time]} -> ok;
-    {"true",[ready= Status0,Serial,_Soa_timersC,_CacheC,_WildcardsC,_SourcesC,_Ioc_md5,Update_time,IOC_count,Rules_count, notready| _ ]} -> IXFR_Update_time=0, Serial_IXFR=0, NZ_Update_Time=0;
-    {"true",[notready = Status0|_]} -> Update_time=0, IXFR_Update_time=0, Serial_IXFR=0, Serial=0,NZ_Update_Time=0,IOC_count=0,Rules_count=0;
-    _ -> Status0 = notready, Update_time=0, IXFR_Update_time=0, Serial_IXFR=0, Serial=0,NZ_Update_Time=0,IOC_count=0,Rules_count=0
-  end,
-  %% Task 3.2 (R6): if this cached zone's source list changed since the cached
-  %% masks were built, force an AXFR so masks are re-derived. No-op for
-  %% notready/non-cached zones and when the signature matches.
-  Status = maybe_force_source_axfr(Cache, Status0, ZoneInfoReq, Sources),
-  ZAction = case Action of
-   Action when Action=="nodata";Action=="passthru";Action=="drop";Action=="tcp-only";Action=="nxdomain";Action=="blockns" -> list_to_binary(Action);
-   [{LAction,LData}] when LAction=="redirect_domain" -> {list_to_binary(LAction),binary:split(list_to_binary(LData),<<".">>,[global])};
-   [{LAction,LData}] when LAction=="redirect_ip" -> {list_to_binary(LAction),ioc2rpz_fun:ip_to_bin(LData)};
-   _ -> ioc2rpz_fun:read_local_actions(Action)
-  end,
-  read_config3(REST,RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,[#rpz{zone=ZoneB, zone_str=Zone, soa_timers=SOATimers, cache=list_to_binary(Cache), wildcards=list_to_binary(Wildcards), action=ZAction, akeys=AKeysB, ioc_type=list_to_binary(IOCType), axfr_time=AXFR_Time, ixfr_time=IXFR_Time, sources=Sources, notifylist=NotifyListIP, whitelist=Whitelist, serial=Serial, status=Status, update_time=Update_time, ixfr_update_time=IXFR_Update_time, ixfr_nz_update_time=NZ_Update_Time, serial_ixfr=Serial_IXFR, key_groups=KeyGroups, ioc_count=IOC_count, rule_count=Rules_count}|RPZ]);
-
 %% Terminal clause — startup: validate and insert all config into ETS.
 read_config3([],startup,Srv,Keys,_Key_Groups,WhiteLists,Sources,RPZ)  ->
 	Keys_V = [ validateCFGKeys(Y) || Y <- Keys ],
@@ -776,14 +765,33 @@ validateCFGKeys(Keys) -> %Check if key is good
 
 %% @doc Validate the server configuration record.
 %%
-%% Placeholder — currently returns the server record unchanged. Future
-%% implementations should verify management key references, ACL format,
-%% email syntax, and certificate file existence/readability.
+%% Resolves the server-level rate limit so `#srv.rate_limit' is always a
+%% complete `{WindowMs, MaxRequests, MaxUnknownRequests}' triple: knobs the
+%% operator did not configure (or configured with an invalid value) take the
+%% macro default. Zones then only have to overlay what they override, and the
+%% request path never has to reach for a macro.
+%%
+%% Otherwise a placeholder — future implementations should verify management key
+%% references, ACL format, email syntax, and certificate file
+%% existence/readability.
 %%
 %% @param Srv  A `#srv{}' record.
-%% @returns The validated (currently unchanged) `#srv{}' record.
+%% @returns The validated `#srv{}' record.
 validateCFGSrv(Srv) -> %Check: MGMT Keys, ACL, email and cert
-  Srv.
+  Srv#srv{rate_limit = resolve_srv_rate_limit(Srv#srv.rate_limit)}.
+
+%% @doc Fills the unset elements of the server-level rate limit with the macro
+%% defaults. `undefined' (nothing configured at all) yields the all-macro
+%% triple, which is exactly the behaviour of a configuration file with no
+%% rate_limit element.
+%% @private
+resolve_srv_rate_limit(undefined) ->
+  {?RATE_LIMIT_WINDOW, ?MAX_REQUESTS_PER_WINDOW, ?MAX_UNKNOWN_REQUESTS_PER_WINDOW};
+
+resolve_srv_rate_limit({Window, Max, MaxUnknown}) ->
+  {?iif(Window == undefined, ?RATE_LIMIT_WINDOW, Window),
+   ?iif(Max == undefined, ?MAX_REQUESTS_PER_WINDOW, Max),
+   ?iif(MaxUnknown == undefined, ?MAX_UNKNOWN_REQUESTS_PER_WINDOW, MaxUnknown)}.
 
 %% @doc Validate a whitelist source record.
 %%
@@ -907,6 +915,94 @@ validate_feed_track_sources(false) -> false;
 validate_feed_track_sources(V) ->
   ioc2rpz_fun:logMessage("Invalid feed track_sources value ~p, defaulting to undefined (inherit global default)~n", [V]),
   undefined.
+
+%% @doc Picks the `{rate_limit, Options}' element out of the optional trailing
+%% elements of a `{srv,{...}}' / `{rpz,{...}}' configuration tuple.
+%% @param Opts The trailing elements (may be empty, may be in any order).
+%% @returns The `{rate_limit, Options}' tuple, or `undefined' when not given.
+-spec cfg_opt_rate_limit(list()) -> {rate_limit, term()} | undefined.
+cfg_opt_rate_limit(Opts) ->
+  case lists:keyfind(rate_limit, 1, Opts) of
+    false -> undefined;
+    RateLimit -> RateLimit
+  end.
+
+%% @doc Picks the track_sources value out of the optional trailing elements of a
+%% `{srv,{...}}' / `{rpz,{...}}' configuration tuple: the first element that is
+%% not a `{rate_limit,...}' tuple. Keeping it positional-agnostic is what allows
+%% a rate limit to be configured WITHOUT also having to spell out track_sources
+%% (and the other way round), in either order.
+%% @param Opts The trailing elements (may be empty, may be in any order).
+%% @returns The raw track_sources value, or `undefined' when not given.
+-spec cfg_opt_track_sources(list()) -> term().
+cfg_opt_track_sources(Opts) ->
+  case [ X || X <- Opts, not is_rate_limit_opt(X) ] of
+    [] -> undefined;
+    [TrackSources|_] -> TrackSources
+  end.
+
+%% @doc `true' for a `{rate_limit,...}' trailing element. @private
+is_rate_limit_opt({rate_limit,_}) -> true;
+is_rate_limit_opt(_) -> false.
+
+%% @doc Validates a `{rate_limit, Options}' configuration element.
+%%
+%% `Options' is a proplist; every key is optional and an omitted (or invalid)
+%% key is left `undefined' so it inherits from the next level down — the server
+%% level for a zone, and the ?RATE_LIMIT_WINDOW / ?MAX_REQUESTS_PER_WINDOW /
+%% ?MAX_UNKNOWN_REQUESTS_PER_WINDOW macros for the server. Recognised keys:
+%% <ul>
+%%   <li>`window' — length of the counting window in SECONDS (positive integer),
+%%       returned converted to milliseconds</li>
+%%   <li>`max_requests' — requests allowed per window in the granular
+%%       `{IP, QName, QType}' bucket (non-negative integer)</li>
+%%   <li>`max_unknown_requests' — requests allowed per window in the aggregate
+%%       per-IP bucket (non-negative integer). Server level only: a request
+%%       counted there did not resolve to a zone, so there is no zone
+%%       configuration to read it from</li>
+%% </ul>
+%% Invalid values and unknown keys are reported and ignored rather than
+%% rejecting the configuration, consistent with the other optional settings.
+%%
+%% @param Level `srv' or `rpz'.
+%% @param RateLimit The raw `{rate_limit, Options}' element.
+%% @returns `{WindowMs, MaxRequests, MaxUnknownRequests}' for `srv',
+%%          `{WindowMs, MaxRequests}' for `rpz'; elements not configured are
+%%          `undefined'.
+-spec validate_rate_limit(srv | rpz, term()) -> tuple() | undefined.
+validate_rate_limit(Level, {rate_limit, Opts}) when is_list(Opts) ->
+  [ ioc2rpz_fun:logMessage("Unknown or unsupported ~p rate_limit option ~p, ignored~n",[Level,X])
+    || X <- Opts, not rate_limit_opt_known(Level,X) ],
+  Window = rate_limit_value(Level, window, Opts),
+  Max = rate_limit_value(Level, max_requests, Opts),
+  case Level of
+    srv -> {?iif(Window == undefined, undefined, Window*1000), Max, rate_limit_value(Level, max_unknown_requests, Opts)};
+    rpz -> {?iif(Window == undefined, undefined, Window*1000), Max}
+  end;
+
+validate_rate_limit(Level, RateLimit) ->
+  ioc2rpz_fun:logMessage("Invalid ~p rate_limit ~p, expected {rate_limit,[{window,Seconds},{max_requests,N}]}. Ignored~n",[Level,RateLimit]),
+  undefined.
+
+%% @doc `true' when `Opt' is a recognised rate_limit option for `Level'. @private
+rate_limit_opt_known(_Level, {window,_}) -> true;
+rate_limit_opt_known(_Level, {max_requests,_}) -> true;
+rate_limit_opt_known(srv, {max_unknown_requests,_}) -> true;
+rate_limit_opt_known(_Level, _Opt) -> false.
+
+%% @doc Reads one rate_limit option and validates its value. A missing option,
+%% or a value that is not a suitable integer, yields `undefined' (inherit).
+%% `window' must be positive; the maximums may be 0 (refuse everything).
+%% @private
+rate_limit_value(Level, Key, Opts) ->
+  case proplists:get_value(Key, Opts) of
+    undefined -> undefined;
+    V when is_integer(V), V > 0 -> V;
+    V when is_integer(V), V == 0, Key /= window -> V;
+    V ->
+      ioc2rpz_fun:logMessage("Invalid ~p rate_limit ~p value ~p, ignored (inherited instead)~n",[Level,Key,V]),
+      undefined
+  end.
 
 %% @doc Canonicalises a configured zone name to lower case (RFC 4343).
 %%
@@ -1591,3 +1687,114 @@ source_list_changed_test() ->
     ?assert(source_list_changed(Sources, OtherSig)   =:= true),
     %% missing/undefined stored signature ⇒ change (force one rebuild)
     ?assert(source_list_changed(Sources, undefined)  =:= true) ].
+
+%% Verifies validate_rate_limit/2: window converted from seconds to
+%% milliseconds, omitted knobs left `undefined' (⇒ inherited), invalid values and
+%% unsupported keys ignored rather than fatal, and max_unknown_requests accepted
+%% at the server level only.
+validate_rate_limit_test() -> [
+  %% all knobs, server level
+  ?assert(validate_rate_limit(srv,{rate_limit,[{window,30},{max_requests,10},{max_unknown_requests,2}]}) =:= {30000,10,2}),
+  %% subsets: what is not given stays undefined and is inherited
+  ?assert(validate_rate_limit(srv,{rate_limit,[{max_requests,10}]}) =:= {undefined,10,undefined}),
+  ?assert(validate_rate_limit(srv,{rate_limit,[]}) =:= {undefined,undefined,undefined}),
+  %% rpz level: a pair, and max_unknown_requests is not a zone-level knob
+  ?assert(validate_rate_limit(rpz,{rate_limit,[{window,60},{max_requests,20}]}) =:= {60000,20}),
+  ?assert(validate_rate_limit(rpz,{rate_limit,[{max_requests,20},{max_unknown_requests,5}]}) =:= {undefined,20}),
+  %% 0 refuses everything and is accepted for the maximums, but not for a window
+  ?assert(validate_rate_limit(srv,{rate_limit,[{max_requests,0}]}) =:= {undefined,0,undefined}),
+  ?assert(validate_rate_limit(rpz,{rate_limit,[{window,0},{max_requests,5}]}) =:= {undefined,5}),
+  %% invalid values are ignored (inherited instead), the rest of the block stands
+  ?assert(validate_rate_limit(rpz,{rate_limit,[{window,"60"},{max_requests,20}]}) =:= {undefined,20}),
+  ?assert(validate_rate_limit(rpz,{rate_limit,[{window,60},{max_requests,-1}]}) =:= {60000,undefined}),
+  %% a malformed element is ignored entirely
+  ?assert(validate_rate_limit(srv,{rate_limit,60}) =:= undefined),
+  ?assert(validate_rate_limit(rpz,rate_limit) =:= undefined) ].
+
+%% Verifies the optional trailing elements of {srv,{...}}/{rpz,{...}} are picked
+%% up in any order and independently of each other.
+cfg_opt_test() -> [
+  ?assert(cfg_opt_rate_limit([]) =:= undefined),
+  ?assert(cfg_opt_track_sources([]) =:= undefined),
+  %% rate limit only — track_sources must NOT have to be spelled out
+  ?assert(cfg_opt_rate_limit([{rate_limit,[{max_requests,5}]}]) =:= {rate_limit,[{max_requests,5}]}),
+  ?assert(cfg_opt_track_sources([{rate_limit,[{max_requests,5}]}]) =:= undefined),
+  %% track_sources only
+  ?assert(cfg_opt_track_sources([on]) =:= on),
+  ?assert(cfg_opt_rate_limit([on]) =:= undefined),
+  %% both, either order
+  ?assert(cfg_opt_track_sources([auto,{rate_limit,[]}]) =:= auto),
+  ?assert(cfg_opt_rate_limit([auto,{rate_limit,[]}]) =:= {rate_limit,[]}),
+  ?assert(cfg_opt_track_sources([{rate_limit,[]},auto]) =:= auto),
+  ?assert(cfg_opt_rate_limit([{rate_limit,[]},auto]) =:= {rate_limit,[]}) ].
+
+%% Verifies the server clause accepts 4, 5 and 6 element tuples: the mandatory
+%% fields, plus track_sources and/or a rate limit in any order. Absent elements
+%% leave the #srv defaults untouched (backward compatibility).
+read_config_srv_test() ->
+  Parse = fun(SrvCfg) ->
+    {ok,Srv,_,_,_,_,_} = read_config3([{srv,SrvCfg}],include,#srv{},[],[],[],[],[]),
+    Srv
+  end,
+  Base = {"ns.example","admin@example",[],["10.0.0.1"]},
+  L = tuple_to_list(Base),
+  RL = {rate_limit,[{window,30},{max_requests,10},{max_unknown_requests,2}]},
+  [ %% legacy 4-element tuple: nothing configured
+    ?assert((Parse(Base))#srv.rate_limit =:= undefined),
+    ?assert((Parse(Base))#srv.track_sources =:= off),
+    ?assert((Parse(Base))#srv.acl =:= ["10.0.0.1"]),
+    %% 5-element: track_sources only (unchanged behaviour)
+    ?assert((Parse(list_to_tuple(L++[on])))#srv.track_sources =:= on),
+    ?assert((Parse(list_to_tuple(L++[on])))#srv.rate_limit =:= undefined),
+    %% 5-element: rate limit only, track_sources keeps its default
+    ?assert((Parse(list_to_tuple(L++[RL])))#srv.rate_limit =:= {30000,10,2}),
+    ?assert((Parse(list_to_tuple(L++[RL])))#srv.track_sources =:= off),
+    %% 6-element: both, either order
+    ?assert((Parse(list_to_tuple(L++[on,RL])))#srv.rate_limit =:= {30000,10,2}),
+    ?assert((Parse(list_to_tuple(L++[on,RL])))#srv.track_sources =:= on),
+    ?assert((Parse(list_to_tuple(L++[RL,on])))#srv.rate_limit =:= {30000,10,2}),
+    ?assert((Parse(list_to_tuple(L++[RL,on])))#srv.track_sources =:= on),
+    %% validateCFGSrv/1 fills the unset knobs with the macro defaults
+    ?assert((validateCFGSrv(Parse(Base)))#srv.rate_limit =:= {?RATE_LIMIT_WINDOW,?MAX_REQUESTS_PER_WINDOW,?MAX_UNKNOWN_REQUESTS_PER_WINDOW}),
+    ?assert((validateCFGSrv(Parse(list_to_tuple(L++[{rate_limit,[{max_requests,10}]}]))))#srv.rate_limit
+              =:= {?RATE_LIMIT_WINDOW,10,?MAX_UNKNOWN_REQUESTS_PER_WINDOW}) ].
+
+%% Verifies the RPZ clause accepts 15, 16 and 17 element tuples, that the zone
+%% name is lower-cased, and that an absent optional element leaves the field
+%% `undefined' so the zone inherits.
+read_config_rpz_test_() ->
+  {setup,
+   fun() ->
+     catch ets:delete(rpz_axfr_table), catch ets:delete(rpz_ixfr_table),
+     ets:new(rpz_axfr_table, [ordered_set, public, named_table]),
+     ets:new(rpz_ixfr_table, [duplicate_bag, public, named_table])
+   end,
+   fun(_) -> catch ets:delete(rpz_axfr_table), catch ets:delete(rpz_ixfr_table), ok end,
+   fun(_) ->
+     Parse = fun(RPZCfg) ->
+       {ok,_,_,_,_,_,[RPZ]} = read_config3([{rpz,RPZCfg}],include,#srv{},[],[],[],[],[]),
+       RPZ
+     end,
+     %% non-cached zone so no cached-zone lookup is needed
+     Base = {"Zone.RPZ",3600,60,86400,60,"false","true","nodata",[],"fqdn",86400,3600,["src"],[],[]},
+     L = tuple_to_list(Base),
+     RL = {rate_limit,[{window,60},{max_requests,20}]},
+     [ %% legacy 15-element tuple: nothing configured, name canonicalised
+       ?_assertEqual(undefined, (Parse(Base))#rpz.rate_limit),
+       ?_assertEqual(undefined, (Parse(Base))#rpz.track_sources),
+       ?_assertEqual("zone.rpz", (Parse(Base))#rpz.zone_str),
+       ?_assertEqual(<<4,"zone",3,"rpz",0>>, (Parse(Base))#rpz.zone),
+       %% 16-element: track_sources only (unchanged behaviour)
+       ?_assertEqual(auto, (Parse(list_to_tuple(L++[auto])))#rpz.track_sources),
+       ?_assertEqual(undefined, (Parse(list_to_tuple(L++[auto])))#rpz.rate_limit),
+       %% 16-element: rate limit only, track_sources still inherited
+       ?_assertEqual({60000,20}, (Parse(list_to_tuple(L++[RL])))#rpz.rate_limit),
+       ?_assertEqual(undefined, (Parse(list_to_tuple(L++[RL])))#rpz.track_sources),
+       %% 17-element: both, either order
+       ?_assertEqual({60000,20}, (Parse(list_to_tuple(L++[auto,RL])))#rpz.rate_limit),
+       ?_assertEqual(auto, (Parse(list_to_tuple(L++[auto,RL])))#rpz.track_sources),
+       ?_assertEqual({60000,20}, (Parse(list_to_tuple(L++[RL,auto])))#rpz.rate_limit),
+       ?_assertEqual(auto, (Parse(list_to_tuple(L++[RL,auto])))#rpz.track_sources),
+       %% a single knob: the other one is inherited
+       ?_assertEqual({undefined,20}, (Parse(list_to_tuple(L++[{rate_limit,[{max_requests,20}]}])))#rpz.rate_limit) ]
+   end}.

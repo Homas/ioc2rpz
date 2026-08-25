@@ -17,6 +17,7 @@ This document provides a complete reference for the ioc2rpz configuration file. 
 - [Source Types](#source-types)
 - [Regex and Feed Format](#regex-and-feed-format)
 - [RPZ Configuration Options](#rpz-configuration-options)
+- [Rate Limiting](#rate-limiting)
 - [TLS / DoT Configuration](#tls--dot-configuration)
 - [REST API Configuration](#rest-api-configuration)
 - [Management Commands](#management-commands)
@@ -41,6 +42,11 @@ Defines global server settings. Exactly one `srv` record is required.
 
 ```erlang
 {srv, {NS_Name, Email, MgmtKeys, ACL}}.
+
+%% Optional trailing elements — either one, both, in any order
+{srv, {NS_Name, Email, MgmtKeys, ACL, TrackSources}}.
+{srv, {NS_Name, Email, MgmtKeys, ACL, {rate_limit, Options}}}.
+{srv, {NS_Name, Email, MgmtKeys, ACL, TrackSources, {rate_limit, Options}}}.
 ```
 
 | Field     | Type            | Description |
@@ -48,13 +54,21 @@ Defines global server settings. Exactly one `srv` record is required.
 | NS_Name   | string          | NS server name used in SOA records (e.g. `"ns1.example.com"`) |
 | Email     | string          | SOA email in DNS format — use dots, not `@` (e.g. `"admin.example.com"`) |
 | MgmtKeys  | list            | List of TSIG key names authorized for management operations. Supports key groups via `{groups, ["group_name"]}` |
-| ACL       | list of strings | IP addresses allowed to access the REST API (e.g. `["127.0.0.1", "::1"]`) |
+| ACL       | list of strings | IP addresses allowed to access the REST API (e.g. `["127.0.0.1", "::1"]`). These sources are also exempt from DNS rate limiting |
+| TrackSources | atom         | *Optional.* Global source-attribution default: `off \| auto \| on` (default `off`) |
+| rate_limit | tuple          | *Optional.* `{rate_limit, [{window, Seconds}, {max_requests, N}, {max_unknown_requests, N}]}` — server-level DNS rate limits. Every option is optional and falls back to its macro default. See [Rate Limiting](#rate-limiting) |
 
 **Example:**
 ```erlang
 {srv, {"ns1.rpz-proxy.com", "support.rpz-proxy.com",
        ["dnsmkey_1", {groups, ["mgmt"]}],
        ["127.0.0.1", "::1"]}}.
+
+%% With server-level rate limits
+{srv, {"ns1.rpz-proxy.com", "support.rpz-proxy.com",
+       ["dnsmkey_1", {groups, ["mgmt"]}],
+       ["127.0.0.1", "::1"],
+       {rate_limit, [{window, 60}, {max_requests, 6}, {max_unknown_requests, 1}]}}}.
 ```
 
 ---
@@ -240,11 +254,16 @@ Defines RPZ zones. One or more `rpz` records are required.
        Cache, Wildcards, Action, Keys,
        IOC_Type, AXFR_Time, IXFR_Time,
        Sources, NotifyList, Whitelists}}.
+
+%% Optional trailing elements — either one, both, in any order
+{rpz, {..., Whitelists, TrackSources}}.
+{rpz, {..., Whitelists, {rate_limit, Options}}}.
+{rpz, {..., Whitelists, TrackSources, {rate_limit, Options}}}.
 ```
 
 | Field            | Type    | Description |
 |------------------|---------|-------------|
-| ZoneName         | string  | RPZ zone name (e.g. `"dga.ioc2rpz"`) |
+| ZoneName         | string  | RPZ zone name (e.g. `"dga.ioc2rpz"`). Canonicalised to lower case — zone names are case-insensitive (RFC 4343) |
 | SOA_Refresh      | integer | SOA refresh timer in seconds |
 | SOA_Retry        | integer | SOA retry timer in seconds |
 | SOA_Expire       | integer | SOA expiration timer in seconds |
@@ -259,6 +278,8 @@ Defines RPZ zones. One or more `rpz` records are required.
 | Sources          | list    | List of source names to include in this zone |
 | NotifyList       | list    | IP addresses to send DNS NOTIFY on zone updates |
 | Whitelists       | list    | Whitelist names to apply to this zone |
+| TrackSources     | atom    | *Optional.* Per-feed source attribution: `auto \| true \| false`. Omitted ⇒ inherit the server default |
+| rate_limit       | tuple   | *Optional.* `{rate_limit, [{window, Seconds}, {max_requests, N}]}` — per-zone DNS rate limit. Each option present overrides the server level for this zone; anything omitted is inherited from the server level and then from the macro default. See [Rate Limiting](#rate-limiting) |
 
 **Example:**
 ```erlang
@@ -268,6 +289,15 @@ Defines RPZ zones. One or more `rpz` records are required.
        "fqdn", 172800, 3600,
        ["sample_fqdn", "sample_expire"],
        [], []}}.
+
+%% A large, slow feed: allow fewer transfers per window than the server default
+{rpz, {"big.ioc2rpz", 7202, 3600, 2592000, 7200,
+       "true", "true", "nodata",
+       ["dnsproxykey_1"],
+       "fqdn", 172800, 3600,
+       ["sample_fqdn"],
+       [], [],
+       {rate_limit, [{max_requests, 2}]}}}.
 ```
 
 ---
@@ -601,6 +631,61 @@ Keys can be specified individually or via groups:
 
 ---
 
+## Rate Limiting
+
+DNS queries are counted per client in one of two buckets, chosen per request so that legitimate multi-zone traffic and query-name-variation abuse are treated differently:
+
+| Bucket | Key | Applies to | Limited by |
+|---|---|---|---|
+| Granular | `{IP, QName, QType}` | A provisioned zone with a supported QTYPE (`SOA`/`AXFR`/`IXFR`, class `IN`), and recognized management requests (class `CHAOS`/`TXT`) | `max_requests` |
+| Aggregate | `{IP}` | Everything else — unknown/unprovisioned zone, unsupported QTYPE, wrong class, unrecognized management name | `max_unknown_requests` |
+
+Exceeding a limit returns a DNS `REFUSED` response and logs CEF event 429. Sources listed in the `srv` record's ACL are exempt.
+
+### Options
+
+| Option | Levels | Unit | Default macro |
+|--------|--------|------|---------------|
+| `window` | rpz, srv | seconds | `RATE_LIMIT_WINDOW` (60000 ms) |
+| `max_requests` | rpz, srv | requests per window | `MAX_REQUESTS_PER_WINDOW` (6) |
+| `max_unknown_requests` | srv | requests per window | `MAX_UNKNOWN_REQUESTS_PER_WINDOW` (1) |
+
+`max_unknown_requests` is server-level only: a request counted in the aggregate bucket did not resolve to a zone, so there is no zone configuration to read it from. Given at the zone level it is logged and ignored.
+
+### Precedence
+
+Each option resolves **independently**:
+
+**RPZ zone → server → compile-time macro default**
+
+Nothing has to be configured — with no `rate_limit` anywhere, all three macro defaults apply, which is the behaviour of every configuration written before this setting existed. A zone may set one option and inherit the rest.
+
+```erlang
+%% server default for every zone
+{srv, {"ns1.example.com", "support.example.com", ["dnsmkey_1"], ["10.0.0.1"],
+       {rate_limit, [{window, 60}, {max_requests, 6}, {max_unknown_requests, 1}]}}}.
+
+%% this zone allows more transfers per window, and inherits `window` from the server
+{rpz, {"fast.ioc2rpz", 7202, 3600, 2592000, 7200, "true", "true", "nodata",
+       ["dnsproxykey_1"], "fqdn", 172800, 3600, ["sample_fqdn"], [], [],
+       {rate_limit, [{max_requests, 30}]}}}.
+
+%% this zone is large and slow to transfer, tighten it
+{rpz, {"big.ioc2rpz", 7202, 3600, 2592000, 7200, "true", "true", "nodata",
+       ["dnsproxykey_1"], "fqdn", 172800, 3600, ["sample_fqdn"], [], [],
+       {rate_limit, [{window, 300}, {max_requests, 2}]}}}.
+```
+
+### Notes
+
+- A maximum of `0` refuses every request in that bucket. `window` must be greater than 0.
+- Invalid values and unrecognized options are logged and ignored — the option is inherited from the next level down instead, and the rest of the configuration still loads.
+- The `{rate_limit, ...}` element and the optional `TrackSources` element may be given together in either order, or either one on its own.
+- Changed limits take effect on a configuration reload and do not force a zone transfer.
+- Rate limiting applies to all DNS query transports (UDP, TCP, DoT, DoH).
+
+---
+
 ## TLS / DoT Configuration
 
 ### Enabling DoT
@@ -786,9 +871,12 @@ These are defined in `include/ioc2rpz.hrl` and require recompilation to change.
 | `Src_Retry_TimeOut` | `3` | Timeout between source retries (seconds) |
 | `ShellMaxRespSize` | `2 GB` | Maximum response size for shell sources |
 | `SourcePullTimeout` | `300000` | Source download timeout (milliseconds) |
-| `RATE_LIMIT_WINDOW` | `10000` | Rate limit window (milliseconds) |
-| `MAX_REQUESTS_PER_WINDOW` | `1` | Max requests per window for the granular bucket: provisioned zone + supported QTYPE (`SOA`/`AXFR`/`IXFR`) and recognized management requests, keyed `{IP, QName, QType}` |
-| `MAX_UNKNOWN_REQUESTS_PER_WINDOW` | `1` | Max requests per window for the aggregate per-IP bucket: unknown/unprovisioned zone, unsupported QTYPE, wrong class, or unrecognized management name, keyed `{IP}` |
+| `RATE_LIMIT_WINDOW` | `60000` | Rate limit window (milliseconds). Fallback when neither the zone nor the server sets `window` |
+| `MAX_REQUESTS_PER_WINDOW` | `6` | Max requests per window for the granular bucket: provisioned zone + supported QTYPE (`SOA`/`AXFR`/`IXFR`) and recognized management requests, keyed `{IP, QName, QType}`. Fallback when neither the zone nor the server sets `max_requests` |
+| `MAX_UNKNOWN_REQUESTS_PER_WINDOW` | `1` | Max requests per window for the aggregate per-IP bucket: unknown/unprovisioned zone, unsupported QTYPE, wrong class, or unrecognized management name, keyed `{IP}`. Fallback when the server does not set `max_unknown_requests` |
+| `RATE_LIMIT_CAS_ATTEMPTS` | `3` | Window-rollover retries before a request is denied |
+
+These three limits are the **last** fallback only — see [Rate Limiting](#rate-limiting) for the per-server and per-zone `{rate_limit,[...]}` configuration.
 
 ---
 

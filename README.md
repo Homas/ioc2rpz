@@ -186,15 +186,40 @@ DNS queries are rate-limited using an intelligent (hybrid) key so legitimate mul
 - **Provisioned zone + supported QTYPE** (`SOA`/`AXFR`/`IXFR`, class `IN`) and **recognized management commands** (class `CHAOS`/`TXT`) are tracked per `{client_IP, query_name, query_type}` — so a secondary polling/transferring several zones (e.g. `rpz1`, `rpz2`, `rpz3`) plus management from one IP is counted independently per zone+type.
 - **Everything else** (unknown/unprovisioned zone, unsupported query type, wrong class, or an unrecognized management name) is aggregated per `{client_IP}`, so an attacker cannot bypass the limit by varying the query name.
 
-When the limit is exceeded, the server returns a DNS `REFUSED` response.
+When the limit is exceeded, the server returns a DNS `REFUSED` response. Sources listed in the server management ACL are exempt from rate limiting.
 
-| Parameter | Default | Macro |
-|-----------|---------|-------|
-| Window | 10 seconds | `?RATE_LIMIT_WINDOW` (10000 ms) |
-| Max requests per window (granular: known zone+type / management) | 1 | `?MAX_REQUESTS_PER_WINDOW` |
-| Max requests per window (aggregate: unknown zone / unsupported type) | 1 | `?MAX_UNKNOWN_REQUESTS_PER_WINDOW` |
+| Parameter | Config option | Default macro |
+|-----------|---------------|---------------|
+| Window | `window` (seconds) | `?RATE_LIMIT_WINDOW` (60000 ms) |
+| Max requests per window (granular: known zone+type / management) | `max_requests` | `?MAX_REQUESTS_PER_WINDOW` (6) |
+| Max requests per window (aggregate: unknown zone / unsupported type) | `max_unknown_requests` | `?MAX_UNKNOWN_REQUESTS_PER_WINDOW` (1) |
 
-Rate limiting applies to all DNS query transports (UDP, TCP, TLS, DoH). The window and threshold are configurable via macros in `include/ioc2rpz.hrl`.
+Rate limiting applies to all DNS query transports (UDP, TCP, TLS, DoH).
+
+#### Configuration
+
+Limits can be set per zone and per server as an optional trailing `{rate_limit,[...]}` element of the `{rpz,{...}}` and `{srv,{...}}` tuples. Every level and every individual option is optional; each option resolves independently with the precedence
+
+**RPZ zone → server → built-in macro default**
+
+so a zone may override just one option and inherit the rest, and a configuration with no `rate_limit` at all behaves exactly as before.
+
+```erlang
+%% server level: applies to every zone that does not override it
+{srv,{"ns1.example.com","support.example.com",["dnsmkey_1"],["10.0.0.1"],
+      {rate_limit,[{window,60},{max_requests,6},{max_unknown_requests,1}]}}}.
+
+%% zone level: this feed is large and slow, allow fewer transfers per window
+{rpz,{"big.rpz",3600,60,86400,60,"true","true","nodata",["dnskey_1"],"fqdn:ip",86400,3600,
+      ["source_1"],[],[], {rate_limit,[{max_requests,2}]}}}.
+```
+
+- `window` is given in **seconds** in the configuration file.
+- `max_unknown_requests` is accepted at the **server level only**: a request counted in the aggregate per-IP bucket did not resolve to a zone, so there is no zone configuration to read it from.
+- A maximum of `0` refuses every request in that bucket. `window` must be greater than 0.
+- Invalid values and unknown options are logged and ignored — the option is inherited from the next level down instead, and the rest of the configuration still loads.
+- The `{rate_limit,...}` element can be combined with the optional `TrackSources` element in either order, and either can be used on its own.
+- Changed limits take effect on a configuration reload without forcing a zone transfer.
 
 ### DNS NOTIFY
 
@@ -742,15 +767,26 @@ ioc2rpz™ supports the following configuration parameters:
 - list of management TSIG keys (names only). Please refer [the management section](#ioc2rpz-management) for the details.
 - list of ACL IP addresses for REST API access control.
 - (optional) `TrackSources` — the server-level global default for source attribution: `off | auto | on` (default `off`). Applied to any feed whose own `track_sources` is unset. See [IOC Source Attribution](#ioc-source-attribution).
+- (optional) `{rate_limit,[...]}` — server-level DNS rate limits. See [Rate Limiting](#rate-limiting).
+
+Both optional elements may be given together, in either order, and either one may be given on its own.
 
 Sample **srv** record:  
 ```
 {srv,{"ns1.example.com","support.email.example.com",["dnsmkey_1","dnsmkey_2","dnsmkey_3"],["acl_ip1","acl_ip2"]}}.
 
-%% With the optional global source-tracking default (5-field form):
+%% With the optional global source-tracking default:
 {srv,{"ns1.example.com","support.email.example.com",["dnsmkey_1"],["acl_ip1"],auto}}.
+
+%% With rate limits only:
+{srv,{"ns1.example.com","support.email.example.com",["dnsmkey_1"],["acl_ip1"],
+      {rate_limit,[{window,60},{max_requests,6},{max_unknown_requests,1}]}}}.
+
+%% With both:
+{srv,{"ns1.example.com","support.email.example.com",["dnsmkey_1"],["acl_ip1"],auto,
+      {rate_limit,[{window,60},{max_requests,6},{max_unknown_requests,1}]}}}.
 ```
-The 4-field form remains valid and defaults `TrackSources` to `off`.
+The 4-field form remains valid and defaults `TrackSources` to `off` and the rate limits to their built-in values.
 ### **cert** record
 **cert** record is used to define a certificate and a private key for DNS over TLS, REST API, and DoH communications. For certificate generation and management, see [Certificate Setup](#certificate-setup).
 
@@ -897,6 +933,9 @@ RPZ term defines a response policy zone.
 - List of DNS servers (IP addresses) which should be notified on an RPZ updates (see [DNS NOTIFY](#dns-notify));
 - List of whitelists.
 - (optional) `TrackSources` — per-feed source attribution: `auto | true | false`. When present it overrides the server global default. When omitted (15-field form) the feed inherits the server default (`#srv` `TrackSources`, `off` unless configured). See [IOC Source Attribution](#ioc-source-attribution).
+- (optional) `{rate_limit,[{window,Seconds},{max_requests,N}]}` — per-zone DNS rate limit. Each option present overrides the server level for this zone; anything omitted is inherited from the server level and then from the built-in default. See [Rate Limiting](#rate-limiting).
+
+The two optional elements may be given together, in either order, and either one may be used on its own.
 
 #### RPZ Actions
 
@@ -927,8 +966,14 @@ Sample **rpz** record:
 
 {rpz,{"mixed.ioc2rpz",7202,3600,2592000,7200,"true","true","passthru",["dnsproxykey_1","dnsproxykey_2",{groups,["public","ip2"]}],"mixed",86400,3600,["sample_fqdn","sample_expire","sample_ip"],[],["whitelist_1","whitelist_2"]}}.
 
-%% With explicit per-feed source tracking (16-field form; trailing `auto`):
+%% With explicit per-feed source tracking (trailing `auto`):
 {rpz,{"mixed.ioc2rpz",7202,3600,2592000,7200,"true","true","passthru",["dnsproxykey_1"],"mixed",86400,3600,["sample_fqdn","sample_expire","sample_ip"],[],["whitelist_1"],auto}}.
+
+%% With a per-zone rate limit only (source tracking still inherited):
+{rpz,{"mixed.ioc2rpz",7202,3600,2592000,7200,"true","true","passthru",["dnsproxykey_1"],"mixed",86400,3600,["sample_fqdn","sample_expire","sample_ip"],[],["whitelist_1"],{rate_limit,[{window,60},{max_requests,20}]}}}.
+
+%% With both:
+{rpz,{"mixed.ioc2rpz",7202,3600,2592000,7200,"true","true","passthru",["dnsproxykey_1"],"mixed",86400,3600,["sample_fqdn","sample_expire","sample_ip"],[],["whitelist_1"],auto,{rate_limit,[{max_requests,20}]}}}.
 ```
 
 ### IOC Source Attribution
@@ -1031,8 +1076,10 @@ Optimization parameters:
 - ``TCPTimeout`` (numerical value, in milliseconds) - defines TCP session timeout;
 - ``HotCacheTime`` (numerical value, in seconds) - Hot cache time for IOCs, Rules, Packets. Live zones are stored in a hot cache;
 - ``HotCacheTimeIXFR`` (numerical value, in seconds) - Hot cache time for IXFR IOCs in a hot cache. By default IXFR indicators are cached for a minute (even if it set to 0) because current serial is always rounded to a previous minute;
-- ``RATE_LIMIT_WINDOW`` (numerical value, in milliseconds, default 10000) - rate limit window duration per IP;
-- ``MAX_REQUESTS_PER_WINDOW`` (numerical value, default 1) - maximum DNS requests per IP per rate limit window;
+- ``RATE_LIMIT_WINDOW`` (numerical value, in milliseconds, default 60000) - default rate limit window duration, used when neither the zone nor the server configures `window`;
+- ``MAX_REQUESTS_PER_WINDOW`` (numerical value, default 6) - default maximum DNS requests per window in the granular (known zone + query type / management) bucket;
+- ``MAX_UNKNOWN_REQUESTS_PER_WINDOW`` (numerical value, default 1) - default maximum DNS requests per window in the aggregate per-IP bucket (unknown zone, unsupported query type);
+- these three are the last fallback only: see [Rate Limiting](#rate-limiting) for the per-zone and per-server `{rate_limit,[...]}` configuration;
 - ``ShellMaxRespSize`` (numerical value, default 2 GiB) - maximum response size for shell command sources;
 - ``SourcePullTimeout`` (numerical value, in milliseconds, default 300000) - timeout for source downloads (5 minutes);
 

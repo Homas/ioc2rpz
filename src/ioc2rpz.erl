@@ -31,7 +31,7 @@
 -include_lib("ioc2rpz.hrl").
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([start_ioc2rpz/2,send_notify/1,send_notify/5,send_packets/20,domstr_to_bin/2,send_zone_live/9,mrpz_from_ioc/2,parse_dns_request/3,ip_to_str/1,dombin_to_str/1,reverse_IP/1,mrpz_from_ioc/4,rl_key/5,rpz_zone/1]).
+-export([start_ioc2rpz/2,send_notify/1,send_notify/5,send_packets/20,domstr_to_bin/2,send_zone_live/9,mrpz_from_ioc/2,parse_dns_request/3,ip_to_str/1,dombin_to_str/1,reverse_IP/1,mrpz_from_ioc/4,rl_key/5,rl_limits/2,rpz_zone/1]).
 
 
 %-compile([export_all]).
@@ -491,7 +491,11 @@ parse_dns_request(Socket, <<PH:4/bytes, _QDCOUNT:2/big-unsigned-unit:8,_ANCOUNT:
   %Intelligent (hybrid) rate-limit key: granular {Rip,QName,QType} for provisioned
   %zones + supported QTYPEs and recognized management requests, aggregate {Rip}
   %for everything else (prevents query-name-variation bypass). See rl_key/5.
-  case ioc2rpz_fun:check_rate_limit(rl_key(Rip,QNameL,QType,QClass,RpzZone)) of
+  %The limit and window that apply to the key are resolved per knob from the
+  %zone, then the server, then the macro defaults. See rl_limits/2.
+  RLKey = rl_key(Rip,QNameL,QType,QClass,RpzZone),
+  {RLWindow,RLMax} = rl_limits(RLKey,RpzZone),
+  case ioc2rpz_fun:check_rate_limit(RLKey,RLMax,RLWindow) of
       true ->
         %Sources in the management ACL are exempt from rate limiting. The ACL is
         %only consulted once the counter has already tripped, so ordinary
@@ -773,6 +777,61 @@ rl_is_granular(_QName, _QType, _QClass, _RpzZone) ->
 %% The leading byte is the first DNS label length and is ignored.
 rl_is_sample_zone(<<_,"sample-zone",7,"ioc2rpz">>) -> true;
 rl_is_sample_zone(_) -> false.
+
+%% @doc Resolves the rate limit that applies to a request, per knob, with the
+%% precedence RPZ zone → server → macro default.
+%%
+%% Any level may leave any knob unset, in which case that single knob is
+%% inherited from the next level down; nothing has to be configured for the
+%% macro defaults to apply, which is what keeps existing configurations working
+%% unchanged.
+%% <ul>
+%%   <li>Aggregate per-IP bucket (`{IP}' key) — server level or macro default.
+%%       A request counted there did not resolve to a zone, so there is no zone
+%%       configuration to read: it uses `MaxUnknownRequests'.</li>
+%%   <li>Granular bucket (`{IP, QName, QType}' key) for a provisioned zone —
+%%       the zone's `#rpz.rate_limit' overrides the server level knob by knob.</li>
+%%   <li>Granular bucket without a zone record (the virtual sample zone, and
+%%       management commands) — server level or macro default.</li>
+%% </ul>
+%%
+%% @param RLKey The rate-limit key from `rl_key/5'.
+%% @param RpzZone The prefetched RPZ zone lookup (`[Zone]' or `[]').
+%% @returns `{WindowMs, Max}' to be passed to
+%%          `ioc2rpz_fun:check_rate_limit/3'.
+-spec rl_limits(tuple(), list()) -> {pos_integer(), non_neg_integer()}.
+rl_limits({_Rip}, _RpzZone) ->
+  {Window,_Max,MaxUnknown} = srv_rate_limit(),
+  {Window,MaxUnknown};
+
+rl_limits(_RLKey, [Zone]) when is_record(Zone, rpz) ->
+  {Window,Max,_MaxUnknown} = srv_rate_limit(),
+  case Zone#rpz.rate_limit of
+    {ZWindow,ZMax} -> {?iif(ZWindow == undefined, Window, ZWindow), ?iif(ZMax == undefined, Max, ZMax)};
+    _ -> {Window,Max} %nothing configured for this zone
+  end;
+
+rl_limits(_RLKey, _RpzZone) ->
+  {Window,Max,_MaxUnknown} = srv_rate_limit(),
+  {Window,Max}.
+
+%% @doc Reads the resolved server-level rate limit from the `{srv,...}' row of
+%% `cfg_table'. `ioc2rpz_sup:validateCFGSrv/1' guarantees a complete
+%% `{WindowMs, MaxRequests, MaxUnknownRequests}' triple there; the macro
+%% defaults are used when the row is absent or predates this setting (e.g. in
+%% unit tests).
+%% @returns `{WindowMs, MaxRequests, MaxUnknownRequests}'.
+-spec srv_rate_limit() -> {pos_integer(), non_neg_integer(), non_neg_integer()}.
+srv_rate_limit() ->
+  case ets:lookup(cfg_table, srv) of
+    [{srv,_Server,_Email,_MKeys,_ACL,_Cert,Srv}] when is_record(Srv, srv) ->
+      case Srv#srv.rate_limit of
+        {Window,Max,MaxUnknown} when Window /= undefined, Max /= undefined, MaxUnknown /= undefined ->
+          {Window,Max,MaxUnknown};
+        _ -> {?RATE_LIMIT_WINDOW, ?MAX_REQUESTS_PER_WINDOW, ?MAX_UNKNOWN_REQUESTS_PER_WINDOW}
+      end;
+    _ -> {?RATE_LIMIT_WINDOW, ?MAX_REQUESTS_PER_WINDOW, ?MAX_UNKNOWN_REQUESTS_PER_WINDOW}
+  end.
 
 %% @doc Returns `true' when `Rip' is listed in the management ACL (`#srv.acl'),
 %% in which case the request is not rate limited. Management stations and
@@ -2643,3 +2702,55 @@ rl_key_test() ->
     %% wrong class (e.g. C_IN expected) for a TXT to a real zone -> aggregate
     ?assert(rl_key(Rip, Zone, ?T_TXT, ?C_IN, [zone]) =:= {Rip})
   ].
+
+%% Rate-limit resolution: RPZ zone -> server -> macro defaults, per knob.
+rl_limits_test_() ->
+  {setup,
+   fun() -> catch ets:delete(cfg_table), ets:new(cfg_table, [named_table, public, ordered_set]) end,
+   fun(_) -> catch ets:delete(cfg_table), ok end,
+   fun(_) ->
+    Rip = {10,0,0,1},
+    Granular = {Rip, <<4,"test",3,"rpz">>, ?T_AXFR},
+    Aggregate = {Rip},
+    SrvRL = {30000, 10, 2}, %as resolved by validateCFGSrv/1
+    Zone = fun(RL) -> [#rpz{zone = <<4,"test",3,"rpz",0>>, rate_limit = RL}] end,
+    SetSrv = fun(RL) ->
+      ets:delete(cfg_table, srv),
+      ets:insert(cfg_table, {srv,srv,email,[],[],undefined,#srv{rate_limit=RL}})
+    end,
+    [
+      %% no server row at all -> macro defaults
+      ?_assertEqual({?RATE_LIMIT_WINDOW, ?MAX_REQUESTS_PER_WINDOW}, rl_limits(Granular, Zone(undefined))),
+      ?_assertEqual({?RATE_LIMIT_WINDOW, ?MAX_UNKNOWN_REQUESTS_PER_WINDOW}, rl_limits(Aggregate, [])),
+      %% server level configured, zone silent -> server values
+      ?_test(begin
+        SetSrv(SrvRL),
+        ?assertEqual({30000,10}, rl_limits(Granular, Zone(undefined))),
+        %% the aggregate bucket uses the server max_unknown_requests
+        ?assertEqual({30000,2}, rl_limits(Aggregate, [])),
+        %% no zone record (sample zone / management command) -> server values
+        ?assertEqual({30000,10}, rl_limits(Granular, []))
+      end),
+      %% zone overrides both knobs
+      ?_test(begin
+        SetSrv(SrvRL),
+        ?assertEqual({120000,50}, rl_limits(Granular, Zone({120000,50})))
+      end),
+      %% zone overrides ONE knob, the other is inherited from the server
+      ?_test(begin
+        SetSrv(SrvRL),
+        ?assertEqual({30000,50}, rl_limits(Granular, Zone({undefined,50}))),
+        ?assertEqual({120000,10}, rl_limits(Granular, Zone({120000,undefined})))
+      end),
+      %% a zone limit never applies to the aggregate per-IP bucket
+      ?_test(begin
+        SetSrv(SrvRL),
+        ?assertEqual({30000,2}, rl_limits(Aggregate, Zone({120000,50})))
+      end),
+      %% server row present but predating the setting -> macro defaults
+      ?_test(begin
+        SetSrv(undefined),
+        ?assertEqual({?RATE_LIMIT_WINDOW, ?MAX_REQUESTS_PER_WINDOW}, rl_limits(Granular, Zone(undefined)))
+      end)
+    ]
+   end}.

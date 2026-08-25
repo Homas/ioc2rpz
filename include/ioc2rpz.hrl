@@ -137,7 +137,7 @@
 %%%===================================================================
 
 %% Application version string: "major.minor.patch.build-YYYYMMDDNN"
--define(ioc2rpz_ver, "1.4.0.3-2026082401").
+-define(ioc2rpz_ver, "1.4.0.4-2026082501").
 
 %% DNS label compression pointer for the query name (QNAME) in responses.
 %% In a standard DNS response, the original QNAME from the question section
@@ -392,7 +392,20 @@
 %%                   #rpz.track_sources is `undefined`. Defaults to `off`, so
 %%                   existing configs (which specify no value) keep the current
 %%                   behavior of tracking disabled.
--record(srv, {server,email,mkeys,acl,cert, max_ioc, key_groups, track_sources = off}).
+%%   rate_limit — server-level DNS rate limit as a
+%%                {WindowMs, MaxRequests, MaxUnknownRequests} triple. As parsed,
+%%                an element the operator did not set is `undefined' (and the
+%%                whole field is `undefined' when no rate_limit was configured
+%%                at all); ioc2rpz_sup:validateCFGSrv/1 then fills every unset
+%%                element with the ?RATE_LIMIT_WINDOW / ?MAX_REQUESTS_PER_WINDOW /
+%%                ?MAX_UNKNOWN_REQUESTS_PER_WINDOW macro default, so the record
+%%                stored in cfg_table always carries a complete triple.
+%%                A zone may override the window and the per-zone maximum via
+%%                #rpz.rate_limit; the aggregate per-IP maximum is server-level
+%%                only, because a request counted in that bucket has no zone to
+%%                read a limit from. Applied by ioc2rpz:rl_limits/2.
+-record(srv, {server,email,mkeys,acl,cert, max_ioc, key_groups, track_sources = off,
+              rate_limit = undefined}).
 
 %% TSIG key definition. Stored in cfg_table as {[key, Name], ...}.
 %% Used for authenticating zone transfers and DNS management requests.
@@ -449,7 +462,15 @@
 %%                        Left `undefined` by default so every existing #rpz{...}
 %%                        literal keeps compiling and unconfigured feeds inherit the
 %%                        global default.
--record(rpz, {rpzid, zone, zone_str, soa_timers, cache, wildcards, notify, action, akeys, ioc_type, axfr_time, ixfr_time, sources, status, serial, serial_new, serial_ixfr, notifylist, whitelist, ioc_md5, update_time, ixfr_update_time, ixfr_nz_update_time, pid, ioc_count, userid, max_ioc, key_groups, rule_count, track_sources = undefined}).
+%%   rate_limit         — per-zone DNS rate limit as a {WindowMs, MaxRequests}
+%%                        pair; either element may be `undefined`, meaning that
+%%                        knob is inherited from the server level and then from
+%%                        the macro default. `undefined` (the default) ⇒ nothing
+%%                        configured for this zone, so every existing #rpz{...}
+%%                        literal keeps compiling. Applies to the granular
+%%                        {IP, QName, QType} bucket of this zone.
+%%                        Resolved by ioc2rpz:rl_limits/2.
+-record(rpz, {rpzid, zone, zone_str, soa_timers, cache, wildcards, notify, action, akeys, ioc_type, axfr_time, ixfr_time, sources, status, serial, serial_new, serial_ixfr, notifylist, whitelist, ioc_md5, update_time, ixfr_update_time, ixfr_nz_update_time, pid, ioc_count, userid, max_ioc, key_groups, rule_count, track_sources = undefined, rate_limit = undefined}).
 
 %% IOC Source definition. Represents a feed/data source that provides
 %% indicators of compromise. Stored in cfg_table as {[source, Name], Source}.
@@ -492,12 +513,30 @@
 %%%
 %%% Controls DNS query rate limiting to mitigate abuse and DDoS.
 %%% Rate limit state is stored in the ?RATE_LIMIT_TABLE ETS table as
-%%% {Key, WindowStart, Count} entries, keyed by {IP} (aggregate) or
+%%% {Key, WindowStart, Count, WindowMs} entries, keyed by {IP} (aggregate) or
 %%% {IP, QName, QType} (granular) - see ioc2rpz:rl_key/5.
-%%% Checked in ioc2rpz:parse_dns_request/3 via ioc2rpz_fun:check_rate_limit/1.
+%%% Checked in ioc2rpz:parse_dns_request/3 via ioc2rpz_fun:check_rate_limit/3.
 %%% Sources in the management ACL (#srv.acl) are exempt.
 %%% The table is created by ioc2rpz_db:init_db/3 together with the other
 %%% named tables so it has the database supervisor as its heir.
+%%%
+%%% The macros below are the LAST fallback. Effective limits are resolved per
+%%% knob by ioc2rpz:rl_limits/2 with the precedence
+%%%   RPZ (#rpz.rate_limit) -> server (#srv.rate_limit) -> macro default
+%%% so a level (or a single knob within a level) that is not configured simply
+%%% inherits the next one down. Configuration is optional at every level:
+%%%
+%%%   {srv,{"ns.example","admin@example",["mgmt-key"],["10.0.0.1"],
+%%%         {rate_limit,[{window,60},{max_requests,6},{max_unknown_requests,1}]}}}.
+%%%
+%%%   {rpz,{"zone.rpz",3600,60,86400,60,"true","true","nodata",[],"fqdn:ip",
+%%%         86400,3600,["source"],[],[], {rate_limit,[{window,60},{max_requests,20}]}}}.
+%%%
+%%% `window' is given in SECONDS in the configuration file and converted to
+%%% milliseconds when parsed. `max_unknown_requests' is accepted at the server
+%%% level only. The {rate_limit,...} element is an optional trailing element of
+%%% the {srv,{...}} / {rpz,{...}} tuple and may be combined with the optional
+%%% track_sources element in either order (see ioc2rpz_sup:read_config3/8).
 %%%===================================================================
 
 %% ETS table name for storing rate limit entries.

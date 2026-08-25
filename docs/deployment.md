@@ -408,7 +408,7 @@ After a configuration reload, if an RPZ zone still references a source that was 
 ### High Memory Usage
 
 - Check ETS table sizes in the Erlang shell (see Monitoring section)
-- `rate_limits` is swept every 10 seconds (`?RATE_LIMIT_WINDOW`) by `ioc2rpz_fun:cleanup_rate_limit_table/0`, removing expired per-client entries
+- `rate_limits` is swept every 60 seconds (`?RATE_LIMIT_WINDOW`) by `ioc2rpz_fun:cleanup_rate_limit_table/0`, removing every per-client entry whose own counting window has elapsed (windows are configurable per zone, so the cutoff is evaluated per entry)
 - `rpz_hotcache_table` packet entries are swept every 900 seconds (`?HotCacheTime`) by `ioc2rpz_db:cleanup_hotcache/0`, removing expired cached zone packets
 - Large IOC sources consume memory proportional to indicator count
 - Consider reducing `?HotCacheTime` (default 900s) if hot cache grows too large

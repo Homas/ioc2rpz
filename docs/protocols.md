@@ -396,23 +396,47 @@ After a zone update (AXFR or IXFR), ioc2rpz sends DNS NOTIFY messages (RFC 1996)
 
 DNS queries are rate-limited using an **intelligent (hybrid) key** stored in an ETS table (`rate_limits`). The key is chosen per request by `ioc2rpz:rl_key/5` so that legitimate multi-zone traffic and abusive query-name-variation traffic are treated differently:
 
-| Request class | Condition | Rate-limit key | Threshold macro |
+| Request class | Condition | Rate-limit key | Limit |
 |---|---|---|---|
-| Provisioned zone, supported QTYPE | class `IN` + `SOA`/`AXFR`/`IXFR` for a zone in `cfg_table` (incl. virtual `sample-zone.ioc2rpz`) | `{client_IP, query_name, query_type}` (granular) | `?MAX_REQUESTS_PER_WINDOW` |
-| Recognized management request | class `CHAOS` + `TXT` with a known management command (`ioc2rpz-status`, `ioc2rpz-reload-cfg`, `ioc2rpz-update-tkeys`, `ioc2rpz-terminate`, `ioc2rpz-update-all-rpz`) or a provisioned zone name (force-AXFR) | `{client_IP, query_name, query_type}` (granular) | `?MAX_REQUESTS_PER_WINDOW` |
-| Everything else | non-existent/unprovisioned zone, unsupported QTYPE, wrong class, or unrecognized CHAOS/TXT name | `{client_IP}` (aggregate per-IP) | `?MAX_UNKNOWN_REQUESTS_PER_WINDOW` |
+| Provisioned zone, supported QTYPE | class `IN` + `SOA`/`AXFR`/`IXFR` for a zone in `cfg_table` (incl. virtual `sample-zone.ioc2rpz`) | `{client_IP, query_name, query_type}` (granular) | `max_requests` |
+| Recognized management request | class `CHAOS` + `TXT` with a known management command (`ioc2rpz-status`, `ioc2rpz-reload-cfg`, `ioc2rpz-update-tkeys`, `ioc2rpz-terminate`, `ioc2rpz-update-all-rpz`) or a provisioned zone name (force-AXFR) | `{client_IP, query_name, query_type}` (granular) | `max_requests` |
+| Everything else | non-existent/unprovisioned zone, unsupported QTYPE, wrong class, or unrecognized CHAOS/TXT name | `{client_IP}` (aggregate per-IP) | `max_unknown_requests` |
 
 The granular bucket means a legitimate secondary polling/transferring several zones (e.g. `rpz1`, `rpz2`, `rpz3`) plus management from one IP is counted independently per zone+type and is not starved. The aggregate bucket means an attacker cannot multiply their effective limit by varying the query name (random subdomains, junk CHAOS/TXT names) — all such traffic shares a single per-IP counter.
 
-| Parameter | Value | Macro |
-|-----------|-------|-------|
-| Window | 10 seconds | `?RATE_LIMIT_WINDOW` (10000 ms) |
-| Max requests per window (granular: known zone + type / management) | 1 | `?MAX_REQUESTS_PER_WINDOW` |
-| Max requests per window (aggregate: unknown zone / unsupported type) | 1 | `?MAX_UNKNOWN_REQUESTS_PER_WINDOW` |
+Query names are matched case-insensitively (RFC 4343): the name is lower-cased before the zone lookup and before the rate-limit key is built, so varying the case cannot produce a separate bucket or miss a provisioned zone.
 
-The threshold is selected by key shape in `ioc2rpz_fun:check_rate_limit/1` (a 1-tuple `{IP}` uses the aggregate limit; a 3-tuple `{IP, QName, QType}` uses the granular limit). When the rate limit is exceeded, the server returns a DNS `REFUSED` response and logs a CEF event (code 429).
+When the rate limit is exceeded, the server returns a DNS `REFUSED` response and logs a CEF event (code 429). **Sources listed in the server management ACL (`#srv.acl`) are exempt** — the ACL is only consulted once the counter has tripped, so ordinary traffic does not pay for the check, and an exemption is recorded in the debug log rather than as a 429.
 
 Rate limiting applies to all DNS query transports (UDP, TCP, TLS, DoH).
+
+### Limits and configuration
+
+| Option | Levels | Default macro | Description |
+|--------|--------|---------------|-------------|
+| `window` | zone, server | `?RATE_LIMIT_WINDOW` (60000 ms) | Length of the counting window, in **seconds** in the config file |
+| `max_requests` | zone, server | `?MAX_REQUESTS_PER_WINDOW` (6) | Requests allowed per window in the granular bucket |
+| `max_unknown_requests` | server | `?MAX_UNKNOWN_REQUESTS_PER_WINDOW` (1) | Requests allowed per window in the aggregate per-IP bucket |
+
+Limits are configured as an optional trailing `{rate_limit,[...]}` element of the `{srv,{...}}` and `{rpz,{...}}` tuples. Every level and every individual option is optional, and each option resolves on its own with the precedence
+
+**RPZ zone → server → macro default**
+
+so a zone can override `max_requests` alone and still inherit `window` from the server. `max_unknown_requests` is server-level only: a request counted in the aggregate bucket did not resolve to a zone, so there is no zone configuration to read it from.
+
+```erlang
+{srv,{"ns1.example.com","support.example.com",["dnsmkey_1"],["10.0.0.1"],
+      {rate_limit,[{window,60},{max_requests,6},{max_unknown_requests,1}]}}}.
+
+{rpz,{"big.rpz",3600,60,86400,60,"true","true","nodata",["dnskey_1"],"fqdn:ip",86400,3600,
+      ["source_1"],[],[], {rate_limit,[{max_requests,2}]}}}.
+```
+
+`ioc2rpz:rl_limits/2` performs the resolution and passes the result to `ioc2rpz_fun:check_rate_limit/3`. Invalid values and unknown options are logged and ignored (the option is inherited instead). A maximum of `0` refuses every request in that bucket; `window` must be greater than 0. Changed limits take effect on a configuration reload without forcing a zone transfer.
+
+### Implementation notes
+
+Each entry in the `rate_limits` ETS table is `{Key, WindowStart, Count, WindowMs}`. Because every DNS request is served by its own process, the counter is incremented with a single atomic `ets:update_counter/4` and the window rollover uses a compare-and-swap (`ets:select_replace/2`) — a read-modify-write loses increments under load and lets the limit be overshot several-fold. The window is stored per entry so `ioc2rpz_fun:cleanup_rate_limit_table/0` expires each key against its own window rather than one global cutoff, which matters once windows differ per zone.
 
 ## Supported DNS Record Types
 
