@@ -74,6 +74,7 @@ init_db(ets,DBDir,PID) ->
   ets:new(cfg_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, ordered_set, public, named_table]),
   ets:new(rpz_hotcache_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, ordered_set, public, named_table]), %because labels are shortened
   ets:new(stat_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, ordered_set, public, named_table]),
+  init_rate_limit_table(PID),
   {ok,[]};
 
 init_db(mnesia,_DBDir,PID) ->
@@ -92,7 +93,32 @@ init_db(mnesia,_DBDir,PID) ->
   ets:new(cfg_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, ordered_set, public, named_table]),
   ets:new(rpz_hotcache_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, ordered_set, public, named_table]),
   ets:new(stat_table, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, ordered_set, public, named_table]),
+  init_rate_limit_table(PID),
   {ok,[]}.
+
+
+%% @doc Creates the rate-limit table (`?RATE_LIMIT_TABLE') with the database
+%% supervisor as its heir, so the table survives the death of the process that
+%% created it instead of taking every in-flight DNS request down with it.
+%%
+%% Creation is idempotent: if the table is still alive (inherited by the heir
+%% after an owner crash, or created by a test) it is kept as is, because
+%% `ets:new/2' on an existing named table raises `badarg' and would abort
+%% startup. `set' is required — {@link ioc2rpz_fun:check_rate_limit/2} counts
+%% with `ets:update_counter/4'.
+%%
+%% @param PID Heir process PID that receives table ownership on owner crash
+%% @returns `ok'
+%% @end
+-spec init_rate_limit_table(pid()) -> ok.
+init_rate_limit_table(PID) ->
+  case ets:info(?RATE_LIMIT_TABLE, name) of
+    undefined ->
+      ets:new(?RATE_LIMIT_TABLE, [{heir,PID,[]}, {read_concurrency, true}, {write_concurrency, true}, set, public, named_table]),
+      ok;
+    _ ->
+      ok %already exists (inherited by the heir) - keep the counters
+  end.
 
 
 %% @doc Returns information about a database table.

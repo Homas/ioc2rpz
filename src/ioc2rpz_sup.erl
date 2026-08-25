@@ -60,8 +60,8 @@ stop_ioc2rpz_sup() ->
 %%
 %% Performs full server bootstrap:
 %% <ol>
-%%   <li>Starts the database supervisor and initialises ETS/mnesia storage</li>
-%%   <li>Creates the `cfg_table' and `rate_limits' ETS tables</li>
+%%   <li>Starts the database supervisor and initialises ETS/mnesia storage
+%%       (including the `cfg_table' and `rate_limits' ETS tables)</li>
 %%   <li>Parses the configuration file via {@link read_config3/1}</li>
 %%   <li>Loads hot-sources and triggers initial zone updates</li>
 %%   <li>Sets up periodic timers for zone refresh and hot-source reload</li>
@@ -93,7 +93,8 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
   {ok, _} = ioc2rpz_db:init_db(?DBStorage,DBDir,PidDB),
 
   ets:insert_new(cfg_table, {cfg_file,Filename}), ets:insert_new(cfg_table, {db_dir,DBDir}),
-  ets:new(?RATE_LIMIT_TABLE, [named_table, public, {read_concurrency, true}, {write_concurrency, true}]), %rate limiting table
+  %the rate limiting table is created by ioc2rpz_db:init_db/3 above, together
+  %with the other named tables, so it has the database supervisor as its heir
   {ok,RPZ,_,_} = read_config3(Filename),
   %os:set_signal(sighup,handle),
   %os:set_signal(sigterm,handle),
@@ -470,7 +471,11 @@ read_config3([{source,{Name,AXFR,IXFR,REGEX,UserID,Max_Count,HotCacheTime,HotCac
 %%% the 15-element clause below; Erlang matches clauses in order. An
 %%% unrecognised value defaults to `undefined` (⇒ inherit the server global
 %%% default). Existing 15-field configs are unaffected (R2).
-read_config3([{rpz,{Zone, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards, Action, AKeys, IOCType, AXFR_Time, IXFR_Time, Sources, NotifyList, Whitelist, TrackSources}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,RPZ) ->
+read_config3([{rpz,{Zone0, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards, Action, AKeys, IOCType, AXFR_Time, IXFR_Time, Sources, NotifyList, Whitelist, TrackSources}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,RPZ) ->
+  %RFC 4343: zone names are case-insensitive. Canonicalise to lower case here so
+  %the cfg_table key matches the (also lower-cased) query name in
+  %ioc2rpz:rpz_zone/1 whatever case the config file or the client used.
+  Zone = zone_name_lowcase(Zone0),
   {ok,ZoneB} = ioc2rpz:domstr_to_bin(list_to_binary(Zone),0),
   AKeysX=[ioc2rpz:domstr_to_bin(list_to_binary(X),0)|| X <- AKeys, is_list(X) ], AKeysB=[X || {_,X} <- AKeysX],
 	KeyGroups=lists:append([ Y || {groups, Y} <- [ X || X <- AKeys, is_tuple(X) ], is_list(Y) ]),
@@ -504,7 +509,9 @@ read_config3([{rpz,{Zone, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards,
 %%% #srv.track_sources, which is `off` unless configured). This preserves
 %%% backward compatibility: existing config files load unchanged and behave as
 %%% off — no tracking, no rebuilds, unchanged API (R2/R4).
-read_config3([{rpz,{Zone, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards, Action, AKeys, IOCType, AXFR_Time, IXFR_Time, Sources, NotifyList, Whitelist}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,RPZ) ->
+read_config3([{rpz,{Zone0, Refresh, Retry, Expiration, Neg_ttl, Cache, Wildcards, Action, AKeys, IOCType, AXFR_Time, IXFR_Time, Sources, NotifyList, Whitelist}}|REST],RType,Srv,Keys,Key_Groups,WhiteLists,SourcesC,RPZ) ->
+  %see the 16-field clause above: zone names are canonicalised to lower case
+  Zone = zone_name_lowcase(Zone0),
   {ok,ZoneB} = ioc2rpz:domstr_to_bin(list_to_binary(Zone),0),
   AKeysX=[ioc2rpz:domstr_to_bin(list_to_binary(X),0)|| X <- AKeys, is_list(X) ], AKeysB=[X || {_,X} <- AKeysX],
 	KeyGroups=lists:append([ Y || {groups, Y} <- [ X || X <- AKeys, is_tuple(X) ], is_list(Y) ]),
@@ -900,6 +907,23 @@ validate_feed_track_sources(false) -> false;
 validate_feed_track_sources(V) ->
   ioc2rpz_fun:logMessage("Invalid feed track_sources value ~p, defaulting to undefined (inherit global default)~n", [V]),
   undefined.
+
+%% @doc Canonicalises a configured zone name to lower case (RFC 4343).
+%%
+%% Both `#rpz.zone' (the wire-format cfg_table/database key) and `#rpz.zone_str'
+%% are derived from this value, and `ioc2rpz:rpz_zone/1' looks the zone up with
+%% the lower-cased query name, so an upper-case name in the config file would
+%% otherwise be unreachable. Non-list values are passed through untouched for
+%% the config validator to report.
+%%
+%% @param Zone The zone name as written in the configuration file.
+%% @returns The zone name in lower case.
+-spec zone_name_lowcase(string()) -> string().
+zone_name_lowcase(Zone) when is_list(Zone) ->
+  binary_to_list(ioc2rpz_fun:bin_to_lowcase(list_to_binary(Zone)));
+
+zone_name_lowcase(Zone) ->
+  Zone.
 
 %% @doc Resolve the effective source-attribution tracking flag for a zone.
 %%

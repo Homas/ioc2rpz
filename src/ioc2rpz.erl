@@ -436,7 +436,8 @@ send_dns_udp(Socket, Dst, Port, Pkt, _MaxSize, _Args) ->
 %% - DDoS detection (rejects queries from DNS ports 53/853)
 %% - QR bit check (drops responses masquerading as queries)
 %% - QDCOUNT validation (rejects multi-question queries)
-%% - Per-IP/query rate limiting via `ioc2rpz_fun:check_rate_limit/1'
+%% - Per-IP/query rate limiting via `ioc2rpz_fun:check_rate_limit/1',
+%%   skipped for sources in the management ACL (see `mgmt_acl_ip/1')
 %% - Delegation to `process_dns_request/3' for valid queries
 %%
 %% @param Socket The connection socket (TCP, TLS, or UDP).
@@ -479,16 +480,30 @@ parse_dns_request(Socket, <<PH:4/bytes, _QDCOUNT:2/big-unsigned-unit:8,_ANCOUNT:
   %request's OPT pseudo-record (if any) and carry it in #proto so send_dns_udp/6
   %can raise the UDP truncation threshold above the classic 512 bytes.
   Proto0 = Proto#proto{edns_size = edns_udp_size(NSCOUNT, ARCOUNT, Other_REC)},
+  %RFC 4343: DNS names are case-insensitive, so the name is canonicalised to
+  %lower case for the zone lookup and the rate-limit key - a mixed case query
+  %hits the same zone and the same rate-limit bucket. The original QName is kept
+  %for the response (the question section is echoed verbatim) and for logging.
+  QNameL = ioc2rpz_fun:bin_to_lowcase(QName),
   %2025-01-10 Resolve the RPZ zone once here so it is not looked up again in
   %process_dns_request/4 (addresses the "optimize passing processed data" TODO).
-  RpzZone = rpz_zone(QName),
+  RpzZone = rpz_zone(QNameL),
   %Intelligent (hybrid) rate-limit key: granular {Rip,QName,QType} for provisioned
   %zones + supported QTYPEs and recognized management requests, aggregate {Rip}
   %for everything else (prevents query-name-variation bypass). See rl_key/5.
-  case ioc2rpz_fun:check_rate_limit(rl_key(Rip,QName,QType,QClass,RpzZone)) of
-      true -> % Rate limit exceeded - send refused
-        ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(429),[ip_to_str(Proto0#proto.rip),Proto0#proto.rport,?iif(Proto0#proto.tls == yes,tls,Proto0#proto.proto),QStr,ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]), % Log rate limiting event
-        send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?REFUSED:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto0);
+  case ioc2rpz_fun:check_rate_limit(rl_key(Rip,QNameL,QType,QClass,RpzZone)) of
+      true ->
+        %Sources in the management ACL are exempt from rate limiting. The ACL is
+        %only consulted once the counter has already tripped, so ordinary
+        %traffic never pays for the lookup.
+        case mgmt_acl_ip(Rip) of
+          true ->
+            ?logDebugMSG("Rate limit exceeded by ~s, allowed - the source is in the management ACL~n",[ip_to_str(Rip)]),
+            process_dns_request(Socket, Data, Proto0, RpzZone);
+          false -> % Rate limit exceeded - send refused
+            ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(429),[ip_to_str(Proto0#proto.rip),Proto0#proto.rport,?iif(Proto0#proto.tls == yes,tls,Proto0#proto.proto),QStr,ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]), % Log rate limiting event
+            send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?REFUSED:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto0)
+        end;
 % 2025-01-11 A client (dig) expects a signed response. It may be not needed at all - to check RFC
 %        case ARCOUNT of 
 %          0 ->
@@ -554,6 +569,10 @@ process_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:
   {<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, Other_REC/binary>>,QName} = extract_label(Rest,<<>>),
   Question = <<QName/binary,0:8,QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8>>,
   QStr=dombin_to_str(QName),
+  %RFC 4343: match the request name case-insensitively (management commands, the
+  %sample zone, RPZ zones). Question/QStr keep the original case so the response
+  %echoes the question verbatim and the log shows what the client sent.
+  QNameL = ioc2rpz_fun:bin_to_lowcase(QName),
 
   {RRRes,_DNSRR,TSIG,SOA,RAWN} = parse_rr(NSCOUNT, ARCOUNT, Other_REC),
   ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(202),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name)]),
@@ -563,7 +582,7 @@ process_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:
 
   MGMTIP=ioc2rpz_fun:ip_in_list(ip_to_str(Proto#proto.rip),ACL),
 %%%%in response AA flag should be 1 if there no error
-  case {QName, QType, QClass,RRRes} of
+  case {QNameL, QType, QClass,RRRes} of
 %ioc2rpz statistics
     {<<_,"ioc2rpz-status">>,?T_TXT,?C_CHAOS,ok} when MGMTIP andalso Proto#proto.proto == tcp andalso ?MGMToDNS == true ->
       {TSIGV,TSIG1} = validate_REQ(PH,QDCOUNT,ANCOUNT,NSCOUNT,ARCOUNT-1,Question,RAWN,TSIG,MKeys),
@@ -707,7 +726,7 @@ process_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:
       ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(102),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
       send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?NOTIMP:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto);
 
-    {QName, QType, QClass,RRRes} ->
+    {QNameL, QType, QClass,RRRes} ->
 %    _  ->
       ?logDebugMSG("Unknow request ~p ~p ~p ~p ~n",[QName, QType, QClass,RRRes]),
       ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(102),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
@@ -754,6 +773,24 @@ rl_is_granular(_QName, _QType, _QClass, _RpzZone) ->
 %% The leading byte is the first DNS label length and is ignored.
 rl_is_sample_zone(<<_,"sample-zone",7,"ioc2rpz">>) -> true;
 rl_is_sample_zone(_) -> false.
+
+%% @doc Returns `true' when `Rip' is listed in the management ACL (`#srv.acl'),
+%% in which case the request is not rate limited. Management stations and
+%% monitoring systems poll far more often than a secondary does, and refusing
+%% them removes exactly the visibility needed while a server is under pressure.
+%%
+%% Reads the ACL with a keyed `ets:lookup/2' on the `{srv,...}' row of
+%% `cfg_table' (the same row `process_dns_request/4' uses for `MGMTIP'), and
+%% treats an absent row as "not in the ACL".
+%%
+%% @param Rip The client IP address tuple.
+%% @returns `true' if the source is exempt from rate limiting.
+-spec mgmt_acl_ip(inet:ip_address()) -> boolean().
+mgmt_acl_ip(Rip) ->
+  case ets:lookup(cfg_table, srv) of
+    [{srv,_Server,_Email,_MKeys,ACL,_Cert,_Srv}] -> ioc2rpz_fun:ip_in_list(ip_to_str(Rip),ACL);
+    _ -> false
+  end.
 
 %% @doc Matches the recognized DNS management command names (CHAOS/TXT).
 %% The leading byte is the DNS label length and is ignored.

@@ -137,7 +137,7 @@
 %%%===================================================================
 
 %% Application version string: "major.minor.patch.build-YYYYMMDDNN"
--define(ioc2rpz_ver, "1.4.0.2-2026082001").
+-define(ioc2rpz_ver, "1.4.0.3-2026082401").
 
 %% DNS label compression pointer for the query name (QNAME) in responses.
 %% In a standard DNS response, the original QNAME from the question section
@@ -491,17 +491,27 @@
 %%% Rate Limiting Constants
 %%%
 %%% Controls DNS query rate limiting to mitigate abuse and DDoS.
-%%% Rate limit state is stored in the ?RATE_LIMIT_TABLE ETS table,
-%%% keyed by client IP (or {IP, QName, QType} in current code).
+%%% Rate limit state is stored in the ?RATE_LIMIT_TABLE ETS table as
+%%% {Key, WindowStart, Count} entries, keyed by {IP} (aggregate) or
+%%% {IP, QName, QType} (granular) - see ioc2rpz:rl_key/5.
 %%% Checked in ioc2rpz:parse_dns_request/3 via ioc2rpz_fun:check_rate_limit/1.
+%%% Sources in the management ACL (#srv.acl) are exempt.
+%%% The table is created by ioc2rpz_db:init_db/3 together with the other
+%%% named tables so it has the database supervisor as its heir.
 %%%===================================================================
 
 %% ETS table name for storing rate limit entries.
 -define(RATE_LIMIT_TABLE, rate_limits).
 
-%% Sliding window duration in milliseconds for rate limit tracking.
+%% Window duration in milliseconds for rate limit tracking.
 %% Requests within this window are counted against the limit.
 -define(RATE_LIMIT_WINDOW, 60000).
+
+%% How many times ioc2rpz_fun:check_rate_limit/2 re-evaluates a key when it
+%% loses the compare-and-swap that opens a new window (or when the entry is
+%% swept by the cleanup timer mid-check). Bounds the retry loop; exhausting the
+%% attempts denies the request.
+-define(RATE_LIMIT_CAS_ATTEMPTS, 3).
 
 %% Maximum number of DNS requests allowed per client IP within
 %% a single ?RATE_LIMIT_WINDOW period. Requests exceeding this

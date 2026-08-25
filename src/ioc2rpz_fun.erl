@@ -485,16 +485,19 @@ get_cipher_suites(TLSVersion) ->
 
 %% @doc Checks whether a request identified by `Id' exceeds the rate limit.
 %%
-%% Uses the `?RATE_LIMIT_TABLE' ETS table to track request timestamps and
-%% counts per identifier. Within a sliding window of `?RATE_LIMIT_WINDOW'
-%% milliseconds, at most `?MAX_REQUESTS_PER_WINDOW' requests are allowed.
+%% Uses the `?RATE_LIMIT_TABLE' ETS table to track, per identifier, the start of
+%% the current window and the number of requests counted in it. Entries have the
+%% shape `{Id, WindowStart, Count}'. At most `Max' requests are allowed within
+%% `?RATE_LIMIT_WINDOW' milliseconds; when the window has elapsed it is reset
+%% and counting starts again.
 %%
-%% If the window has expired, the counter is reset. If this is the first
-%% request for the given `Id', a new entry is created.
-%%
-%% <b>Note:</b> Expired entries are never deleted by this function, which can
-%% cause unbounded ETS table growth. See bugfix task 21 for the planned
-%% periodic cleanup mechanism.
+%% <b>Concurrency:</b> every DNS request is processed in its own process (UDP
+%% packets are spawned, TCP/TLS connections have one worker each), so several
+%% processes hit the same key at the same time. The counter is therefore bumped
+%% with a single atomic `ets:update_counter/4' and the window rollover is done
+%% with a compare-and-swap (`ets:select_replace/2'). A read-modify-write
+%% (lookup + insert) loses increments under load and lets the limit be
+%% overshot several-fold — exactly when the limiter matters most.
 %%
 %% @param Id The rate limit key. A 3-tuple `{IP, QName, QType}' selects the
 %%        granular bucket (limited by `?MAX_REQUESTS_PER_WINDOW'); a 1-tuple
@@ -514,28 +517,57 @@ check_rate_limit(Id) ->
   check_rate_limit(Id, Max).
 
 %% @doc Rate-limit check with an explicit per-window maximum.
+%% A missing `?RATE_LIMIT_TABLE' (not created yet, or its owner died) is not
+%% allowed to crash the request being served: the request is let through and the
+%% condition is reported in the debug log.
 %% @param Id The rate limit key.
 %% @param Max The maximum number of requests allowed within `?RATE_LIMIT_WINDOW'.
 %% @returns `true' if the rate limit is exceeded, `false' otherwise.
 -spec check_rate_limit(term(), non_neg_integer()) -> boolean().
 check_rate_limit(Id, Max) ->
-  CurrentTime = erlang:system_time(millisecond),
+  try
+    rl_count(Id, Max, ?RATE_LIMIT_CAS_ATTEMPTS)
+  catch
+    error:badarg ->
+      ?logDebugMSG("rate limit table ~p is not available, request allowed~n",[?RATE_LIMIT_TABLE]),
+      false
+  end.
+
+%% @doc Counts one request against `Id' and reports whether it is over `Max'.
+%% `Attempts' bounds the number of window-rollover retries; running out denies
+%% the request (fail closed) rather than looping.
+rl_count(_Id, _Max, 0) ->
+  true;
+
+rl_count(Id, Max, Attempts) ->
+  Now = erlang:system_time(millisecond),
+  %% One atomic operation: increments the counter, or inserts {Id, Now, 1} when
+  %% the key is absent. No process can observe or overwrite a stale count.
+  Count = ets:update_counter(?RATE_LIMIT_TABLE, Id, {3, 1}, {Id, Now, 0}),
+  if
+    Count =< Max -> false; % within the limit for the current window
+    true -> rl_rollover(Id, Max, Now, Attempts)
+  end.
+
+%% @doc Handles a key that is over its limit: resets the window if it has
+%% elapsed, otherwise reports the limit as exceeded.
+rl_rollover(Id, Max, Now, Attempts) ->
   case ets:lookup(?RATE_LIMIT_TABLE, Id) of
-      [{Id, {LastRequestTime, RequestCount}}] ->
-          if CurrentTime - LastRequestTime < ?RATE_LIMIT_WINDOW ->
-              if RequestCount >= Max ->
-                  true; % Rate limit exceeded
-              true ->
-                  ets:insert(?RATE_LIMIT_TABLE, {Id, {CurrentTime, RequestCount + 1}}),
-                  false % Rate limit not exceeded
-              end;
-          true ->
-              ets:insert(?RATE_LIMIT_TABLE, {Id, {CurrentTime, 1}}), % Reset count if outside the window
-              false
-          end;
-      [] ->
-          ets:insert(?RATE_LIMIT_TABLE, {Id, {CurrentTime, 1}}), % First request from this IP
-          false
+    [{Id, Start, _Count}] when (Now - Start) >= ?RATE_LIMIT_WINDOW ->
+      %% The window has elapsed. CAS on the window start so exactly one of the
+      %% concurrent processes opens the new window; the losers re-evaluate
+      %% against the window that was just opened.
+      case ets:select_replace(?RATE_LIMIT_TABLE,
+             [{{Id, Start, '_'}, [], [{const, {Id, Now, 1}}]}]) of
+        1 -> false;
+        0 -> rl_count(Id, Max, Attempts - 1)
+      end;
+    [{Id, _Start, _Count}] ->
+      true; % over the limit inside the current window
+    [] ->
+      %% Swept by cleanup_rate_limit_table/0 between the increment and the
+      %% lookup - count again against a fresh entry.
+      rl_count(Id, Max, Attempts - 1)
   end.
 %%%End rate limit function
 
@@ -546,16 +578,22 @@ check_rate_limit(Id, Max) ->
 %% from the current time. This prevents unbounded table growth from
 %% one-time clients that never return.
 %%
-%% Intended to be called via `timer:apply_interval/4' from the supervisor.
+%% Intended to be called via `timer:apply_interval/4' from the supervisor. The
+%% timer outlives the table (e.g. during shutdown), so a missing table is
+%% tolerated instead of crashing the timer.
 %% @returns `ok'.
 -spec cleanup_rate_limit_table() -> ok.
 cleanup_rate_limit_table() ->
   CurrentTime = erlang:system_time(millisecond),
   Cutoff = CurrentTime - ?RATE_LIMIT_WINDOW,
-  %% Delete all entries where LastRequestTime =< Cutoff
-  %% Match spec: match {Key, {LastRequestTime, _Count}} where LastRequestTime =< Cutoff
-  ets:select_delete(?RATE_LIMIT_TABLE,
-    [{{'_', {'$1', '_'}}, [{'=<', '$1', Cutoff}], [true]}]),
+  %% Delete all entries where WindowStart =< Cutoff
+  %% Match spec: match {Key, WindowStart, _Count} where WindowStart =< Cutoff
+  try
+    ets:select_delete(?RATE_LIMIT_TABLE,
+      [{{'_', '$1', '_'}, [{'=<', '$1', Cutoff}], [true]}])
+  catch
+    error:badarg -> 0
+  end,
   ok.
 %%%End rate limit cleanup
 
@@ -983,19 +1021,23 @@ bin_to_lowcase_test() ->[
 	?assert(bin_to_lowcase(<<"eeeeeeeeeeeeeeeeeeeeeee">>) =:= <<"eeeeeeeeeeeeeeeeeeeeeee">>)
 ].
 
-cleanup_rate_limit_table_test() ->
-  %% Create or reuse the rate_limits ETS table for testing
-  case ets:info(?RATE_LIMIT_TABLE) of
-    undefined -> ets:new(?RATE_LIMIT_TABLE, [named_table, public, {read_concurrency, true}, {write_concurrency, true}]);
+%% Creates or empties the rate_limits ETS table for testing. `set' matches
+%% ioc2rpz_db:init_rate_limit_table/1 (required by ets:update_counter/4).
+setup_rate_limit_table() ->
+  case ets:info(?RATE_LIMIT_TABLE, name) of
+    undefined -> ets:new(?RATE_LIMIT_TABLE, [named_table, public, set, {read_concurrency, true}, {write_concurrency, true}]);
     _ -> ets:delete_all_objects(?RATE_LIMIT_TABLE)
-  end,
+  end.
+
+cleanup_rate_limit_table_test() ->
+  setup_rate_limit_table(),
   CurrentTime = erlang:system_time(millisecond),
   %% Insert an expired entry (well beyond the window)
   ExpiredTime = CurrentTime - ?RATE_LIMIT_WINDOW - 5000,
-  ets:insert(?RATE_LIMIT_TABLE, {expired_key, {ExpiredTime, 3}}),
+  ets:insert(?RATE_LIMIT_TABLE, {expired_key, ExpiredTime, 3}),
   %% Insert a fresh entry (within the window)
   FreshTime = CurrentTime - 100,
-  ets:insert(?RATE_LIMIT_TABLE, {fresh_key, {FreshTime, 2}}),
+  ets:insert(?RATE_LIMIT_TABLE, {fresh_key, FreshTime, 2}),
   %% Verify both entries exist
   ?assertEqual(2, ets:info(?RATE_LIMIT_TABLE, size)),
   %% Run cleanup
@@ -1003,7 +1045,44 @@ cleanup_rate_limit_table_test() ->
   %% Expired entry should be removed, fresh entry should remain
   ?assertEqual(1, ets:info(?RATE_LIMIT_TABLE, size)),
   ?assertEqual([], ets:lookup(?RATE_LIMIT_TABLE, expired_key)),
-  ?assertMatch([{fresh_key, {_, 2}}], ets:lookup(?RATE_LIMIT_TABLE, fresh_key)).
+  ?assertMatch([{fresh_key, _, 2}], ets:lookup(?RATE_LIMIT_TABLE, fresh_key)).
+
+check_rate_limit_test() ->
+  setup_rate_limit_table(),
+  Id = {{10,0,0,1}, <<4,"test",3,"rpz">>, 6},
+  %% exactly Max requests pass, the rest are refused within the same window
+  ?assertEqual([false,false,false,true,true],
+               [check_rate_limit(Id,3) || _ <- lists:seq(1,5)]),
+  %% an elapsed window is reset and counting starts again
+  [{Id,Start,_}] = ets:lookup(?RATE_LIMIT_TABLE, Id),
+  ets:insert(?RATE_LIMIT_TABLE, {Id, Start - ?RATE_LIMIT_WINDOW, 3}),
+  ?assertEqual(false, check_rate_limit(Id,3)),
+  ?assertMatch([{Id,_,1}], ets:lookup(?RATE_LIMIT_TABLE, Id)),
+  %% a missing table must not crash the request being served
+  ets:delete(?RATE_LIMIT_TABLE),
+  ?assertEqual(false, check_rate_limit(Id,3)).
+
+%% Concurrent requests against one key must not overshoot the limit: the counter
+%% is bumped atomically, so no increment can be lost. A read-modify-write
+%% implementation lets several times Max through here.
+check_rate_limit_concurrent_test() ->
+  setup_rate_limit_table(),
+  Id = {{10,0,0,2}},
+  Max = 6,
+  N = 500,
+  Self = self(),
+  [ spawn(fun() -> Self ! {rl, check_rate_limit(Id, Max)} end) || _ <- lists:seq(1,N) ],
+  Allowed = collect_rl(N, 0),
+  ?assertEqual(Max, Allowed),
+  ?assertMatch([{Id,_,N}], ets:lookup(?RATE_LIMIT_TABLE, Id)).
+
+collect_rl(0, Allowed) -> Allowed;
+collect_rl(N, Allowed) ->
+  receive
+    {rl, false} -> collect_rl(N-1, Allowed+1);
+    {rl, true}  -> collect_rl(N-1, Allowed)
+  after 5000 -> Allowed
+  end.
 
 
 constant_time_compare_test() -> [
