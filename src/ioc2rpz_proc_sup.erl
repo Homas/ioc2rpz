@@ -78,15 +78,21 @@ init([Proc,IPStr,Proto]) when Proc == udp_sup; Proc == udp6_sup -> %DNS UDP
 
 init([Proc,IPStr,Proto]) when Proc == tls_sup; Proc == tls6_sup -> %DoT
   Pid=self(),
-  {ok, TLSSocket} = open_tls_sockets(IPStr, Proto) ,
-	spawn_opt(ioc2rpz_proc_sup,empty_listeners,[Proc],[link,{fullsweep_after,0}]),
-  ioc2rpz_fun:logMessage("ioc2rpz ~p started ~n", [Proc]),
-  {ok, {{simple_one_for_one, 1000, 60}, [{ioc2rpz, {ioc2rpz, start_ioc2rpz, [TLSSocket, [Pid,Proc,yes]]}, transient, 1000, worker, [ioc2rpz]}]}};
+  case open_tls_sockets(IPStr, Proto) of
+    {ok, TLSSocket} ->
+      spawn_opt(ioc2rpz_proc_sup,empty_listeners,[Proc],[link,{fullsweep_after,0}]),
+      ioc2rpz_fun:logMessage("ioc2rpz ~p started ~n", [Proc]),
+      {ok, {{simple_one_for_one, 1000, 60}, [{ioc2rpz, {ioc2rpz, start_ioc2rpz, [TLSSocket, [Pid,Proc,yes]]}, transient, 1000, worker, [ioc2rpz]}]}};
+    {error, Reason} ->
+      %No usable certificate, or the port could not be bound: come up with no
+      %children rather than crashing the whole supervision tree. DNS over
+      %TCP/UDP keeps serving.
+      ioc2rpz_fun:logMessage("ioc2rpz ~p was NOT started: ~p ~n", [Proc, Reason]),
+      {ok, {{one_for_one, 10, 10}, []}}
+  end;
 
 
 init([Proc,_IPStr,_Proto]) when Proc == rest_tls_sup; Proc == rest_tls6_sup -> %REST
-	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6','_'}),
-	Ciphers=ioc2rpz_fun:get_cipher_suites(?TLSVersion),
 	Dispatch = cowboy_router:compile([{'_', [
 				{"/", ioc2rpz_rest, [root]},
 				{"/api/[:api_ver]/stats/serv", ioc2rpz_rest, [stats_serv]},
@@ -106,23 +112,64 @@ init([Proc,_IPStr,_Proto]) when Proc == rest_tls_sup; Proc == rest_tls6_sup -> %
 				{"/api/[:api_ver]/ioc/:ioc", ioc2rpz_rest, [get_ioc]}, %check ioc
 				{'_', ioc2rpz_rest, [catch_all]}
 					]}]),
-	{ok, _} = cowboy:start_tls(https, [{port, ?PortREST},{certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile}, {ciphers, Ciphers}], #{env => #{dispatch => Dispatch}}),
-	%{cacertfile, Cert#cert.cacertfile},
-  ioc2rpz_fun:logMessage("ioc2rpz ~p started ~n", [Proc]),
-  {ok, {{one_for_one, 10, 10}, []}};
+  {ok, {{one_for_one, 10, 10}, cowboy_tls_childspecs(Proc, https, ?PortREST, Dispatch)}};
 
 init([Proc,_IPStr,_Proto]) when Proc == doh_sup; Proc == doh6_sup -> %DoH
-	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6','_'}),
-	Ciphers=ioc2rpz_fun:get_cipher_suites(?TLSVersion),
 	Dispatch = cowboy_router:compile([{'_', [
 				{"/", ioc2rpz_doh, [root]},
 				{"/dns-query", ioc2rpz_doh, [dns_query]},
 				{'_', ioc2rpz_doh, [catch_all]}
 					]}]),
-	{ok, _} = cowboy:start_tls(doh, [{port, ?PortDoH},{certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile}, {ciphers, Ciphers}], #{env => #{dispatch => Dispatch}}),
-	%{cacertfile, Cert#cert.cacertfile},
-  ioc2rpz_fun:logMessage("ioc2rpz ~p started ~n", [Proc]),
-  {ok, {{one_for_one, 10, 10}, []}}.
+  {ok, {{one_for_one, 10, 10}, cowboy_tls_childspecs(Proc, doh, ?PortDoH, Dispatch)}}.
+
+%% @doc Builds the supervised child spec for a Cowboy TLS listener.
+%%
+%% The REST and DoH listeners used to be started with `cowboy:start_tls/3'
+%% called for its side effect inside {@link init/1}, and the child list returned
+%% to the supervisor was `[]'. That put the listener under Cowboy's own
+%% `ranch_sup' and left this supervisor with nothing to supervise, so ioc2rpz
+%% never learned about (nor recovered from) a listener that gave up.
+%%
+%% `ranch:child_spec/5' returns the same listener as an ordinary child spec, so
+%% it is started, restarted and shut down as part of the ioc2rpz supervision
+%% tree. `cowboy_tls' is the Ranch protocol module `cowboy:start_tls/3' uses
+%% internally, and the `env => #{dispatch => ...}' protocol options are the same
+%% ones it would have passed, so the running listener is unchanged.
+%%
+%% Both `{versions, ...}' and `{ciphers, ...}' are derived from `?TLSVersion'
+%% (task 17): passing the versions explicitly makes the configured protocol
+%% version authoritative during negotiation instead of relying on there being no
+%% cipher suite in common for the versions we did not want.
+%%
+%% Returns `[]' (no children, listener not started) when no certificate is
+%% configured, instead of failing the `[[Cert]] = ets:match(...)' match and
+%% taking the supervisor down with it.
+%% @private
+cowboy_tls_childspecs(Proc, Ref, Port, Dispatch) ->
+  case ioc2rpz_fun:srv_cert() of
+    {ok, Cert} ->
+      Ciphers=ioc2rpz_fun:get_cipher_suites(?TLSVersion),
+      Versions=ioc2rpz_fun:get_tls_versions(?TLSVersion),
+      %The two settings cowboy:start_tls/3 adds on top of ranch:start_listener/5
+      %are reproduced here so the listener behaves identically: the ALPN
+      %preference list (without it a client negotiating h2 - common for DoH -
+      %would not get HTTP/2) and connection_type => supervisor in BOTH the
+      %transport and the protocol options.
+      TransOpts = #{connection_type => supervisor,
+                    socket_opts => [{alpn_preferred_protocols, [<<"h2">>, <<"http/1.1">>]},
+                                    {port, Port},
+                                    {certfile, Cert#cert.certfile},
+                                    {keyfile, Cert#cert.keyfile},
+                                    {ciphers, Ciphers},
+                                    {versions, Versions}]},
+                                    %{cacertfile, Cert#cert.cacertfile},
+      ProtoOpts = #{connection_type => supervisor, env => #{dispatch => Dispatch}},
+      ioc2rpz_fun:logMessage("ioc2rpz ~p started on port ~p, TLS versions ~p ~n", [Proc, Port, Versions]),
+      [ranch:child_spec(Ref, ranch_ssl, TransOpts, cowboy_tls, ProtoOpts)];
+    {error, Reason} ->
+      ioc2rpz_fun:logMessage("ioc2rpz ~p not started: no TLS certificate configured (~p) ~n", [Proc, Reason]),
+      []
+  end.
 
 %% @doc Opens a TCP listen socket on `?Port'.
 %%
@@ -156,16 +203,43 @@ open_tcp_sockets(_IPStr,Proto) ->
 %% @end
 open_tls_sockets(IPStr,Proto) when IPStr /= "", IPStr /= [] ->
   {ok,IP}=inet:parse_address(IPStr),
-	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6','_'}),
-	Ciphers=ioc2rpz_fun:get_cipher_suites(?TLSVersion),
-	{ok, TLSSocket} = ssl:listen(?PortTLS, [{ip, IP},{active,once},{reuseaddr, true},{send_timeout, 5000},{send_timeout_close, true}, binary, Proto, {certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile}, {ciphers, Ciphers} ]), %,{cacertfile, Cert#cert.cacertfile}
-  {ok, TLSSocket};
+	case tls_listen_opts() of
+		{ok, TLSOpts} ->
+			ssl:listen(?PortTLS, [{ip, IP} | TLSOpts ++ [Proto]]);
+		{error, Reason} ->
+			{error, Reason}
+	end;
 
 open_tls_sockets(_IPStr,Proto) ->
-	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6','_'}),
-	Ciphers=ioc2rpz_fun:get_cipher_suites(?TLSVersion),
-	{ok, TLSSocket} = ssl:listen(?PortTLS, [{active,once},{reuseaddr, true},{send_timeout, 5000},{send_timeout_close, true}, binary, Proto, {certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile}, {ciphers, Ciphers}]), %,{cacertfile, Cert#cert.cacertfile}
-  {ok, TLSSocket}.
+	case tls_listen_opts() of
+		{ok, TLSOpts} ->
+			ssl:listen(?PortTLS, TLSOpts ++ [Proto]);
+		{error, Reason} ->
+			{error, Reason}
+	end.
+
+%% @doc Builds the common `ssl:listen/2' options for the DoT listener.
+%%
+%% Reads the certificate via {@link ioc2rpz_fun:srv_cert/0} instead of a hard
+%% `[[Cert]] = ets:match(...)' match, so a missing `srv' row is reported rather
+%% than crashing the supervisor.
+%%
+%% `{versions, ...}' is passed alongside `{ciphers, ...}' (task 17): `?TLSVersion'
+%% previously reached only the cipher-suite selection, leaving the accepted
+%% protocol versions at the ssl application defaults.
+%% @private
+tls_listen_opts() ->
+	case ioc2rpz_fun:srv_cert() of
+		{ok, Cert} ->
+			Ciphers=ioc2rpz_fun:get_cipher_suites(?TLSVersion),
+			Versions=ioc2rpz_fun:get_tls_versions(?TLSVersion),
+			{ok, [{active,once},{reuseaddr, true},{send_timeout, 5000},{send_timeout_close, true}, binary,
+			      {certfile, Cert#cert.certfile}, {keyfile, Cert#cert.keyfile},
+			      {ciphers, Ciphers}, {versions, Versions}]}; %,{cacertfile, Cert#cert.cacertfile}
+		{error, Reason} ->
+			ioc2rpz_fun:logMessage("Cannot open the DoT listener: no TLS certificate configured (~p) ~n", [Reason]),
+			{error, Reason}
+	end.
 
 %% @doc Asks the supervisor `Proc' to start a new child worker.
 %%

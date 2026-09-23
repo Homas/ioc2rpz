@@ -16,17 +16,26 @@
 {application, ioc2rpz,
  [
   {description, "ioc2rpz custom DNS server"},
-  {vsn, "1.4.0.1"},
+  %Derived from ?ioc2rpz_ver in include/ioc2rpz.hrl - the same command relx uses
+  %for the release version in rebar.config. Previously this was a hand-maintained
+  %literal ("1.4.0.1") that had drifted several builds behind the header, so the
+  %application version and the release version disagreed.
+  {vsn, {cmd, "grep ioc2rpz_ver include/ioc2rpz.hrl | awk -F'\"' '{printf $2}'"}},
+  %rebar3 regenerates this list from the modules it compiles, so the entries
+  %below are informational only; kept complete to avoid implying that
+  %ioc2rpz_doh / ioc2rpz_proc_sup are not part of the application.
   {modules, [
              ioc2rpz_app,
              ioc2rpz_sup,
+             ioc2rpz_proc_sup,
              ioc2rpz,
              ioc2rpz_conn,
              ioc2rpz_fun,
              ioc2rpz_db,
              ioc2rpz_db_sup,
              ioc2rpz_udp,
-             ioc2rpz_rest
+             ioc2rpz_rest,
+             ioc2rpz_doh
             ]},
   {registered, []},
   {applications, [

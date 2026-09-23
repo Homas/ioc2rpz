@@ -22,7 +22,6 @@
 %% `application/dns-message'.
 %% @end
 -module(ioc2rpz_doh).
--include_lib("eunit/include/eunit.hrl").
 
 -include_lib("ioc2rpz.hrl").
 

@@ -26,6 +26,14 @@
 
 %% Enables DNS-based management interface (e.g., zone reload triggers
 %% via specially crafted DNS queries). Set to `false` to disable.
+%%
+%% SECURITY: when enabled, ioc2rpz-status / ioc2rpz-reload-cfg /
+%% ioc2rpz-update-tkeys / ioc2rpz-terminate / ioc2rpz-update-all-rpz can be
+%% invoked over DNS. Every such request is gated on THREE conditions
+%% (ioc2rpz:process_dns_request/4): the source IP must be in the management ACL
+%% (#srv.acl), the transport must be TCP, and a TSIG signature is validated when
+%% one is present. Set to `false` if management is done exclusively through the
+%% REST API — that removes the DNS command surface entirely.
 -define(MGMToDNS,true).
 
 %% Backend storage engine for zone data and IOC caches.
@@ -66,23 +74,47 @@
 %% Delay in seconds between source download retry attempts.
 -define(Src_Retry_TimeOut,3).
 
-%% Uncomment to prepend timestamps to log output.
-%% When defined, ?addTS/1 writes "YYYY-MM-DD HH:MM:SS " before log lines.
-%-define(logTS, true).
+%% Prepends timestamps to log output. When defined, every log line (including
+%% CEF lines) starts with a local timestamp with millisecond resolution:
+%% "YYYY-MM-DD HH:MM:SS.mmm ". See ioc2rpz_fun:log_prefix/0.
+%% Enabled by default: log consumers (SIEM/CEF collectors) need an event time,
+%% and a bare CEF line carries none. Comment out only when the surrounding log
+%% pipeline already stamps each line (e.g. systemd-journald, docker log driver)
+%% and a second timestamp would be redundant.
+%%
+%% Milliseconds matter here: zone transfers, source pulls and zone updates run
+%% concurrently and several of them can log within the same second, so a
+%% second-resolution stamp is not enough to order the events of an incident.
+-define(logTS, true).
+
+%% Prepends the logging process' pid to every log line, right after the
+%% timestamp: "YYYY-MM-DD HH:MM:SS.mmm <0.1234.0> ".
+%% Each DNS request, zone transfer, source pull and zone update runs in its own
+%% process and they all log to the same device, so without the pid the lines of
+%% concurrent operations cannot be told apart - e.g. which of two simultaneous
+%% transfers to the same client logged a communication error, or which zone
+%% update emitted a given "Bad IOC" line.
+-define(logPID, true).
 
 %% Enables debug-level log messages via ?logDebugMSG/2 macro.
 %% When defined, debug messages are routed to ioc2rpz_fun:logMessage/2.
-%% Comment out to suppress debug output in production.
--define(debug, true).
+%% Disabled by default: debug output is verbose, unbounded, and goes to the same
+%% destination as operational logs. Uncomment to troubleshoot.
+%-define(debug, true).
 
 %% The virtual sample RPZ zone name used for built-in demonstration data.
 %% This zone is not stored in cfg_table; it is handled by hardcoded logic
 %% in ioc2rpz:send_sample_zone/9 for AXFR requests.
 -define(ioc2rpzSampleRPZ,"sample-zone.ioc2rpz").
 
-%% TLS protocol version(s) for DoT and REST HTTPS listeners.
-%% Accepted values: 'tlsv1.2', 'tlsv1.3', 'tlsv1.2-1.3'.
-%% Passed to ioc2rpz_fun:get_cipher_suites/1 to select cipher suites.
+%% TLS protocol version(s) for DoT (DNS over TLS), DoH and the REST HTTPS
+%% listener. Accepted values: 'tlsv1.2', 'tlsv1.3', 'tlsv1.2-1.3'.
+%%
+%% Expanded by ioc2rpz_fun:get_tls_versions/1 into the `{versions, [...]}'
+%% ssl option AND by ioc2rpz_fun:get_cipher_suites/1 into the matching cipher
+%% suites. Both are passed to ssl:listen/2 and cowboy:start_tls/3, so the
+%% setting constrains protocol negotiation itself and does not rely on the
+%% absence of a usable cipher suite to keep an unwanted version out.
 -define(TLSVersion,'tlsv1.2-1.3').
 
 %%%===================================================================
@@ -132,12 +164,32 @@
 %% interrupted. Default: 5 minutes.
 -define(SourcePullTimeout, 5 * 60 * 1000).
 
+%% Maximum time in milliseconds a zone-build parent process waits for one
+%% spawned chunk worker (ioc2rpz:w_send_packets/3, ioc2rpz_conn:w_clean_feed/2).
+%% Each worker handles a single ?IOCperProc chunk and normally answers in well
+%% under a second, so this is a runaway/liveness bound rather than a performance
+%% knob: it exists so a worker that dies or hangs cannot leave the parent blocked
+%% forever holding the zone's update claim (which would make the zone answer
+%% SERVFAIL to every AXFR/IXFR until the node restarts). Parents also monitor
+%% their workers, so a crashing worker is detected immediately and this timeout
+%% only covers a worker that is alive but stuck. Default: 30 minutes.
+-define(WorkerRespTimeout, 30 * 60 * 1000).
+
+%% How many times a compare-and-swap on an RPZ record in cfg_table is retried
+%% when it loses the race to a concurrent writer (ioc2rpz_sup:update_zone_rec/2,
+%% claim_zone_for_update/1). Bounds the retry loop.
+-define(ZoneCASAttempts, 5).
+
 %%%===================================================================
 %%% Internal Constants — Do Not Modify
 %%%===================================================================
 
 %% Application version string: "major.minor.patch.build-YYYYMMDDNN"
--define(ioc2rpz_ver, "1.4.0.4-2026082501").
+%% This is the single source of truth for the version: both the relx release
+%% version and the {vsn,...} of ioc2rpz.app.src are derived from this line
+%% (see the {cmd,...} entries in rebar.config and src/ioc2rpz.app.src), so they
+%% cannot drift apart.
+-define(ioc2rpz_ver, "1.4.0.6-2026092301").
 
 %% DNS label compression pointer for the query name (QNAME) in responses.
 %% In a standard DNS response, the original QNAME from the question section
@@ -157,17 +209,18 @@
 %%% Logging Macros
 %%%===================================================================
 
-%% Conditional timestamp macro for log output.
-%% When `logTS` is defined, writes a formatted local timestamp
-%% ("YYYY-MM-DD HH:MM:SS ") to the given output destination.
-%% When undefined, evaluates to `true` (no-op).
--ifdef(logTS).
--define(addTS(Dest),(fun() ->
-		{{Y,M,D},{HH,MM,SS}}=calendar:local_time(),io:fwrite(Dest,"~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w ",[Y,M,D,HH,MM,SS])
-	end)()).
--else.
--define(addTS(Dest),true).
--endif.
+%% The timestamp/pid prefix is produced by ioc2rpz_fun:log_prefix/0 and is
+%% prepended to the FORMAT STRING of the single io:fwrite/3 call that writes the
+%% line (see ioc2rpz_fun:logMessage/3 and logMessageCEF/3).
+%%
+%% It used to be a separate io:fwrite/3 (the old ?addTS/1 macro) issued just
+%% before the one carrying the message. Every io:fwrite/3 is an independent
+%% request to the io server, so with several processes logging concurrently the
+%% two writes interleaved and a timestamp could end up in front of ANOTHER
+%% process' line, e.g.
+%%   Found Key ... ioc2rpz tcp6_sup child started
+%%   Good timestamp ... Valid MAC
+%% Building one format string keeps a log line atomic.
 
 %% Inline if-then-else helper. Evaluates `Cond` and returns `True` or
 %% `False` accordingly. Used throughout the codebase for concise
@@ -176,7 +229,14 @@
 
 %% Conditional debug logging macro.
 %% When `debug` is defined, routes messages to ioc2rpz_fun:logMessage/2.
+%%
 %% When undefined, evaluates to `true` (no-op) to eliminate debug overhead.
+%%
+%% Because the expansion then discards its arguments, a variable that is ONLY
+%% referenced from a debug call becomes an "unused variable" warning in a build
+%% with debug off. Such variables are named with a leading underscore at their
+%% binding site (an underscore-prefixed variable can still be read, so the debug
+%% call keeps working when debug is switched back on).
 -ifdef(debug).
 -define(logDebugMSG(Message, Vars),ioc2rpz_fun:logMessage(Message, Vars)).
 -else.
@@ -244,6 +304,25 @@
 %% Not a standard QTYPE; used internally to identify TSIG RRs appended
 %% to DNS messages for transaction signing (RFC 2845).
 -define(RT_TSIG,250).
+
+%%%===================================================================
+%%% DNS Name Limits — RFC 1035 §2.3.4, §4.1.4
+%%%
+%%% Enforced by ioc2rpz:extract_label/3 while parsing a request name. A label
+%%% length byte in 64..191 is not a length at all: the two high bits are the
+%%% reserved 01/10 label types (192+ is a compression pointer, handled
+%%% separately), so anything above ?MaxLabelLen is a malformed request rather
+%%% than a long name. Without these checks a crafted datagram reached a
+%%% binary-match failure and crashed the request process BEFORE rate limiting
+%%% was applied, giving unauthenticated crash/log amplification.
+%%%===================================================================
+
+%% Maximum length of a single DNS label in bytes (RFC 1035 §2.3.4).
+-define(MaxLabelLen,63).
+
+%% Maximum length of a complete DNS name in bytes, including the length bytes
+%% and the terminating root label (RFC 1035 §2.3.4).
+-define(MaxNameLen,255).
 
 %% Classic DNS UDP message size limit (RFC 1035 §4.2.1). A UDP response that
 %% would exceed this is truncated and the TC bit is set so the client retries

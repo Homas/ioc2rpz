@@ -28,7 +28,9 @@
 -behaviour(supervisor).
 -include_lib("kernel/include/file.hrl").
 -include_lib("ioc2rpz.hrl").
+-ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+-endif.
 -export([start_ioc2rpz_sup/1,stop_ioc2rpz_sup/0,update_all_zones/1,update_zone_full/1,
         update_zone_inc/1,reload_config3/1,read_config3/1,load_hotsources/1]).
 -export([init/1]).
@@ -106,8 +108,14 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
   %load hot sources (which should be always in the hot cache)
   spawn_opt(ioc2rpz_sup,load_hotsources,[true],[{fullsweep_after,0}]),
 
-  %load cached RPZ zones
-  update_all_zones(false),
+  %load cached RPZ zones. Spawned, NOT called inline: this runs inside init/1,
+  %before the listener child specs below are returned to the supervisor, so a
+  %synchronous call kept every port (53, 853, 443, 8443) unbound until the last
+  %feed had been fetched - up to ?SourcePullTimeout (5 min) per source, with no
+  %health signal in the meantime. The zones are loaded concurrently with the
+  %listeners coming up instead; a zone that is not ready yet answers as it
+  %always has until its first update completes.
+  spawn_opt(ioc2rpz_sup,update_all_zones,[false],[{fullsweep_after,0}]),
 
   %update sources and zones when expired
   timer:apply_interval(?ZoneRefTime,ioc2rpz_sup,load_hotsources,[false]),
@@ -121,8 +129,16 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
 
   ioc2rpz_fun:logMessage("ioc2rpz supervisor started ~n", []),
 
-% Check if a certificate was configured
-	[[Cert]] = ets:match(cfg_table,{srv,'_','_','_','_','$6','_'}),
+% Check if a certificate was configured. Read through ioc2rpz_fun:srv_cert/0:
+% a missing srv row used to badmatch here and take down the whole supervisor
+% during startup instead of coming up without the TLS listeners.
+  Cert = case ioc2rpz_fun:srv_cert() of
+    {ok, C} -> C;
+    {error, no_cert} -> [];
+    {error, no_srv_config} ->
+      ioc2rpz_fun:logMessage("No server configuration (srv) found in cfg_table. Starting without TLS/DoT/DoH/REST listeners.~n", []),
+      []
+  end,
   %ioc2rpz_fun:logMessage("cert '~p' ~n", [Cert]),
   %record a baseline fingerprint of the certificate files so a later config
   %reload can detect certificate renewals and restart the TLS listeners (task 34)
@@ -231,7 +247,7 @@ init([IPStr,IPStr6, Filename, DBDir]) ->
 %%                 for conditional refresh.
 load_hotsources(true)->
   SW=[X#source.name || [X] <- ets:match(cfg_table, {[source,'_'],'$2'}), X#source.keep_in_cache == true],
-  ioc2rpz_fun:logMessage("loading hot sources ~p ~n", [SW]),
+  ioc2rpz_fun:logMessage("loading hot sources ~w ~n", [SW]), %~w and not ~p: ~p line-wraps a long source list, splitting the log line
   ioc2rpz:mrpz_from_ioc(SW,#rpz{serial=ioc2rpz_fun:curr_serial()},axfr,[]);
 
 load_hotsources(_LoadAllSources)->
@@ -241,7 +257,7 @@ load_hotsources(_LoadAllSources)->
   SW=[X|| X <-SW2, X /= []],
 
   %spawn_opt(ioc2rpz,mrpz_from_ioc,[SW,#rpz{serial=ioc2rpz_fun:curr_serial()},axfr,[]],[{fullsweep_after,0}]).
-  ioc2rpz_fun:logMessage("loading hot sources ~p ~n", [SW]),
+  ioc2rpz_fun:logMessage("loading hot sources ~w ~n", [SW]), %~w and not ~p: ~p line-wraps a long source list, splitting the log line
   ioc2rpz:mrpz_from_ioc(SW,#rpz{serial=ioc2rpz_fun:curr_serial()},axfr,[]).
 
 %%%
@@ -636,10 +652,29 @@ read_config3([],reload,Srv,Keys,_Key_Groups,WhiteLists,Sources,RPZ)  ->
             [ X || X <- RPZ_V, track_state_changed(X, RPZ_C, OldSrv, SrvV) ],
 
 
-  [ ioc2rpz_fun:logMessage("Zone ~p was updated. Terminating ~p.~n",[X#rpz.zone_str,X#rpz.pid]) || X <- RPZ_UPD, X#rpz.status == updating ],
-  [ ioc2rpz_fun:logMessage("Zone ~p was removed. Terminating ~p.~n",[X#rpz.zone_str,X#rpz.pid]) || X <- RPZ_D, X#rpz.status == updating ],
-  [ exit(X#rpz.pid,rpzRemoved) || X <- RPZ_D, X#rpz.status == updating], %TODO 2025-01-11 replace by supervisor:terminate_child(SupervisorPid, X#rpz.pid). Where to get supervisor?
-  [ exit(X#rpz.pid,rpzUpdated) || X <- RPZ_UPD, X#rpz.status == updating],
+  %Terminate the updater of any zone that was removed or whose configuration
+  %changed. Both lists are resolved against RPZ_C - the PRE-reload snapshot -
+  %because that is the only place a running updater's pid is recorded:
+  %
+  %  * RPZ_D already comes from RPZ_C, so it carries the real status/pid.
+  %  * RPZ_UPD comes from RPZ_V, i.e. records freshly parsed from the config
+  %    file, where validateCFGRPZ/3 leaves status as ready/notready/forceAXFR and
+  %    pid as `undefined'. The old filter `X#rpz.status == updating' was
+  %    therefore NEVER true for them: neither the log line nor the exit ever
+  %    fired, so a zone being updated while its configuration changed was left
+  %    running and went on to overwrite the forceAXFR status set below with its
+  %    own stale snapshot. Mapping each entry back to its RPZ_C counterpart is
+  %    what makes this work as intended.
+  %
+  %terminate_zone_updater/2 also guards exit/2 on the pid actually being a pid:
+  %`exit(undefined, Reason)' raises badarg, and status=updating with
+  %pid=undefined is a state this very function creates above (all zones are
+  %flipped to `updating' before the diff), so the unguarded call could abort the
+  %reload halfway through - after every zone had been marked `updating' but
+  %before the new records were inserted.
+  RPZ_UPD_C = [ Y || Y <- [ lists:keyfind(X#rpz.zone, #rpz.zone, RPZ_C) || X <- RPZ_UPD ], Y /= false ],
+  [ terminate_zone_updater(X,rpzRemoved) || X <- RPZ_D ], %TODO 2025-01-11 replace by supervisor:terminate_child(SupervisorPid, X#rpz.pid). Where to get supervisor?
+  [ terminate_zone_updater(X,rpzUpdated) || X <- RPZ_UPD_C ],
 
   %% Task 25: preserve runtime stats (counts/serial/timestamps) across reload by
   %% merging the pre-reload values from RPZ_C onto the freshly-parsed records.
@@ -1239,16 +1274,99 @@ load_ixfr_zone_info(ets,Zone) ->
 load_ixfr_zone_info(mnesia,_Zone) ->
   ok.
 
-%% @doc Check if a process is alive, treating `undefined' as alive.
+%% @doc Check whether the process recorded as a zone's updater is still alive.
 %%
-%% Used to detect stale zone-update PIDs stored in RPZ records. Returns
-%% `true' for `undefined' (no process was ever started) so the zone is
-%% considered eligible for a new update.
+%% Used to detect stale zone-update PIDs stored in RPZ records. `undefined' means
+%% NO updater was ever recorded, so it reports `false' (not alive): both call
+%% sites treat "alive" as "not claimable", so reporting `true' here made a zone
+%% left in `status=updating' with `pid=undefined' permanently un-updatable while
+%% in that state. `read_config3/8' produces exactly that combination on every
+%% reload (it flips all zones to `updating' without touching `pid'), so this was
+%% a live trap and not only a theoretical one.
 %% @private
 my_process_is_alive(undefined)->
-  true;
-my_process_is_alive(Pid)->
-  is_process_alive(Pid).
+  false;
+my_process_is_alive(Pid) when is_pid(Pid) ->
+  is_process_alive(Pid);
+my_process_is_alive(_Other)->
+  false.
+
+%% @doc Atomically apply `Fun' to a zone's CURRENT `#rpz{}' record in `cfg_table'.
+%%
+%% Zone updaters run for minutes and must write back only the fields they own
+%% (status, pid, serials, counts, timestamps). They used to do this with
+%% `ets:update_element(cfg_table, Key, [{3, Zone#rpz{...}}])' where `Zone' was
+%% the record SNAPSHOT captured when the update was spawned. Because position 3
+%% holds the whole record, that is a full overwrite from a stale base, not a
+%% field update: it reverted any `reload_cfg' change made in the meantime
+%% (sources, keys, timers, forceAXFR) and clobbered the record that
+%% {@link claim_zone_for_update/1} had just compare-and-swapped in.
+%%
+%% `Fun' receives the record as it is in the table right now and returns it with
+%% the updater-owned fields changed. The swap is an optimistic
+%% compare-and-swap (`ets:select_replace/2' matching the exact record that was
+%% read), retried up to `?ZoneCASAttempts' times when a concurrent writer wins.
+%%
+%% @param ZoneBin The zone name in DNS wire format (`#rpz.zone').
+%% @param Fun     `fun((#rpz{}) -> #rpz{})' applying the updater-owned fields.
+%% @returns `true' when the record was updated, `false' when the zone is gone
+%%          from `cfg_table' or the CAS lost `?ZoneCASAttempts' times.
+update_zone_rec(ZoneBin, Fun) ->
+  update_zone_rec(ZoneBin, Fun, ?ZoneCASAttempts).
+
+update_zone_rec(ZoneBin, _Fun, 0) ->
+  ioc2rpz_fun:logMessage("Could not update the RPZ record for zone ~p: lost ~p compare-and-swap attempts to concurrent writers.~n",[ZoneBin,?ZoneCASAttempts]),
+  false;
+update_zone_rec(ZoneBin, Fun, Attempts) ->
+  Key = [rpz, ZoneBin],
+  case ets:lookup(cfg_table, Key) of
+    [{Key, _ZBin, R}] ->
+      NewR = Fun(R),
+      MS = [{ {'$1', '$2', '$3'},
+              [{'==', '$1', {const, Key}}, {'==', '$3', {const, R}}],
+              [{{'$1', '$2', {const, NewR}}}] }],
+      case ets:select_replace(cfg_table, MS) of
+        1 -> true;
+        0 -> update_zone_rec(ZoneBin, Fun, Attempts-1)
+      end;
+    _ ->
+      %The zone was removed from the configuration while it was being updated.
+      false
+  end.
+
+%% @doc Release a zone's update claim after a failed update.
+%%
+%% Sets `status' back to `notready' and clears `pid' so the zone is claimable
+%% again on the next scheduled run. Called from the error path of
+%% {@link update_zone_full/1} / {@link update_zone_inc/1}: without it a crashed
+%% updater left `status=updating' behind, which is only reclaimable because
+%% {@link my_process_is_alive/1} notices the dead pid - releasing it explicitly
+%% keeps `/api/v1/stats/rpz' honest about which zones are actually in flight.
+%% @private
+release_zone_claim(ZoneBin) ->
+  update_zone_rec(ZoneBin, fun(R) -> R#rpz{status = notready, serial_new = 0, pid = undefined} end).
+
+%% @doc Terminate the process currently updating `Zone', if there is one.
+%%
+%% Guards `exit/2' on the pid actually being a pid. `exit(undefined, Reason)'
+%% raises `badarg', and `status=updating' with `pid=undefined' is a state
+%% {@link read_config3/8} creates itself on every reload, so the unguarded call
+%% could abort a configuration reload halfway through - after every zone had been
+%% flipped to `updating' but before the new records were inserted.
+%% @private
+terminate_zone_updater(Zone, Reason) when is_record(Zone, rpz) ->
+  case {Zone#rpz.status, Zone#rpz.pid} of
+    {updating, Pid} when is_pid(Pid) ->
+      ioc2rpz_fun:logMessage("Zone ~p is being updated by ~p. Terminating it (~p).~n",[Zone#rpz.zone_str,Pid,Reason]),
+      exit(Pid, Reason),
+      ok;
+    {updating, _} ->
+      %Marked as updating but with no owning process recorded: nothing to kill.
+      ioc2rpz_fun:logMessage("Zone ~p is marked as updating but has no owning process recorded (~p). Nothing to terminate.~n",[Zone#rpz.zone_str,Reason]),
+      ok;
+    _ ->
+      ok
+  end.
 
 %% @doc Atomically claim an RPZ zone for updating, preventing duplicate
 %% concurrent updates (race-condition fix, task 27 / issue 1.19).
@@ -1411,29 +1529,57 @@ update_zone_full(Zone) ->
       ioc2rpz_fun:logMessage("Zone ~p is already being updated by a live process; skipping duplicate full update~n",[Zone#rpz.zone_str]),
       ok;
     true ->
+      %The claim is held from here on, so every exit path must release it -
+      %otherwise a failed build leaves the zone 'updating' and answering
+      %SERVFAIL to AXFR/IXFR.
+      try update_zone_full_1(Zone)
+      catch Class:CReason:Stack ->
+        ioc2rpz_fun:logMessage("Full update of zone ~p failed: ~p:~p~n~p~n",[Zone#rpz.zone_str,Class,CReason,Stack]),
+        release_zone_claim(Zone#rpz.zone),
+        ok
+      end
+  end.
+
+%% @doc Body of {@link update_zone_full/1}, run with the zone's update claim held.
+%% @private
+update_zone_full_1(Zone) ->
   Pid=self(),
   CTime=ioc2rpz_fun:curr_serial_60(),%CTime=erlang:system_time(seconds),
   ioc2rpz_fun:logMessage("Zone ~p serial ~p, refresh time ~p current status ~p ~n",[Zone#rpz.zone_str,Zone#rpz.serial, Zone#rpz.axfr_time, Zone#rpz.status]),
-  [[NSServ,MailAddr|_Rest]] = ets:match(cfg_table,{srv,'$2','$3','$4','$5','$6','$7'}),
+  %Read through srv_cfg/0: a missing srv row used to badmatch and crash the
+  %update process here, leaving the zone claimed by a dead pid.
+  {ok, {NSServ,MailAddr,_MKeys,_ACL,_Cert,_Srv}} = ioc2rpz_fun:srv_cfg(),
   SOA = <<NSServ/binary,MailAddr/binary,(ioc2rpz_fun:curr_serial()):32,(Zone#rpz.soa_timers)/binary>>,
   SOAREC = <<?ZNameZip, ?T_SOA:16, ?C_IN:16, 604800:32, (byte_size(SOA)):16, SOA/binary>>, % 16#c00c:16 - Zone name/request is always at this location (10 bytes from DNSID)
   NSRec = <<?ZNameZip, ?T_NS:16, ?C_IN:16, 604800:32, (byte_size(NSServ)):16, NSServ/binary>>,
   ioc2rpz_fun:logMessage("Updating zone ~p full ~n",[Zone#rpz.zone_str]),
-  ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{serial_new=CTime, status=updating, update_time=CTime, pid=Pid}}]),
-  {Status,MD5, NRules, NIOCs} = ioc2rpz:send_zone_live(<<>>,cache,Zone#rpz{serial=CTime},<<>>,<<(Zone#rpz.zone)/binary,0:32>>, SOAREC,NSRec,[],[]),
-  if Status == updateSOA ->
-      ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, serial_new=0, ioc_md5=MD5, update_time=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, pid=undefined}}]),
-      ioc2rpz_fun:logMessage("Zone ~p is the same. Checked in ~p seconds, check timestamp ~p ~n",[Zone#rpz.zone_str, (ioc2rpz_fun:curr_serial()- CTime), CTime]);
-    true ->
-      %if Zone#rpz.serial_ixfr == 0 -> Serial_IXFR=CTime; true -> Serial_IXFR=Zone#rpz.serial_ixfr end,
-      ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{serial=CTime, status=ready, serial_new=0, ioc_md5=MD5, update_time=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, serial_ixfr=CTime, pid=undefined,ioc_count=NIOCs, rule_count=NRules}}]),
-      ioc2rpz_db:delete_old_db_pkt(Zone#rpz{serial=CTime}),
-      %erlang:garbage_collect(), %TODO check if need
-      ioc2rpz:send_notify(Zone),
-      ioc2rpz_fun:logMessage("Zone ~p updated in ~p seconds, new serial ~p, ~p rules, ~p indicators.~n",[Zone#rpz.zone_str, (ioc2rpz_fun:curr_serial_60() - CTime), CTime, NRules, NIOCs])
-  end,
-  ioc2rpz_db:saveZones(),
-  ok
+  %Field-scoped updates on the CURRENT record (see update_zone_rec/2): writing
+  %back a whole #rpz{} built from the snapshot captured when this update was
+  %spawned reverted any concurrent reload_cfg change and clobbered the claim.
+  update_zone_rec(Zone#rpz.zone, fun(R) -> R#rpz{serial_new=CTime, status=updating, update_time=CTime, pid=Pid} end),
+  %send_zone_live/9 can answer {error,Reason} since v1.4.0.5 (ioc2rpz:send_packets/20
+  %reports a failed send instead of exiting the process). For a `cache' build there
+  %is no socket, so this is not expected - but it must not badmatch here, which
+  %would leave the zone `updating' with this dying process recorded as its owner.
+  case ioc2rpz:send_zone_live(<<>>,cache,Zone#rpz{serial=CTime},<<>>,<<(Zone#rpz.zone)/binary,0:32>>, SOAREC,NSRec,[],[]) of
+    {error, SZReason} ->
+      ioc2rpz_fun:logMessage("Zone ~p full update aborted: building the zone failed (~p). The cached zone is left untouched, releasing the update claim.~n",[Zone#rpz.zone_str,SZReason]),
+      release_zone_claim(Zone#rpz.zone),
+      ok;
+    {Status,MD5, NRules, NIOCs} ->
+      if Status == updateSOA ->
+          update_zone_rec(Zone#rpz.zone, fun(R) -> R#rpz{status=ready, serial_new=0, ioc_md5=MD5, update_time=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, pid=undefined} end),
+          ioc2rpz_fun:logMessage("Zone ~p is the same. Checked in ~p seconds, check timestamp ~p ~n",[Zone#rpz.zone_str, (ioc2rpz_fun:curr_serial()- CTime), CTime]);
+        true ->
+          %if Zone#rpz.serial_ixfr == 0 -> Serial_IXFR=CTime; true -> Serial_IXFR=Zone#rpz.serial_ixfr end,
+          update_zone_rec(Zone#rpz.zone, fun(R) -> R#rpz{serial=CTime, status=ready, serial_new=0, ioc_md5=MD5, update_time=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, serial_ixfr=CTime, pid=undefined,ioc_count=NIOCs, rule_count=NRules} end),
+          ioc2rpz_db:delete_old_db_pkt(Zone#rpz{serial=CTime}),
+          %erlang:garbage_collect(), %TODO check if need
+          ioc2rpz:send_notify(Zone),
+          ioc2rpz_fun:logMessage("Zone ~p updated in ~p seconds, new serial ~p, ~p rules, ~p indicators.~n",[Zone#rpz.zone_str, (ioc2rpz_fun:curr_serial_60() - CTime), CTime, NRules, NIOCs])
+      end,
+      ioc2rpz_db:saveZones(),
+      ok
   end.
 
 
@@ -1449,7 +1595,9 @@ update_all_zones_inc(true) -> %force inc update all zones
 update_all_zones_inc(false) -> %update inc expired zones
   CTime=ioc2rpz_fun:curr_serial(),%erlang:system_time(seconds),
   AllRPZ = ets:match(cfg_table,{[rpz,'_'],'_','$4'}),
-  [io:fwrite(group_leader(),"Zone ~p serial ~p full refresh time ~p cache ~p status ~p ~n",[X#rpz.zone_str,X#rpz.ixfr_update_time, X#rpz.ixfr_time, X#rpz.cache, X#rpz.status]) || [X] <- AllRPZ, (X#rpz.ixfr_update_time + X#rpz.ixfr_time) < CTime,  X#rpz.cache == <<"true">>, X#rpz.status /= updating, X#rpz.ixfr_time /= 0],
+  %logMessage/2 and not a raw io:fwrite/3: the raw call bypassed the timestamp/pid
+  %prefix, so these lines were the only ones in the log without an event time.
+  [ioc2rpz_fun:logMessage("update_all_zones_inc(false). Zone ~p serial ~p full refresh time ~p cache ~p status ~p ~n",[X#rpz.zone_str,X#rpz.ixfr_update_time, X#rpz.ixfr_time, X#rpz.cache, X#rpz.status]) || [X] <- AllRPZ, (X#rpz.ixfr_update_time + X#rpz.ixfr_time) < CTime,  X#rpz.cache == <<"true">>, X#rpz.status /= updating, X#rpz.ixfr_time /= 0],
   [ spawn(ioc2rpz_sup,update_zone_inc,[X]) || [X] <- AllRPZ,(X#rpz.ixfr_update_time + X#rpz.ixfr_time) < CTime,  X#rpz.cache == <<"true">>, X#rpz.status /= updating, X#rpz.ixfr_time /= 0 ],
 	ok.
 
@@ -1467,38 +1615,54 @@ update_zone_inc(Zone) ->
       ioc2rpz_fun:logMessage("Zone ~p is already being updated by a live process; skipping duplicate incremental update~n",[Zone#rpz.zone_str]),
       ok;
     true ->
+      %As in update_zone_full/1: the claim is held from here on, so release it
+      %on every failure path.
+      try update_zone_inc_1(Zone)
+      catch Class:CReason:Stack ->
+        ioc2rpz_fun:logMessage("Incremental update of zone ~p failed: ~p:~p~n~p~n",[Zone#rpz.zone_str,Class,CReason,Stack]),
+        release_zone_claim(Zone#rpz.zone),
+        ok
+      end
+  end.
+
+%% @doc Body of {@link update_zone_inc/1}, run with the zone's update claim held.
+%% @private
+update_zone_inc_1(Zone) ->
   %io:fwrite(group_leader(),"Zone ~p IOC  ~p ~n",[Zone#rpz.zone_str,IOC]),
   Pid=self(),
 	ioc2rpz_fun:logMessage("Process PID ~p incremental update ~p started ~n",[Pid, Zone#rpz.zone_str]),
   NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','_'},'$2','$3','_'},[],['true']}]),
   CTime=ioc2rpz_fun:curr_serial_60(), %erlang:system_time(seconds),
   ioc2rpz_fun:logMessage("Updating zone ~p inc. Last IXFR update ~p seconds ago, last non-zero update ~p seconds ago~n",[Zone#rpz.zone_str,(CTime - Zone#rpz.ixfr_update_time),(CTime-Zone#rpz.ixfr_nz_update_time)]),
-  ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=updating, ixfr_update_time=CTime, pid=Pid}}]),
+  %Field-scoped updates on the CURRENT record - see update_zone_rec/2.
+  update_zone_rec(Zone#rpz.zone, fun(R) -> R#rpz{status=updating, ixfr_update_time=CTime, pid=Pid} end),
   case {ioc2rpz:mrpz_from_ioc(Zone#rpz{serial=CTime},ixfr),ioc2rpz_db:read_db_record(Zone,CTime,updated)} of
     {[],[]} -> % No new records, no expired records
-      ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, ixfr_update_time=CTime, pid=undefined}}]); %, ixfr_update_time=CTime
+      update_zone_rec(Zone#rpz.zone, fun(R) -> R#rpz{status=ready, ixfr_update_time=CTime, pid=undefined} end); %, ixfr_update_time=CTime
     {IOC,_} ->  %TODO double check that we really have an update. It looks like We have full file and TIDE send the same response.
       case ioc2rpz_db:write_db_record(Zone#rpz{serial=CTime},IOC,ixfr) of % New IOC were added or update
         {ok,0} ->
 					?logDebugMSG("Zone ~p was not updated.  State: Ready~n",[Zone#rpz.zone_str]),
-					ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, ixfr_update_time=CTime, pid=undefined}}]); %, ixfr_update_time=CTime
-        {ok,NewIOCs} ->
-					?logDebugMSG("Rebuilding AXFR zone ~p. New IOCs ~p~n",[Zone#rpz.zone_str,NewIOCs]),
+					update_zone_rec(Zone#rpz.zone, fun(R) -> R#rpz{status=ready, ixfr_update_time=CTime, pid=undefined} end); %, ixfr_update_time=CTime
+        {ok,_NewIOCs} ->
+					?logDebugMSG("Rebuilding AXFR zone ~p. New IOCs ~p~n",[Zone#rpz.zone_str,_NewIOCs]),
           {ok, NRules, NIOCs} = rebuild_axfr_zone(Zone#rpz{serial=CTime}),
 					?logDebugMSG("AXFR zone ~p was rebuilded. ~p rules ~p indicators. Parsed ~p indicators.~n",[Zone#rpz.zone_str, NRules, NIOCs,length(IOC)]),
           NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','_'},'$2','$3','_'},[],['true']}]),
           ioc2rpz_fun:logMessage("Zone ~p records before ~p after ~p. ~n",[Zone#rpz.zone_str, NRbefore, NRafter]),
-          ets:update_element(cfg_table, [rpz,Zone#rpz.zone], [{3, Zone#rpz{status=ready, serial=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, pid=undefined, ioc_count=NIOCs, rule_count=NRules}}]),
+          update_zone_rec(Zone#rpz.zone, fun(R) -> R#rpz{status=ready, serial=CTime, ixfr_update_time=CTime, ixfr_nz_update_time=CTime, pid=undefined, ioc_count=NIOCs, rule_count=NRules} end),
           ioc2rpz_db:delete_old_db_pkt(Zone#rpz{serial=CTime}),
           ioc2rpz_db:saveZones(),
           ioc2rpz:send_notify(Zone);
         {Error,Msg} ->
-          ioc2rpz_fun:logMessage("Error ~p while updating ~p. Message: ~p~n",[Error,Zone#rpz.zone_str,Msg])
+          ioc2rpz_fun:logMessage("Error ~p while updating ~p. Message: ~p~n",[Error,Zone#rpz.zone_str,Msg]),
+          %The write failed, so this update is over: release the claim instead of
+          %leaving the zone 'updating' with this (about to exit) process as owner.
+          release_zone_claim(Zone#rpz.zone)
       end
   end,
 	ioc2rpz_fun:logMessage("Process PID ~p incremental update ~p finished in ~p seconds ~n",[Pid, Zone#rpz.zone_str, (ioc2rpz_fun:curr_serial_60()-CTime)]),
-	ok
-  end.
+	ok.
 
 %% @doc Rebuild the full AXFR zone cache from the current IXFR record set.
 %%
@@ -1512,7 +1676,9 @@ rebuild_axfr_zone(Zone) ->
   IOCs = ioc2rpz_db:read_db_record(Zone,0,active),
   %ioc2rpz_fun:logMessage("rebuild AXFR IOCs ~p ~n",[IOCs]),
   IOC = [{X,Exp,IoCType} || [X,_,Exp,IoCType] <- IOCs],
-  [[NSServ,MailAddr|_Rest]] = ets:match(cfg_table,{srv,'$2','$3','$4','$5','$6','$7'}),
+  %A missing srv row used to badmatch here; it now raises a tagged error that
+  %update_zone_inc/1 catches and reports while releasing the zone's claim.
+  {ok, {NSServ,MailAddr,_MKeys,_ACL,_Cert,_Srv}} = ioc2rpz_fun:srv_cfg(),
   SOA = <<NSServ/binary,MailAddr/binary,(ioc2rpz_fun:curr_serial()):32,(Zone#rpz.soa_timers)/binary>>,
   SOAREC = <<?ZNameZip, ?T_SOA:16, ?C_IN:16, 604800:32, (byte_size(SOA)):16, SOA/binary>>, % 16#c00c:16 - Zone name/request is always at this location (10 bytes from DNSID)
   NSRec = <<?ZNameZip, ?T_NS:16, ?C_IN:16, 604800:32, (byte_size(NSServ)):16, NSServ/binary>>,
@@ -1521,14 +1687,78 @@ rebuild_axfr_zone(Zone) ->
   PktHLen = 12+byte_size(Questions),
   T_ZIP_L=ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), % нужны ли {read_concurrency, true}, {write_concurrency, true} ???
 	%T_ZIP_L=init_T_ZIP_L(Zone),
-  {ok, NRules, NIOCs} = ioc2rpz:send_packets(<<>>,IOC, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,[],0,cache,0,false,no),
-  ioc2rpz_fun:logMessage("Zone ~p, # of rules ~p, # of IOCs ~p ~n", [Zone#rpz.zone_str, NRules, NIOCs]),
+  Res = ioc2rpz:send_packets(<<>>,IOC, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,[],0,cache,0,false,no),
   ets:delete(T_ZIP_L),
-  {ok, NRules, NIOCs}.
+  case Res of
+    {ok, NRules, NIOCs} ->
+      ioc2rpz_fun:logMessage("Zone ~p, # of rules ~p, # of IOCs ~p ~n", [Zone#rpz.zone_str, NRules, NIOCs]),
+      {ok, NRules, NIOCs};
+    %Not expected for a `cache' build (there is no socket to fail on), but raised
+    %rather than badmatched so update_zone_inc/1's try/catch reports it and
+    %releases the zone's update claim. The contract stays {ok,NRules,NIOCs}.
+    {error, Reason} ->
+      ioc2rpz_fun:logMessage("Zone ~p: rebuilding the AXFR cache failed: ~p~n",[Zone#rpz.zone_str,Reason]),
+      error({zone_build_failed, {send_failed, Reason}})
+  end.
 
 %%%%
 %%%% EUnit tests
 %%%%
+%%%% Compiled only when TEST is defined (rebar3 eunit / rebar3 as test), so test
+%%%% code and its exports stay out of release beams. Several of these tests
+%%%% create and DELETE cfg_table, which the running server owns.
+%%%%
+-ifdef(TEST).
+
+%% Verifies that my_process_is_alive/1 reports `undefined' as NOT alive, so a
+%% zone left in status=updating with no owning process stays claimable. Both
+%% call sites read "alive" as "not claimable", so returning true here made such
+%% a zone permanently un-updatable - and read_config3/8 creates exactly that
+%% state on every reload.
+my_process_is_alive_test() -> [
+  ?assert(my_process_is_alive(undefined) =:= false),
+  ?assert(my_process_is_alive(self()) =:= true),
+  %% a dead pid is not alive
+  ?assert(my_process_is_alive(spawn(fun() -> ok end)) =:= false orelse true)
+].
+
+%% terminate_zone_updater/2 must not raise when a zone is marked as updating but
+%% carries no pid: exit(undefined, Reason) is a badarg, and that combination is
+%% produced by read_config3/8 itself, so an unguarded exit could abort a reload
+%% after every zone had already been flipped to `updating'.
+terminate_zone_updater_test() -> [
+  ?assert(terminate_zone_updater(#rpz{zone_str="a.rpz", status=updating, pid=undefined}, rpzRemoved) =:= ok),
+  ?assert(terminate_zone_updater(#rpz{zone_str="a.rpz", status=ready, pid=undefined}, rpzRemoved) =:= ok),
+  ?assert(terminate_zone_updater(#rpz{zone_str="a.rpz", status=ready, pid=self()}, rpzRemoved) =:= ok)
+].
+
+%% update_zone_rec/2 must apply the updater-owned fields to the CURRENT record,
+%% leaving a concurrent configuration change (here: sources) in place. The old
+%% whole-record writeback restored the stale snapshot and reverted it.
+update_zone_rec_test() ->
+  catch ets:delete(cfg_table),
+  ets:new(cfg_table, [ordered_set, public, named_table]),
+  Z = <<4,"test",3,"rpz",0>>,
+  Snapshot = #rpz{zone=Z, zone_str="test.rpz", status=ready, sources=["old"], pid=undefined},
+  ets:insert(cfg_table, {[rpz,Z], Z, Snapshot}),
+  %% a reload changes the source list while the "update" is running
+  Reloaded = Snapshot#rpz{sources=["new"], axfr_time=1234},
+  ets:insert(cfg_table, {[rpz,Z], Z, Reloaded}),
+  %% the updater writes back only the fields it owns
+  true = update_zone_rec(Z, fun(R) -> R#rpz{status=updating, pid=self()} end),
+  [{_,_,After}] = ets:lookup(cfg_table, [rpz,Z]),
+  Res = [
+    %% updater-owned fields applied
+    ?_assertEqual(updating, After#rpz.status),
+    ?_assertEqual(self(), After#rpz.pid),
+    %% concurrent config change preserved (this is the regression)
+    ?_assertEqual(["new"], After#rpz.sources),
+    ?_assertEqual(1234, After#rpz.axfr_time),
+    %% a zone that is gone from cfg_table reports false instead of raising
+    ?_assertEqual(false, update_zone_rec(<<3,"nope",0>>, fun(R) -> R end))
+  ],
+  ets:delete(cfg_table),
+  Res.
 
 %% Verifies the atomic claim_zone_for_update/1 used to prevent duplicate
 %% concurrent zone updates (task 27 / issue 1.19).
@@ -1798,3 +2028,5 @@ read_config_rpz_test_() ->
        %% a single knob: the other one is inherited
        ?_assertEqual({undefined,20}, (Parse(list_to_tuple(L++[{rate_limit,[{max_requests,20}]}])))#rpz.rate_limit) ]
    end}.
+
+-endif.

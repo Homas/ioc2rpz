@@ -58,11 +58,35 @@ get_ioc(URL,REGEX,Source) ->
   end.
 
 %% @doc Receives cleaned IOC data from a spawned worker process.
+%%
+%% The worker is monitored by its parent (see {@link p_clean_feed/5}), so this
+%% waits on three outcomes: the result message, a `DOWN' message (the worker
+%% died — a bad user regex in `clean_feed/3' is the likely cause — and no result
+%% will ever arrive) or `?WorkerRespTimeout' (the worker is alive but stuck).
+%%
+%% Previously this was a bare `receive' with neither a monitor nor an `after', so
+%% either failure blocked the parent FOREVER. The parent is the zone updater
+%% holding that zone's update claim, so the zone stayed `updating' with a live
+%% owner and answered SERVFAIL to every AXFR/IXFR until the node restarted. Both
+%% failure paths now raise so the update aborts and the claim is released.
+%%
 %% @param PID The PID of the worker process to receive from.
+%% @param MRef The monitor reference for `PID'.
 %% @returns A list of `{LowercaseIOC, Expiration, Type}' tuples.
-w_clean_feed(PID) ->
+%% @throws `{feed_clean_failed, {worker_died|worker_timeout, ...}}'
+w_clean_feed(PID, MRef) ->
   receive
-    { ok, PID, IOC } -> [ {ioc2rpz_fun:bin_to_lowcase(X),Y,Z} || {X,Y,Z} <- IOC ]
+    { ok, PID, IOC } ->
+      erlang:demonitor(MRef, [flush]),
+      [ {ioc2rpz_fun:bin_to_lowcase(X),Y,Z} || {X,Y,Z} <- IOC ];
+    {'DOWN', MRef, process, PID, Reason} ->
+      ioc2rpz_fun:logMessage("Feed cleanup worker ~p died before returning a result: ~p. Aborting the source cleanup.~n",[PID, Reason]),
+      error({feed_clean_failed, {worker_died, Reason}})
+  after ?WorkerRespTimeout ->
+      erlang:demonitor(MRef, [flush]),
+      exit(PID, kill),
+      ioc2rpz_fun:logMessage("Feed cleanup worker ~p did not return a result within ~p ms. Aborting the source cleanup.~n",[PID, ?WorkerRespTimeout]),
+      error({feed_clean_failed, {worker_timeout, PID}})
   end.
 
 %% @doc Parallelized IOC feed cleaning with optional max indicator limit.
@@ -95,15 +119,17 @@ p_clean_feed(IOC,REGEX,Max,IoCType) when Max /= undefined ->
 p_clean_feed(IOC,REGEX,Max,Count,IoCType)  ->
   ParentPID = self(),
   [IOC1,IOC2]=ioc2rpz_fun:split(IOC,?IOCperProc),
-  PID=spawn_opt(fun() ->
+  %`monitor' so w_clean_feed/2 is told when this worker dies instead of waiting
+  %for a result message that will never come (see w_clean_feed/2).
+  {PID,MRef}=spawn_opt(fun() ->
       ParentPID ! {ok, self(), ioc2rpz_conn:clean_feed(IOC1,REGEX,IoCType)  }
       end
-      ,[{fullsweep_after,0}]),
+      ,[monitor,{fullsweep_after,0}]),
   L = if IOC2 /= [] , Count+?IOCperProc < Max ; IOC2 /= [],Max == undefined; IOC2 /= [],Max == 0 ->
     p_clean_feed(IOC2,REGEX,Max,Count+?IOCperProc,IoCType);
     true -> []
   end,
-  w_clean_feed(PID) ++ L .
+  w_clean_feed(PID, MRef) ++ L .
 
 
 

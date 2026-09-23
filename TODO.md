@@ -1,4 +1,31 @@
 ## Bugs
+- [ ] **`ioc2rpz:send_dns/3` return value is not uniform across transports.** Latent, not currently reachable — record it before the guards that hide it are relaxed.
+
+  **What it returns.** Three different contracts depending on `#proto.proto`:
+
+  | transport | success | failure |
+  |---|---|---|
+  | `tcp` (plain and TLS/DoT) | `ok` | `{error, Reason}` |
+  | `udp` | `ok` | `{error, Reason}` |
+  | `doh` | **`{ok, Pkt}`** | — never fails |
+
+  The `doh` clause (`src/ioc2rpz.erl`, `send_dns(_Socket,Pkt,[Proto,_Args]) when Proto#proto.proto == doh`) does not send anything: it hands the packet back so `parse_dns_request/3` can return it to `ioc2rpz_doh:parse_dns/3`, which matches `{ok, Data}` and lets Cowboy serialise the HTTP response. For a single-message response that is the correct design, not a bug.
+
+  **Why it is a problem.** Every caller that inspects the result compares against the bare atom `ok`, so `{ok, Pkt}` reads as "not a success":
+  - `send_packets/20`, `PSize > ?DNSPktMax` clause: `if (SendStatus == ok) -> <next packet>; true -> <failure path> end`. `{ok,Pkt}` takes the failure path at every packet boundary, so the transfer would abort at the first 16 KB with `{error,{ok,Pkt}}` and (before v1.4.0.5) would have purged the zone's cache on the way out.
+  - `send_cached_zone/8`: `case send_dns(...) of ok -> <recurse>; {error,Reason} -> ... end` — `{ok,Pkt}` matches neither clause, so a `case_clause` crash, even for a **single-packet** cached zone.
+  - `process_dns_request/4`, the `send_zone/4` result: `case ... of ok -> CEF 201; {error,closed} -> CEF 131; {error,Reason} -> CEF 131 end` — same `case_clause`.
+  - `add_sent_bytes/1` is not called on the `doh` path, so `out=` would always be reported as 0.
+
+  **Why it is not reachable today.** Every zone-transfer dispatch clause in `process_dns_request/4` is gated on `Proto#proto.proto == tcp`: the RPZ clause (`QType == ?T_SOA orelse (((?T_AXFR andalso NSCOUNT == 0) orelse (?T_IXFR andalso NSCOUNT == 1)) andalso Proto#proto.proto == tcp)`) and the sample-zone clause (`MGMTIP andalso Proto#proto.proto == tcp andalso (?T_AXFR orelse ?T_IXFR)`). A DoH request can therefore only reach `send_SOA/10`, `send_txt_response/4`, `send_status/3` and `send_REQST/7` — all single-packet, all returning `send_dns/3`'s value straight to the DoH handler, which is exactly what `{ok,Pkt}` is for. AXFR/IXFR over DoH is silently answered as if the query type were not supported for that transport.
+
+  **Fix direction — pick one:**
+  1. *Make the intent explicit.* Answer NOTIMP (or REFUSED) for `?T_AXFR`/`?T_IXFR` when `Proto#proto.proto == doh`, in its own clause before the TCP-gated ones, and state in the docs that zone transfers are TCP/DoT only. RFC 8484 is one DNS message per HTTP request, so a multi-packet AXFR cannot be expressed anyway. Cheapest and it removes the trap.
+  2. *Make the contract uniform.* Have the `doh` clause return `ok` and accumulate the packet (process dictionary, like the `?SentBytesKey` counter, or an explicit accumulator), with the DoH handler reading the accumulated response at the end. Only meaningful for a single-message response, so it does not actually enable AXFR over DoH — it just removes the special-case return value. Also call `add_sent_bytes/1` there so `out=` is populated.
+
+  Either way add a regression test: DoH GET **and** POST of `AXFR`/`IXFR` for a cached multi-packet zone must produce a defined DNS response, not a `case_clause` crash and not an aborted transfer, and must leave `rpz_axfr_table` for that zone untouched.
+
+- [ ] **Shutdown does not shut anything down.** `ioc2rpz_sup:stop_ioc2rpz_sup/0` (`src/ioc2rpz_sup.erl:52-57`) only logs and calls `ioc2rpz_db:saveZones()`; the `gen_server:stop(?MODULE)` line is commented out. Both callers report success while the node keeps serving: the DNS `ioc2rpz-terminate` command (`src/ioc2rpz.erl:627-628`) answers "ioc2rpz is terminating." and the REST `/api/v1/mgmt/terminate` endpoint (`src/ioc2rpz_rest.erl:274`) does the same. Note `gen_server:stop/1` would have been the wrong API anyway — `ioc2rpz_sup` is a supervisor. The fix is to save the DB, then stop the application (`application:stop(ioc2rpz)`) or the node (`init:stop/0`), and only answer once shutdown is actually under way. `ioc2rpz_proc_sup:stop_ioc2rpz_proc_sup/0` (`:35-38`) has the same wrong-API problem and has no callers at all — remove it or implement it properly. *(review item 8)*
 - [ ] Zone update can be triggered twice (Serial is the same) which leads to duplicate packets in the rpz_axfr_table. A workaround was implemented in read_db_pkt function to ensure that only one set of packets is passed but it impacts performance. 
 - [ ] Check zone refresh time when the SOA record is requested (different vs axfr)
 - [ ] Take a look on the bugs mentioned in REST section
@@ -87,6 +114,11 @@ https://github.com/ChicagoBoss/ChicagoBoss/wiki/Automatic-schema-initialization-
 ## Management
 - [ ] DNS health check requests
 - [/] Disable MGMT via DNS (update ioc2rpz.gui first) - default behaviour
+
+## Build / packaging
+- [ ] **Dead code reported by xref (`locals_not_used`).** These local functions are unreachable in a release build. Some were only ever reached from EUnit tests, which no longer compile into release beams, so they are now genuinely dead: `ioc2rpz:bin_to_hexstr/1`, `ioc2rpz:hexstr_to_bin/1,2`, `ioc2rpz:domstr_to_bin/1`, `ioc2rpz:gen_txt_rec/1`, `ioc2rpz:remove_WL/2`, `ioc2rpz_db:get_allzones_info/1`, `ioc2rpz_fun:z_split/2,3`, `ioc2rpz_rest:rest_terminate/2`, `ioc2rpz_sup:update_all_zones_inc/1`. Delete them (or wire up the ones that were meant to be used — `update_all_zones_inc/1` looks like an intended feature), then re-enable `locals_not_used` in `{xref_checks,...}` so CI catches the next one. See `rebar3 xref --extra_checks="[locals_not_used]"`.
+- [ ] **`{dev_mode, true}` in the relx section of `rebar.config` (`:15`).** A plain `rebar3 release` therefore produces a symlink farm pointing back into `_build/default/lib`, which is not relocatable — the release directory cannot be copied or archived and used elsewhere. The Dockerfile happens to hide this by overriding it (`rebar3 release -d false`), so the broken default is easy to miss. Flip the default to `false` and move `dev_mode` into a `dev` profile for anyone who wants the fast local iteration loop. *(review item 15)*
+- [x] ~~`sys.config.src` `${IPv4}`/`${IPv6}`/`${CONF}` substituted at BUILD time, so runtime `ENV` has no effect~~ — **investigated, not an issue.** relx ships `sys.config.src` into the release (`releases/<vsn>/sys.config.src`, with no generated `sys.config` beside it) and the extended start script templates it at BOOT. Runtime `ENV` does take effect for all of `IPv4`/`IPv6`/`CONF`/`DB`/`CD`/`NODE_NAME`, and there is no inconsistency between them. Verified against a built release and a running container (the log line `Env ip4: ... conf: ... db: ... cwd: ...` reflects the container's environment). Recorded here so it is not re-raised. *(review item 19)*
 
 ## Unsorted
 - [ ] Switch from IXFR cache to Sources cache. IXFR cache allows you to support less zone updates but IOCs can be stored multiple times. Sources cache will contain duplicate IOCs from the same source but RPZs will be updated more frequently (looks like it is not bad).

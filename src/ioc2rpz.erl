@@ -25,7 +25,9 @@
 %% @end
 
 -module(ioc2rpz).
+-ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+-endif.
 -behaviour(gen_server).
 
 -include_lib("ioc2rpz.hrl").
@@ -454,26 +456,59 @@ parse_dns_request(_Socket, _Data, Proto) when Proto#proto.rport == 53; Proto#pro
 
 parse_dns_request(_Socket, <<_DNSId:2/binary, 1:1, _OptB:7, _:1, _OptE:3, _:4, _QDCOUNT:2/big-unsigned-unit:8,_ANCOUNT:2/big-unsigned-unit:8,_NSCOUNT:2/binary,_ARCOUNT:2/binary, Rest/binary>> = _Data, Proto) ->
 %%% QR bit set. We've got response instead of query. Drop the message.
-%%% replace by extract_label(,<<>>)
-%%% 2020-08-22 to remove after QA
-  %[QName,<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, _Other_REC/binary>>] = binary:split(Rest,<<0>>),
-  {<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, _Other_REC/binary>>,QName} = extract_label(Rest,<<>>),
-  QStr=dombin_to_str(QName),
-  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(109),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]);
+  case parse_question(Rest) of
+    {ok, QName, QType, QClass, _Other_REC} ->
+      QStr=dombin_to_str(QName),
+      ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(109),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]);
+    {error, _Reason} ->
+      %A malformed question in a message we are dropping anyway: log as a bad
+      %packet and do not answer (it claims to be a response, RFC 1035 §7.3).
+      ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(101),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto)])
+  end;
 
 parse_dns_request(Socket, <<DNSId:2/binary, _:1, OptB:7, _:1, OptE:3, _:4, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/big-unsigned-unit:8,NSCOUNT:2/binary,ARCOUNT:2/binary, Rest/binary>> = _Data, Proto) when QDCOUNT /= 1 -> %_:2/binary, ;ANCOUNT /= 0
 %%% Bad DNS request. QDCount != 1
-%%% replace by extract_label(,<<>>)
-%%% 2020-08-22 to remove after QA
-%  [QName,<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, _Other_REC/binary>>] = binary:split(Rest,<<0>>),
-  {<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, _Other_REC/binary>>,QName} = extract_label(Rest,<<>>),
-  QStr=dombin_to_str(QName),
-  ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(102),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
-  send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?SERVFAIL:4>>, <<QDCOUNT:2,ANCOUNT:2,NSCOUNT:2,ARCOUNT:2>>, Rest, [], Proto);
+  case parse_question(Rest) of
+    {ok, QName, QType, QClass, _Other_REC} ->
+      QStr=dombin_to_str(QName),
+      ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(102),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
+      send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?SERVFAIL:4>>, <<QDCOUNT:2,ANCOUNT:2,NSCOUNT:2,ARCOUNT:2>>, Rest, [], Proto);
+    {error, _Reason} ->
+      %Unparseable question AND a bad QDCOUNT: answer FORMERR with an empty
+      %question section (we cannot echo a question we could not read).
+      ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(101),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto)]),
+      ?logDebugMSG("Malformed DNS question from ~s: ~p~n",[ip_to_str(Proto#proto.rip),_Reason]),
+      send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?FORMERR:4>>, <<0:16,0:16,0:16,0:16>>, <<>>, [], Proto)
+  end;
 
 parse_dns_request(Socket, <<PH:4/bytes, _QDCOUNT:2/big-unsigned-unit:8,_ANCOUNT:2/big-unsigned-unit:8,NSCOUNT:2/big-unsigned-unit:8,ARCOUNT:2/big-unsigned-unit:8, Rest/binary>> = Data, Proto = #proto{rip = Rip}) ->
   <<DNSId:2/binary, _:1, OptB:7, _:1, OptE:3, _:4>> = PH,
-  {<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, Other_REC/binary>>,QName} = extract_label(Rest,<<>>),
+  %The question section is parsed through parse_question/1, which reports a
+  %malformed name instead of failing a binary match. Previously an unparseable
+  %question crashed the request process HERE, ahead of check_rate_limit/3 below:
+  %a crafted datagram gave an unauthenticated source unlimited process crashes
+  %plus an error report each (log amplification) while never consuming any
+  %rate-limit budget. Such requests are now counted in the aggregate per-IP
+  %bucket and answered FORMERR, costing the sender the same budget as any other
+  %unrecognised request.
+  case parse_question(Rest) of
+    {error, _Reason} ->
+      %Counted in the AGGREGATE per-IP bucket: there is no question, so there is
+      %no zone to read a granular limit from. Once the bucket is exhausted the
+      %datagram is dropped without a response AND without a CEF 101 line, so a
+      %flood of malformed packets cannot be turned into unbounded logging either
+      %(which is what the crash reports used to provide).
+      RLKey = {Rip},
+      {RLWindow,RLMax} = rl_limits(RLKey,[]),
+      case {ioc2rpz_fun:check_rate_limit(RLKey,RLMax,RLWindow), mgmt_acl_ip(Rip)} of
+        {true, false} ->
+          ?logDebugMSG("Rate limit exceeded by ~s, dropping a malformed request~n",[ip_to_str(Rip)]);
+        _ ->
+          ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(101),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto)]),
+          ?logDebugMSG("Malformed DNS question from ~s: ~p~n",[ip_to_str(Proto#proto.rip),_Reason]),
+          send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?FORMERR:4>>, <<0:16,0:16,0:16,0:16>>, <<>>, [], Proto)
+      end;
+    {ok, QName, QType, QClass, Other_REC} ->
   Question = <<QName/binary,0:8,QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8>>,
   QStr=dombin_to_str(QName),
   %EDNS0 (RFC 6891): resolve the requestor's advertised UDP payload size from the
@@ -522,6 +557,28 @@ parse_dns_request(Socket, <<PH:4/bytes, _QDCOUNT:2/big-unsigned-unit:8,_ANCOUNT:
       false -> % Rate limit not exceeded, process the request
         %2025-01-10 TODO optimize passing processed data
         process_dns_request(Socket, Data, Proto0, RpzZone)
+      end
+  end.
+
+%% @doc Parses the question section of a DNS message without crashing on
+%% malformed input.
+%%
+%% Wraps {@link extract_label/2} plus the QTYPE/QCLASS match in a `try', so a
+%% truncated name, an over-long label (>63), an over-long name (>255), a
+%% truncated compression pointer or a question section that ends before
+%% QTYPE/QCLASS is reported as `{error, Reason}' instead of raising. This runs
+%% before rate limiting, so it must not be able to kill the calling process.
+%%
+%% @param Rest The message bytes following the 12-byte DNS header.
+%% @returns `{ok, QName, QType, QClass, Other_REC}' or `{error, Reason}'.
+-spec parse_question(binary()) -> {ok, binary(), integer(), integer(), binary()} | {error, term()}.
+parse_question(Rest) ->
+  try
+    {<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, Other_REC/binary>>,QName} = extract_label(Rest,<<>>),
+    {ok, QName, QType, QClass, Other_REC}
+  catch
+    error:{dns_format_error, Reason} -> {error, Reason};
+    Class:Reason1 -> {error, {Class, Reason1}}
   end.
 
 %% @doc Extracts the requestor's EDNS0 (RFC 6891) UDP payload size from a DNS
@@ -570,7 +627,9 @@ edns_udp_size(NSCOUNT, ARCOUNT, RAW) ->
 process_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:2/big-unsigned-unit:8,NSCOUNT:2/big-unsigned-unit:8,ARCOUNT:2/big-unsigned-unit:8, Rest/binary>> = _Data, Proto, RpzZone) when QDCOUNT == 1, ANCOUNT == 0 -> %_DataLen:2/big-unsigned-unit:8,
   STime=erlang:system_time(millisecond), %nanosecond, microsecond, millisecond, second
   <<DNSId:2/binary, _:1, OptB:7, _:1, OptE:3, _:4>> = PH,
-  {<<QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8, Other_REC/binary>>,QName} = extract_label(Rest,<<>>),
+  %Already validated by parse_dns_request/3 before rate limiting; parsed through
+  %the same helper so the two paths cannot disagree about what the question is.
+  {ok, QName, QType, QClass, Other_REC} = parse_question(Rest),
   Question = <<QName/binary,0:8,QType:2/big-unsigned-unit:8,QClass:2/big-unsigned-unit:8>>,
   QStr=dombin_to_str(QName),
   %RFC 4343: match the request name case-insensitively (management commands, the
@@ -578,10 +637,31 @@ process_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:
   %echoes the question verbatim and the log shows what the client sent.
   QNameL = ioc2rpz_fun:bin_to_lowcase(QName),
 
-  {RRRes,_DNSRR,TSIG,SOA,RAWN} = parse_rr(NSCOUNT, ARCOUNT, Other_REC),
+  %parse_rr/3 is called bare here (unlike parse_question/1 and edns_udp_size/3,
+  %which both guard it), so a truncated or otherwise malformed authority/
+  %additional section kills this worker with a badmatch and the request is never
+  %answered. The crash report alone does not say WHO sent it or WHAT was asked,
+  %so log that before letting the error through unchanged.
+  {RRRes,_DNSRR,TSIG,SOA,RAWN} =
+    try parse_rr(NSCOUNT, ARCOUNT, Other_REC)
+    catch PRRClass:PRRReason:PRRStack ->
+      %~w for the reason and the raw section: ~p line-wraps them, and a log line
+      %that is split in two cannot be correlated with the rest of the request.
+      ioc2rpz_fun:logMessage("Cannot parse the authority/additional section of a request from ~s:~p ~p - ~p:~w. qname=~p qtype=~p NSCOUNT=~p ARCOUNT=~p section=~w~n",
+        [ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),
+         PRRClass,PRRReason,QStr,ioc2rpz_fun:q_type(QType),NSCOUNT,ARCOUNT,Other_REC]),
+      erlang:raise(PRRClass,PRRReason,PRRStack)
+    end,
   ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(202),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass),dombin_to_str(TSIG#dns_TSIG_RR.name)]),
 
-  [[NSServ,MailAddr,MKeysT,ACL,_Cert,Srv]] = ets:match(cfg_table,{srv,'$2','$3','$4','$5','$6','$7'}),
+  %The server row is read through ioc2rpz_fun:srv_cfg/0 rather than matched with
+  %a hard `[[...]] = ets:match(...)'. A missing row used to badmatch here, which
+  %crashed the connection worker serving the request instead of answering it.
+  case ioc2rpz_fun:srv_cfg() of
+    {error, no_srv_config} ->
+      ioc2rpz_fun:logMessage("No server configuration in cfg_table, cannot serve request from ~s (~p ~p). Responding SERVFAIL.~n",[ip_to_str(Proto#proto.rip),QStr,ioc2rpz_fun:q_type(QType)]),
+      send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?SERVFAIL:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto);
+    {ok, {NSServ,MailAddr,MKeysT,ACL,_Cert,Srv}} ->
 	MKeys=lists:flatten([ MKeysT,[ ets:match(cfg_table,{[key_group,X,'_'],'$3'}) || X <- Srv#srv.key_groups ] ]),
 
   MGMTIP=ioc2rpz_fun:ip_in_list(ip_to_str(Proto#proto.rip),ACL),
@@ -735,6 +815,7 @@ process_dns_request(Socket, <<PH:4/bytes, QDCOUNT:2/big-unsigned-unit:8,ANCOUNT:
       ?logDebugMSG("Unknow request ~p ~p ~p ~p ~n",[QName, QType, QClass,RRRes]),
       ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(102),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
       send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?NOTIMP:4>>, <<1:16,0:16,0:16,0:16>>, Question, [], Proto)
+      end
   end.
 
 
@@ -1378,6 +1459,7 @@ send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,_RH,_Rest,Zone,?T_AXFR,NS
   SOAREC = <<?ZNameZip, ?T_SOA:16, ?C_IN:16, 604800:32, (byte_size(SOA)):16, SOA/binary>>, % 16#c00c:16 - Zone name/request is always at this location (10 bytes from DNSID)
   NSRec = <<?ZNameZip, ?T_NS:16, ?C_IN:16, 604800:32, (byte_size(NSServ)):16, NSServ/binary>>,
   Pkt=ioc2rpz_db:read_db_pkt(Zone),
+  ?logDebugMSG("AXFR zone ~p from the cache: serial ~p, status ~p, ~p cached packet(s) for ~s~n",[Zone#rpz.zone_str,Zone#rpz.serial,Zone#rpz.status,length(Pkt),ip_to_str(Proto#proto.rip)]),
   send_cached_zone(Socket, NSRec, SOAREC, TSIG, <<DNSId:2/binary ,1:1, OptB:7, 1:1, OptE:3, ?NOERROR:4, 1:16>>, Questions, Pkt, Proto);
 
 send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,_RH,_Rest,Zone,?T_IXFR,NSServ,MailAddr,TSIG,SOA}, Proto) when Zone#rpz.serial=<SOA#dns_SOA_RR.serial ->
@@ -1401,6 +1483,7 @@ send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,_RH,_Rest,Zone,?T_IXFR,NS
   SOAREC = <<?ZNameZip, ?T_SOA:16, ?C_IN:16, 604800:32, (byte_size(SOAR)):16, SOAR/binary>>, % 16#c00c:16 - Zone name/request is always at this location (10 bytes from DNSID)
   NSRec = <<?ZNameZip, ?T_NS:16, ?C_IN:16, 604800:32, (byte_size(NSServ)):16, NSServ/binary>>,
   Pkt=ioc2rpz_db:read_db_pkt(Zone),
+  ?logDebugMSG("IXFR-as-full zone ~p from the cache: serial ~p, status ~p, ~p cached packet(s) for ~s~n",[Zone#rpz.zone_str,Zone#rpz.serial,Zone#rpz.status,length(Pkt),ip_to_str(Proto#proto.rip)]),
   send_cached_zone(Socket, NSRec, SOAREC, TSIG, <<DNSId:2/binary ,1:1, OptB:7, 1:1, OptE:3, ?NOERROR:4, 1:16>>, Questions, Pkt, Proto);
 
 send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,_RH,_Rest,Zone,?T_IXFR,NSServ,MailAddr,TSIG,SOA}, Proto) when Zone#rpz.status == ready;Zone#rpz.status == updating -> %IXFR
@@ -1410,6 +1493,12 @@ send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,_RH,_Rest,Zone,?T_IXFR,NS
   SOARECCL = <<?ZNameZip, ?T_SOA:16, ?C_IN:16, 604800:32, (byte_size(SOARCL)):16, SOARCL/binary>>, % 16#c00c:16 - Zone name/request is always at this location (10 bytes from DNSID)
   IOCexp=[ {X,Exp,Z} || [X,_,Exp,Z] <- ioc2rpz_db:read_db_record(Zone,SOA#dns_SOA_RR.serial,expired) ],
   IOCnew=[ {X,Exp,Z} || [X,_,Exp,Z] <- ioc2rpz_db:read_db_record(Zone,SOA#dns_SOA_RR.serial,new)],
+  %The size of the delta was never logged, only the resulting rule/IOC counts
+  %after the transfer. Without it there is no way to see from the log that an
+  %"incremental" transfer actually carries the whole zone every time (which turns
+  %a cheap IXFR into a repeated full transfer built from scratch per client).
+  ioc2rpz_fun:logMessage("IXFR zone ~p delta for ~s: serial ~p, client serial ~p, ~p expired and ~p new indicator(s)~n",
+    [Zone#rpz.zone_str,ip_to_str(Proto#proto.rip),Zone#rpz.serial,SOA#dns_SOA_RR.serial,length(IOCexp),length(IOCnew)]),
 %  ioc2rpz_fun:logMessage("Serial ~p /= Serial IXFR ~p, IXFR=~p Zone ~p Expired IOC ~p, New IOC ~p ~n",[Zone#rpz.serial,Zone#rpz.serial_ixfr,SOA#dns_SOA_RR.serial,Zone#rpz.zone_str,IOCexp,IOCnew]),
 
 % {ok,MP} = re:compile("^([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3})$"), %
@@ -1419,10 +1508,21 @@ send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,_RH,_Rest,Zone,?T_IXFR,NS
 %  T_ZIP_L=ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]), % нужны ли {read_concurrency, true}, {write_concurrency, true} ???
 	T_ZIP_L=init_T_ZIP_L(Zone),
   %В момент переключения на добавления - SOARECCL обнуляем, таким образом отслеживаем, что мы добавили новую SOA
-  {ok, NRules, NIOCs}=send_packets(Socket,IOCexp ++ IOCnew, [], 0, 0, true, [DNSId, <<1:1, OptB:7, 1:1, OptE:3, ?NOERROR:4, 1:16>>], Questions, SOAREC,SOARECCL,Zone,MP,PktHLen,T_ZIP_L,TSIG,0,ixfr,0,false,Proto),
-  ioc2rpz_fun:logMessage("Zone ~p, ~p rules, ~p IOCs ~n", [Zone#rpz.zone_str, NRules, NIOCs]),
+  Res=send_packets(Socket,IOCexp ++ IOCnew, [], 0, 0, true, [DNSId, <<1:1, OptB:7, 1:1, OptE:3, ?NOERROR:4, 1:16>>], Questions, SOAREC,SOARECCL,Zone,MP,PktHLen,T_ZIP_L,TSIG,0,ixfr,0,false,Proto),
+  %Deleted unconditionally: send_packets/20 no longer exits on a send failure, so
+  %this is reached on both outcomes and the table must not be left behind.
   ets:delete(T_ZIP_L),
-  ok;
+  case Res of
+    {ok, NRules, NIOCs} ->
+      %The client is part of the line now: several IXFR transfers of DIFFERENT zones
+      %to the same or different clients run concurrently, and this line could not be
+      %attributed to any of them.
+      ioc2rpz_fun:logMessage("Zone ~p, ~p rules, ~p IOCs sent to ~s:~p (IXFR) ~n", [Zone#rpz.zone_str, NRules, NIOCs, ip_to_str(Proto#proto.rip), Proto#proto.rport]),
+      ok;
+    %Propagated so the caller logs CEF 131 instead of the transfer ending with no
+    %terminating event at all.
+    {error, Reason} -> {error, Reason}
+  end;
 
 %Zone was not cached, but should be
 send_zone(<<"true">>,Socket,{Questions,DNSId,OptB,OptE,_RH,_Rest,Zone,QType,_NSServ,_MailAddr,TSIG,_SOA}, Proto) when Zone#rpz.status == notready;Zone#rpz.status == updating ->
@@ -1436,15 +1536,23 @@ send_zone(_,Socket,{Questions,DNSId,OptB,OptE,_RH,_Rest,Zone,_QType,NSServ,MailA
   SOAREC = <<?ZNameZip, ?T_SOA:16, ?C_IN:16, 604800:32, (byte_size(SOAR)):16, SOAR/binary>>, % 16#c00c:16 - Zone name/request is always at this location (10 bytes from DNSID)
   NSRec = <<?ZNameZip, ?T_NS:16, ?C_IN:16, 604800:32, (byte_size(NSServ)):16, NSServ/binary>>,
   CTime=ioc2rpz_fun:curr_serial_60(),
+  %The result of the case is RETURNED now. It used to be discarded by a trailing
+  %`, ok.', so a non-cacheable zone always reported success: neither a failed
+  %send_cached_zone/8 nor a failed send_zone_live/9 could produce a CEF 131.
   case ets:match(rpz_hotcache_table,{{pkthotcache,Zone#rpz.zone,'_'},'$2','$3'}) of
     [[Timestamp,Pkt1]|REST] when CTime=<(Timestamp+?HotCacheTime) ->
-      ioc2rpz_fun:logMessage("Found the zone in the hot cache~n",[]), %TODO remove debug
+      ioc2rpz_fun:logMessage("Found the zone ~p in the hot cache~n",[Zone#rpz.zone_str]),
       Pkt = [binary_to_term(Pkt1) | [binary_to_term(X) || [_,X] <- REST]],
       send_cached_zone(Socket, NSRec, SOAREC, TSIG, <<DNSId:2/binary ,1:1, OptB:7, 1:1, OptE:3, ?NOERROR:4, 1:16>>, Questions, Pkt, Proto);
     _Else ->
-      send_zone_live(Socket,sendNhotcache,Zone#rpz{serial=CTime},[DNSId, <<1:1, OptB:7, 1:1, OptE:3, ?NOERROR:4, 1:16>>],Questions, SOAREC,NSRec,TSIG,Proto)
-  end,
-  ok.
+      %send_zone_live/9 answers {ok,MD5,NRules,NIOCs} or {updateSOA,...} on success;
+      %normalised to `ok' here because the caller of send_zone/4 only distinguishes
+      %success from {error,Reason}.
+      case send_zone_live(Socket,sendNhotcache,Zone#rpz{serial=CTime},[DNSId, <<1:1, OptB:7, 1:1, OptE:3, ?NOERROR:4, 1:16>>],Questions, SOAREC,NSRec,TSIG,Proto) of
+        {error, Reason} -> {error, Reason};
+        _ -> ok
+      end
+  end.
 
 %% @doc Generates and sends a zone transfer live (not from cache).
 %% Fetches IOCs from all configured sources, computes an MD5 hash for change
@@ -1483,24 +1591,87 @@ send_zone_live(Socket,Op,Zone,PktH,Questions, SOAREC,NSRec,TSIG,Proto) ->
       ioc2rpz_db:delete_old_db_record(Zone),
 			T_ZIP_L=init_T_ZIP_L(Zone),
       %% send_packets receives the 3-tuple projection — wire output unchanged (R4).
-      {ok, NRules, NIOCs}=send_packets(Socket,IOC3, [], 0, 0, true, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,0,Op,0,true,Proto),
-		  ioc2rpz_fun:logMessage("Live zone ~p, ~p rules, ~p IOCs ~n", [Zone#rpz.zone_str, NRules, NIOCs]),
+      Res=send_packets(Socket,IOC3, [], 0, 0, true, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,0,Op,0,true,Proto),
       ets:delete(T_ZIP_L),
-      {ok,MD5, NRules, NIOCs}
+      case Res of
+        {ok, NRules, NIOCs} ->
+          ioc2rpz_fun:logMessage("Live zone ~p, ~p rules, ~p IOCs ~n", [Zone#rpz.zone_str, NRules, NIOCs]),
+          {ok,MD5, NRules, NIOCs};
+        %A failed send: reported to the caller instead of exiting the process, so
+        %the transfer gets its CEF 131 (sendNhotcache) or the zone update aborts
+        %with its claim released (cache) - see ioc2rpz_sup:update_zone_full_1/1.
+        {error, Reason} -> {error, Reason}
+      end
   end.
 
 %% @doc Waits for a spawned zone packet generation process to complete.
-%% Used in concurrent zone caching where IOCs are split across processes.
+%%
+%% Used in concurrent zone caching where IOCs are split across processes. The
+%% worker is monitored by its parent (see the `spawn_opt' call in
+%% {@link send_packets/20}), so this waits on THREE outcomes rather than blocking
+%% on the result message alone:
+%%
+%% <ul>
+%%   <li>the result message — the normal path;</li>
+%%   <li>a `DOWN' message — the worker died (an ETS or regex failure inside
+%%       `send_packets', for example) and no result will ever arrive;</li>
+%%   <li>`?WorkerRespTimeout' — the worker is alive but stuck.</li>
+%% </ul>
+%%
+%% Previously this was a bare `receive' with neither a monitor nor an `after',
+%% so either failure blocked the parent FOREVER. The parent is the zone updater,
+%% which holds the zone's update claim (`status=updating, pid=<self>'), so
+%% `ioc2rpz_sup:claim_zone_for_update/1' saw a live owner and could never
+%% reclaim the zone: it stayed `updating' and answered SERVFAIL to every
+%% AXFR/IXFR until the node was restarted. Both failure paths now raise, which
+%% aborts the zone update and lets `ioc2rpz_sup:update_zone_full/1' release the
+%% claim so the next scheduled run retries.
+%%
 %% @param PID The PID of the spawned process to wait for.
-%% @param Zone The zone name (unused, for debugging).
-%% @returns `{ok, NRules, NIOCs}' from the spawned process.
-w_send_packets(PID, _Zone) ->
+%% @param MRef The monitor reference for `PID'.
+%% @param Zone The zone name, for logging.
+%% @returns `{ok, NRules, NIOCs}' or `{error, Reason}' from the spawned process.
+%% @throws `{zone_build_failed, {worker_died|worker_timeout, ...}}'
+w_send_packets(PID, MRef, Zone) ->
   receive
     { ok, PID, {ok, NRules, NIOCs} } ->
+      erlang:demonitor(MRef, [flush]),
       %ioc2rpz_fun:logMessage("Zone ~p. Got message from ~p # of rules ~p # of IOCs ~p~n",[Zone, PID, NRules, NIOCs]),
-			{ok, NRules, NIOCs}
+			{ok, NRules, NIOCs};
+    %send_packets/20 reports a failed send as {error,Reason} instead of exiting, so
+    %the worker can now answer with an error rather than only by dying.
+    { ok, PID, {error, Reason} } ->
+      erlang:demonitor(MRef, [flush]),
+      ioc2rpz_fun:logMessage("Zone ~p. Packet worker ~p could not send/cache its chunk: ~p. Aborting the zone build.~n",[Zone, PID, Reason]),
+      {error, Reason};
+    {'DOWN', MRef, process, PID, Reason} ->
+      ioc2rpz_fun:logMessage("Zone ~p. Packet worker ~p died before returning a result: ~p. Aborting the zone build.~n",[Zone, PID, Reason]),
+      error({zone_build_failed, {worker_died, Reason}})
+  after ?WorkerRespTimeout ->
+      erlang:demonitor(MRef, [flush]),
+      exit(PID, kill),
+      ioc2rpz_fun:logMessage("Zone ~p. Packet worker ~p did not return a result within ~p ms. Aborting the zone build.~n",[Zone, PID, ?WorkerRespTimeout]),
+      error({zone_build_failed, {worker_timeout, PID}})
   end.
 
+
+%% @doc Combines the results of the two halves of a concurrent cache build.
+%%
+%% The chunk-split clause of {@link send_packets/20} runs the first
+%% `?IOCperProc' indicators in a spawned worker and the remainder in the calling
+%% process; either half can now answer `{error, Reason}'. The counts are summed
+%% only when BOTH halves succeeded - a partial count would be written to
+%% `#rpz.rule_count' / `#rpz.ioc_count' and advertised as the zone's size.
+%%
+%% @param R1 Result of the spawned worker.
+%% @param R2 Result of the remaining chunks.
+%% @returns `{ok, NRules, NIOCs}' or the first `{error, Reason}'.
+-spec sum_chunk_results({ok,integer(),integer()} | {error,term()},
+                        {ok,integer(),integer()} | {error,term()}) ->
+        {ok,integer(),integer()} | {error,term()}.
+sum_chunk_results({ok,NR1,NI1}, {ok,NR2,NI2}) -> {ok, NR1+NR2, NI1+NI2};
+sum_chunk_results({error,Reason}, _) -> {error,Reason};
+sum_chunk_results(_, {error,Reason}) -> {error,Reason}.
 
 %% @doc Builds and sends DNS zone transfer packets from a list of IOC records.
 %% This is the core packet assembly engine for AXFR/IXFR zone transfers.
@@ -1584,21 +1755,25 @@ send_packets(Socket,IOC, [], _ACount, _PSize, Zip, PktH, Questions, SOAREC,NSRec
       ParentPID = self(),
 %      spawn_opt(ioc2rpz,send_packets,[Socket,IOC1, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC, NSRec, Zone, MP, PktHLen, 0, TSIG, PktN, DBOp, SOANSSize, IXFRNewR,Proto],[{fullsweep_after,0}]),
 %  ets:new(label_zip_table, [{read_concurrency, true}, {write_concurrency, true}, set, private]) ---> init_T_ZIP_L(Zone)
-      PID=spawn_opt(fun() ->
+      %`monitor' so w_send_packets/3 is told when this worker dies instead of
+      %waiting for a result message that will never come (see w_send_packets/3).
+      {PID,MRef}=spawn_opt(fun() ->
         ParentPID ! {ok, self(), ioc2rpz:send_packets(Socket,IOC1, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC, NSRec, Zone#rpz{rule_count=0, ioc_count=0}, MP, PktHLen, init_T_ZIP_L(Zone), TSIG, PktN, DBOp, SOANSSize, IXFRNewR, Proto) }
         end
-        ,[{fullsweep_after,0}]),
+        ,[monitor,{fullsweep_after,0}]),
       %ioc2rpz_fun:logMessage("Zone ~p started ~p ~n",[Zone#rpz.zone_str, PID]),
-      if IOC2 /= [] ->
-        {ok, NRules1, NIOCs1}=ioc2rpz:send_packets(<<>>,IOC2, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone#rpz{rule_count=0, ioc_count=0},MP,PktHLen,T_ZIP_L,[],PktN+100,cache,0,false,Proto);
-        true -> NRules1=0, NIOCs1=0
+      RestRes = if IOC2 /= [] ->
+        ioc2rpz:send_packets(<<>>,IOC2, [], 0, 0, true, <<>>, Questions, SOAREC,NSRec,Zone#rpz{rule_count=0, ioc_count=0},MP,PktHLen,T_ZIP_L,[],PktN+100,cache,0,false,Proto);
+        true -> {ok, 0, 0}
       end,
-      {ok, NRules, NIOCs}=w_send_packets(PID, Zone#rpz.zone_str);
+      %w_send_packets/3 is called even when the rest of the chunks failed: the
+      %worker was already spawned and monitored, so its result/DOWN must be
+      %collected either way.
+      sum_chunk_results(w_send_packets(PID, MRef, Zone#rpz.zone_str), RestRes);
     true ->
-      {ok, NRules, NIOCs}=send_packets(Socket,IOC, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC,NSRec,Zone#rpz{rule_count=0, ioc_count=0},MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto),
-			NRules1=0, NIOCs1=0
-  end,
-	{ok, NRules+NRules1, NIOCs+NIOCs1};
+      %Returns {ok,NRules,NIOCs} or {error,Reason} - propagated as is.
+      send_packets(Socket,IOC, <<>> , 0, SOANSSize, Zip, PktH, Questions, SOAREC,NSRec,Zone#rpz{rule_count=0, ioc_count=0},MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto)
+  end;
 
 %send_packets(Socket,IOC, [], _ACount, _PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,0,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto) ->
 %  %ioc2rpz_fun:logMessage("Zone ~p zip ~n",[Zone#rpz.zone_str]),
@@ -1663,14 +1838,44 @@ send_packets(Socket,Tail, Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec
   %ets:delete(T_ZIP_L),
 	%T_ZIP_L1=init_T_ZIP_L(Zone),
   if (SendStatus == ok) ->
+    %Tripwire for the PktN numbering scheme. The concurrent cache build (see the
+    %"первый пакет" clause) hands chunk N the packet-number base N*100, so a chunk
+    %that needs 100 packets or more starts overwriting the NEXT chunk's packets in
+    %rpz_axfr_table - silently, because the key collides. Whether a chunk stays
+    %under 100 packets depends on the average on-wire size of ?IOCperProc (10000)
+    %indicators, i.e. on the feed content, so a feed can cross the limit on any
+    %update. Log it: an unexplained short/broken zone is otherwise invisible.
+    %Only for DBOp == cache: that is the only operation the first-packet clause
+    %splits into chunks, so it is the only one where the bases exist at all.
+    if DBOp == cache ->
+      case (PktN+1) rem 100 of
+        0 -> ioc2rpz_fun:logMessage("Zone ~p serial ~p: packet-number ~p reached the next chunk's base while building the cache (?IOCperProc=~p, stride 100). Packets of the following chunk will be OVERWRITTEN in rpz_axfr_table and the cached zone will be incomplete.~n",[Zone#rpz.zone_str,Zone#rpz.serial,PktN+1,?IOCperProc]);
+        _ -> ok
+      end;
+      true -> ok
+    end,
     send_packets(Socket,Tail, <<>> , 0, 0, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG1,PktN+1,DBOp,SOANSSize0,IXFRNewR,Proto);
     true ->
-    % remove sources???
-        ioc2rpz_fun:logMessage("Communication error. Removing partily cached zone and stopping operations ~n",[]),
-        ets:match_delete(rpz_hotcache_table,{{pkthotcache,Zone#rpz.zone,'_'},'_','_'}),
-        ioc2rpz_db:delete_db_pkt(Zone),
-        erlang:exit(self(), normal)
-        %{ok, 0, 0}
+        %The old message carried no context at all ("Communication error. Removing
+        %partily cached zone and stopping operations"), so it was impossible to tell
+        %from the log WHICH zone lost its cache, for WHICH client, in which
+        %operation, or how far the transfer had got. All of that is known here.
+        %Not matched as {error,Reason}: send_dns/3 does not answer `ok' for every
+        %transport - the doh clause answers {ok,Pkt}, which is neither `ok' nor an
+        %error. Zone transfers are gated on proto == tcp today so that cannot get
+        %here, but the status is reported as-is rather than badmatched. See the
+        %"send_dns/3 return value is not uniform across transports" TODO.
+        SendReason = case SendStatus of {error, R} -> R; Other -> Other end,
+        ioc2rpz_fun:logMessage("Communication error while sending zone ~p (serial ~p) to ~s:~p ~p: ~p. Operation ~p, packet ~p (~p packets sent, ~p bytes).~n",
+          [Zone#rpz.zone_str,Zone#rpz.serial,ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),SendReason,DBOp,PktN,PktN,sent_bytes()]),
+        discard_partial_cache(Zone, DBOp),
+        %{error,Reason} and NOT erlang:exit(self(), normal). The exit killed this
+        %process before its caller could log the outcome, so an AXFR/IXFR that died
+        %here produced NEITHER a CEF 201 nor a CEF 131 - the transfer simply had no
+        %terminating event, and the failure was invisible to anything consuming the
+        %CEF stream. The error is propagated instead so send_zone/4's caller logs
+        %CEF 131 with the reason, the duration and the real out= byte count.
+        {error, SendReason}
   end;
 
 send_packets(Socket,[{IOC,_IOCExp,_IoCType}|Tail], Pkt, ACount, PSize, Zip, PktH, Questions, SOAREC,NSRec,Zone,MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR,Proto) when ((byte_size(IOC)+byte_size(Zone#rpz.zone))>=253) ->
@@ -1723,6 +1928,60 @@ send_packets(Socket,[{IOC,IOCExp,IoCType}|Tail], Pkt, ACount, PSize, Zip, PktH, 
   Pkt1 = list_to_binary([Pkt, Rules1, Rules2]),
   PSize1 = byte_size(Pkt1)+SOANSSize,
   send_packets(Socket,Tail, Pkt1 , ACount+Cnt1, PSize1, Zip, PktH, Questions, SOAREC,NSRec,Zone#rpz{rule_count=Zone#rpz.rule_count+Cnt, ioc_count=Zone#rpz.ioc_count+1},MP,PktHLen,T_ZIP_L,TSIG,PktN,DBOp,SOANSSize,IXFRNewR1,Proto).
+
+%% @doc Discards the cache entries that a FAILED {@link send_packets/20} operation
+%% had populated itself - and nothing else.
+%%
+%% This runs when a zone transfer dies half way through, which in practice means
+%% the client hung up. What may be dropped depends entirely on which cache the
+%% operation writes to as it streams:
+%%
+%% <ul>
+%%   <li>`cache' / `sendNcache' write packets to `rpz_axfr_table'
+%%       ({@link ioc2rpz_db:write_db_pkt/2}), so a half-written generation must go:
+%%       serving it would transfer a truncated zone.</li>
+%%   <li>`sendNhotcache' writes packets to `rpz_hotcache_table' for non-cacheable
+%%       ("live") zones, so the partial set must go for the same reason.</li>
+%%   <li>`ixfr' and `send' write NOTHING. They stream from data built by the zone
+%%       updater (`rpz_ixfr_table' / `rpz_axfr_table'), so there is nothing of
+%%       theirs to discard.</li>
+%% </ul>
+%%
+%% Until v1.4.0.5 this distinction was not made: every failure ran
+%% `ets:match_delete(rpz_hotcache_table, ...)' AND
+%% {@link ioc2rpz_db:delete_db_pkt/1} for the zone. `delete_db_pkt/1' removes the
+%% packets of the zone's CURRENT serial - the generation every other client is
+%% being served from - so a single client dropping one IXFR connection destroyed
+%% the whole zone's AXFR cache. `ioc2rpz_db:read_db_pkt/1' then returned `[]',
+%% `send_cached_zone/8' sent no records at all, and the transfer was still logged
+%% as CEF 201 "RPZ transfer success" with `out=0': every AXFR client of that zone
+%% silently received an empty RPZ until the next FULL zone update rebuilt the
+%% cache (an incremental update that finds no new indicators does not).
+%%
+%% @param Zone The `#rpz{}' record being transferred.
+%% @param DBOp The operation that failed.
+%% @returns `ok'.
+-spec discard_partial_cache(#rpz{}, atom()) -> ok.
+discard_partial_cache(Zone, DBOp) when DBOp == cache; DBOp == sendNcache ->
+  %Only the current serial is affected, which for a build in progress IS this
+  %operation's own half-written generation.
+  ioc2rpz_fun:logMessage("Zone ~p serial ~p: discarding the partially built AXFR packet cache after the failed ~p operation.~n",
+    [Zone#rpz.zone_str,Zone#rpz.serial,DBOp]),
+  ioc2rpz_db:delete_db_pkt(Zone),
+  ok;
+
+discard_partial_cache(Zone, sendNhotcache) ->
+  HotCnt = ets:select_count(rpz_hotcache_table,[{{{pkthotcache,Zone#rpz.zone,'_'},'_','_'},[],[true]}]),
+  ioc2rpz_fun:logMessage("Zone ~p serial ~p: discarding ~p partially built hot cache packet(s) after the failed sendNhotcache transfer.~n",
+    [Zone#rpz.zone_str,Zone#rpz.serial,HotCnt]),
+  ets:match_delete(rpz_hotcache_table,{{pkthotcache,Zone#rpz.zone,'_'},'_','_'}),
+  ok;
+
+%Underscore-prefixed: read only from the ?logDebugMSG call, which compiles to a
+%no-op when `debug' is not defined (see the macro's note in include/ioc2rpz.hrl).
+discard_partial_cache(_Zone, _DBOp) -> %ixfr, send
+  ?logDebugMSG("Zone ~p: nothing to discard after the failed ~p transfer - the operation does not populate any cache, it streams data built by the zone updater.~n",[_Zone#rpz.zone_str,_DBOp]),
+  ok.
 
 %% @doc Generates wildcard RPZ rules when wildcards are enabled.
 %% When `<<"true">>', creates a `*.' prefixed rule using label compression
@@ -2116,10 +2375,10 @@ gen_rpzrule(Domain,RPZ,TTL,<<"true">>,Action, LocData,PktHLen,T_ZIP_L) -> %wildc
   {ok,Cnt1+Cnt2,[Pkt1,Pkt2],[]};
 
 
-gen_rpzrule(Domain,RPZ,TTL,<<"false">>,<<"nxdomain">>,[],PktHLen,T_ZIP_L) -> %wildcard = false
+gen_rpzrule(Domain,_RPZ,TTL,<<"false">>,<<"nxdomain">>,[],PktHLen,T_ZIP_L) -> %wildcard = false
   case domstr_to_bin_zip(Domain,PktHLen,T_ZIP_L) of
     {error, _} ->
-			?logDebugMSG("Zone ~p bad IOC ~p ~n",[RPZ#rpz.zone_str,Domain]),
+			?logDebugMSG("Zone ~p bad IOC ~p ~n",[_RPZ#rpz.zone_str,Domain]),
       {ok,0,[],[]};
     {_,BDomain} -> %ok, zip
       {ok,1,[list_to_binary([BDomain,<<?T_CNAME:16,?C_IN:16, TTL:32,1:16,0>>])],[<<?T_CNAME:16,?C_IN:16, TTL:32,1:16,0>>]}
@@ -2448,20 +2707,137 @@ init_T_ZIP_L(Zone) ->
 extract_label(Packet,AddZero) ->
  extract_label(Packet,<<>>,AddZero).
 
-extract_label(<<Zip:8,_/binary>>=Packet, Labels,_AddZero) when Zip >= 192 ->
+%% A length byte above ?MaxLabelLen (63) but below 192 is not a length at all:
+%% the two high bits are the reserved 01/10 label types (RFC 1035 §4.1.4).
+%% Rejected explicitly so a malformed request is reported as a format error
+%% instead of failing the binary match below.
+extract_label(<<Len:8,_/binary>>=_Packet, _Labels, _AddZero)
+    when Len > ?MaxLabelLen, Len < 192 ->
+  error({dns_format_error, {label_too_long, Len}});
+
+%% The accumulated name would exceed the RFC 1035 §2.3.4 limit of 255 bytes.
+extract_label(_Packet, Labels, _AddZero) when byte_size(Labels) >= ?MaxNameLen ->
+  error({dns_format_error, name_too_long});
+
+%% Truncated request: the name is neither terminated by a root label nor by a
+%% compression pointer before the packet ends.
+extract_label(<<>>, _Labels, _AddZero) ->
+  error({dns_format_error, truncated_name});
+
+extract_label(<<Zip:8,_/binary>>=Packet, Labels,_AddZero) when Zip >= 192, byte_size(Packet) >= 2 ->
   <<Label:2/binary,REST/binary>>=Packet,
   {REST, <<Labels/binary,Label/binary>>};
+
+%% Compression pointer truncated to its first byte.
+extract_label(<<Zip:8>>=_Packet, _Labels, _AddZero) when Zip >= 192 ->
+  error({dns_format_error, truncated_pointer});
 
 extract_label(<<Zip:8,REST/binary>>=_Packet, Labels,AddZero) when Zip == 0 ->
   {REST, <<Labels/binary,AddZero/binary>>};
 
-extract_label(<<Len:8,_/binary>>=Packet, Labels,AddZero) ->
+extract_label(<<Len:8,_/binary>>=Packet, Labels,AddZero) when byte_size(Packet) >= Len+1 ->
   <<_:8,Label:Len/bytes,REST/binary>>=Packet,
-  extract_label(REST,<<Labels/binary,Len:8,Label/binary>>,AddZero).
+  extract_label(REST,<<Labels/binary,Len:8,Label/binary>>,AddZero);
+
+%% The label claims more bytes than the packet holds.
+extract_label(<<Len:8,_/binary>>=_Packet, _Labels, _AddZero) ->
+  error({dns_format_error, {truncated_label, Len}}).
 
 %%%%
 %%%% EUnit tests
 %%%%
+%%%% Compiled only when TEST is defined (rebar3 eunit / rebar3 as test), so test
+%%%% code and its exports stay out of release beams.
+%%%%
+-ifdef(TEST).
+
+%% Regression test for the "feed broken after a client dropped a transfer" bug.
+%%
+%% discard_partial_cache/2 must drop ONLY what the failed operation had written
+%% itself. Before v1.4.0.5 every failure ran delete_db_pkt/1 + a hot-cache
+%% match_delete for the zone, so an `ixfr' transfer aborted by the client wiped
+%% the AXFR packet cache of the zone's CURRENT serial - the generation every
+%% other client was being served from - and that zone then transferred with no
+%% records at all (logged as CEF 201 success, out=0) until the next FULL update.
+discard_partial_cache_test_() ->
+  {setup,
+   fun() ->
+     %% Tables are created here only if the running node does not already own
+     %% them, so the test can be run against a live shell without stealing them.
+     [ ets:new(T, [named_table,public,ordered_set]) || T <- [rpz_axfr_table,rpz_hotcache_table],
+       ets:info(T, size) == undefined ],
+     ok
+   end,
+   fun(_) -> ok end,
+   fun(_) ->
+     Zone = #rpz{zone = <<4,"test",7,"ioc2rpz",0>>, zone_str="test.ioc2rpz", serial=1790023980},
+     %% 3 cached AXFR packets for the current serial + 2 hot-cache packets.
+     Fill = fun() ->
+       ets:delete_all_objects(rpz_axfr_table),
+       ets:delete_all_objects(rpz_hotcache_table),
+       [ ioc2rpz_db:write_db_pkt(Zone,{N,1,0,0,<<"pkt">>}) || N <- [0,1,2] ],
+       [ ets:insert(rpz_hotcache_table,{{pkthotcache,Zone#rpz.zone,N},Zone#rpz.serial,<<"hot">>}) || N <- [0,1] ]
+     end,
+     Counts = fun() -> {length(ioc2rpz_db:read_db_pkt(Zone)),
+                        ets:select_count(rpz_hotcache_table,[{{{pkthotcache,Zone#rpz.zone,'_'},'_','_'},[],[true]}])} end,
+     %% Each case is its own fun so Fill/discard/assert run in that order - a
+     %% deferred ?_assert would be evaluated after every case had already run.
+     Case = fun(Name, Op, PurgeZone, Expected) ->
+       {Name, fun() -> Fill(), discard_partial_cache(PurgeZone, Op), ?assertEqual(Expected, Counts()) end}
+     end,
+     Other = Zone#rpz{zone = <<5,"other",7,"ioc2rpz",0>>, zone_str="other.ioc2rpz"},
+     [
+      %% THE FIX: an operation that streams data built by the zone updater keeps
+      %% its hands off both caches.
+      Case("ixfr keeps both caches",           ixfr,          Zone,  {3,2}),
+      Case("send keeps both caches",           send,          Zone,  {3,2}),
+      %% A half-written AXFR packet cache generation must not be served.
+      Case("cache drops its own packets",      cache,         Zone,  {0,2}),
+      Case("sendNcache drops its own packets", sendNcache,    Zone,  {0,2}),
+      %% A half-written hot cache (non-cacheable "live" zone) must not be served,
+      %% and it must not take the AXFR packet cache with it.
+      Case("sendNhotcache drops hot only",     sendNhotcache, Zone,  {3,0}),
+      %% Another zone's cache is never touched.
+      Case("another zone is untouched",        cache,         Other, {3,2})
+     ]
+   end}.
+
+%% sum_chunk_results/2 must not report a partial count as the zone's size: the
+%% caller stores it in #rpz.rule_count / #rpz.ioc_count.
+sum_chunk_results_test() -> [
+  ?assertEqual({ok,7,5}, sum_chunk_results({ok,3,2},{ok,4,3})),
+  ?assertEqual({error,closed}, sum_chunk_results({error,closed},{ok,4,3})),
+  ?assertEqual({error,closed}, sum_chunk_results({ok,3,2},{error,closed})),
+  ?assertEqual({error,enotconn}, sum_chunk_results({error,enotconn},{error,closed}))
+].
+
+%% Malformed names must be reported, not raise out of extract_label/3 into the
+%% caller. parse_question/1 turns each of these into {error, Reason}, which
+%% parse_dns_request/3 answers with FORMERR after charging the aggregate
+%% per-IP rate-limit bucket.
+extract_label_malformed_test() -> [
+  %% label length byte in the reserved 64..191 range
+  ?assertMatch({error, {label_too_long, 64}}, parse_question(<<64,"a">>)),
+  ?assertMatch({error, {label_too_long, 191}}, parse_question(<<191,"a">>)),
+  %% label claims more bytes than the packet holds
+  ?assertMatch({error, {truncated_label, 7}}, parse_question(<<7,"exam">>)),
+  %% no root label and no pointer before the packet ends
+  ?assertMatch({error, truncated_name}, parse_question(<<3,"com">>)),
+  ?assertMatch({error, truncated_name}, parse_question(<<>>)),
+  %% compression pointer truncated to one byte
+  ?assertMatch({error, truncated_pointer}, parse_question(<<7,"example",16#c0>>)),
+  %% name terminated, but the question ends before QTYPE/QCLASS
+  ?assertMatch({error, _}, parse_question(<<3,"com",0>>)),
+  ?assertMatch({error, _}, parse_question(<<3,"com",0,0,1>>)),
+  %% a name longer than 255 bytes (5 x 60-byte labels = 305)
+  ?assertMatch({error, name_too_long},
+               parse_question(<<(binary:copy(<<60,(binary:copy(<<$a>>,60))/binary>>,5))/binary,0,0,6,0,1>>)),
+  %% a well-formed question still parses, with the maximum legal label length
+  ?assertMatch({ok, <<3,"com">>, ?T_SOA, ?C_IN, <<>>}, parse_question(<<3,"com",0,?T_SOA:16,?C_IN:16>>)),
+  ?assertMatch({ok, _, ?T_AXFR, ?C_IN, <<>>},
+               parse_question(<<63,(binary:copy(<<$a>>,63))/binary,3,"com",0,?T_AXFR:16,?C_IN:16>>))
+].
+
 extract_label_test() -> [
   ?assert(extract_label(<<16#c00c:16,7,"example",3,"com">>,<<>>) =:= {<<7,"example",3,"com">>,<<16#c00c:16>>}),
   ?assert(extract_label(<<7,"example",16#c00c:16>>,<<>>) =:= {<<>>,<<7,"example",16#c00c:16>>}),
@@ -2754,3 +3130,5 @@ rl_limits_test_() ->
       end)
     ]
    end}.
+
+-endif.

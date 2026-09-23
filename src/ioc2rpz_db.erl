@@ -41,7 +41,13 @@
 %% @end
 -module(ioc2rpz_db).
 -include_lib("ioc2rpz.hrl").
+%% eunit.hrl DEFINES TEST itself (see -ifndef(TEST) in that header), so including
+%% it unconditionally made the `-ifdef(TEST)' guard around the test block below
+%% always true: the tests were compiled and exported into release beams despite
+%% the guard. The include must therefore be guarded too.
+-ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+-endif.
 -export([init_db/3,db_table_info/2,read_db_pkt/1,write_db_pkt/2,delete_db_pkt/1,delete_old_db_pkt/1,read_db_record/3,write_db_record/3,delete_old_db_record/1,saveZones/0,loadZones/0,loadZones/1,
         get_zone_info/2,clean_DB/1,save_zone_info/1,get_allzones_info/2, lookup_db_record/2,cleanup_hotcache/0,source_signature/1]).
 
@@ -163,9 +169,28 @@ read_db_pkt(ets,Zone) ->
 % update). Return [] in that case so send_zone can fall back gracefully.
   Pkt = ets:match(rpz_axfr_table,{{rpz,Zone#rpz.zone,Zone#rpz.serial,'_','$1'},'$2'}),
   case Pkt of
-    [] -> [];
+    [] ->
+      %An empty cache is NOT harmless: send_cached_zone/8 then sends nothing at
+      %all and the transfer is still reported as CEF 201 "RPZ transfer success"
+      %with out=0, so the client silently ends up with an empty RPZ. Report it.
+      ioc2rpz_fun:logMessage("Zone ~p serial ~p status ~p: the AXFR packet cache is EMPTY - the transfer will contain NO records. The zone cache needs to be rebuilt (forced AXFR).~n",
+        [Zone#rpz.zone_str,Zone#rpz.serial,Zone#rpz.status]),
+      [];
     [[PID, _] | _] ->
-      [binary_to_term(X) || [PPID, X] <- Pkt, PPID == PID]
+      Sel = [X || [PPID, X] <- Pkt, PPID == PID],
+      %The filter below is a safeguard against two processes caching the same
+      %zone/serial concurrently. It silently DISCARDS the packets of the losing
+      %builder, which leaves a zone that transfers with holes, so say so when it
+      %actually happens instead of only documenting it.
+      case length(Pkt) - length(Sel) of
+        0 -> ok;
+        Dropped ->
+          %~w and not ~p for the builder: ~p line-wraps a {parent,Pid} tuple at
+          %~80 characters, which would split this log line in two.
+          ioc2rpz_fun:logMessage("Zone ~p serial ~p: the AXFR packet cache holds packets from more than one builder (concurrent zone build). Using ~p packet(s) from ~w and IGNORING ~p packet(s) - the served zone may be incomplete.~n",
+            [Zone#rpz.zone_str,Zone#rpz.serial,length(Sel),PID,Dropped])
+      end,
+      [binary_to_term(X) || X <- Sel]
   end;
 
 read_db_pkt(mnesia,_Zone) ->
@@ -188,9 +213,11 @@ read_db_pkt(mnesia,_Zone) ->
 cleanup_hotcache() ->
   Cutoff = ioc2rpz_fun:curr_serial() - ?HotCacheTime,
   %% Delete packet hot-cache entries {{pkthotcache,_,_}, Timestamp, _} where Timestamp < Cutoff
-  Deleted = ets:select_delete(rpz_hotcache_table,
+  %underscore-prefixed: only read from the debug log call below, which compiles
+  %to a no-op when `debug' is not defined
+  _Deleted = ets:select_delete(rpz_hotcache_table,
     [{{{pkthotcache,'_','_'}, '$1', '_'}, [{'<', '$1', Cutoff}], [true]}]),
-  ?logDebugMSG("Hot cache cleanup removed ~p expired packet entries~n", [Deleted]),
+  ?logDebugMSG("Hot cache cleanup removed ~p expired packet entries~n", [_Deleted]),
   ok.
 
 %% @doc Writes a single AXFR zone transfer packet to the cache.
@@ -226,14 +253,22 @@ delete_db_pkt(Zone) -> %axfr
   delete_db_pkt(?DBStorage,Zone).
 
 delete_db_pkt(ets,Zone) when Zone#rpz.serial == 42 ->
-  %?logDebugMSG("Removing AXFR zone ~p ~n",[Zone#rpz.zone_str]),
-  ets:match_delete(rpz_axfr_table,{{rpz,Zone#rpz.zone,'_','_','_'},'_'}),
+  %Logged and not ?logDebugMSG: this drops the WHOLE AXFR cache of a zone and is
+  %expected only when the zone disappears from the configuration (clean_DB/1).
+  %Any other occurrence in the log is the interesting one.
+  Deleted = ets:select_delete(rpz_axfr_table,[{{{rpz,Zone#rpz.zone,'_','_','_'},'_'},[],[true]}]),
+  ioc2rpz_fun:logMessage("Zone ~p: removed the whole AXFR packet cache (~p packet(s), all serials) and the AXFR zone config entry.~n",[Zone#rpz.zone_str,Deleted]),
   ets:match_delete(rpz_axfr_table,{{axfr_rpz_cfg,Zone#rpz.zone},'_','_','_','_','_','_','_','_'});
 
 delete_db_pkt(ets,Zone) ->
   %axfr_rpz_cfg
-  %?logDebugMSG("Removing AXFR zone ~p serial ~p ~n",[Zone#rpz.zone_str, Zone#rpz.serial]),
-  ets:select_delete(rpz_axfr_table,[{{{rpz,Zone#rpz.zone,Zone#rpz.serial,'$1','_'},'_'},[{'=<','$1',Zone#rpz.serial}],[true]}]);
+  %Deletes the packets of the zone's CURRENT serial (PktN is always =< a serial),
+  %i.e. the generation that AXFR clients are being served from - see the caller in
+  %ioc2rpz:send_packets/20. Always logged, with the count, so that a zone that
+  %suddenly transfers empty can be traced back to this call.
+  Deleted = ets:select_delete(rpz_axfr_table,[{{{rpz,Zone#rpz.zone,Zone#rpz.serial,'$1','_'},'_'},[{'=<','$1',Zone#rpz.serial}],[true]}]),
+  ioc2rpz_fun:logMessage("Zone ~p serial ~p: removed ~p cached AXFR packet(s) of the current serial. AXFR clients will get an empty zone until the cache is rebuilt.~n",[Zone#rpz.zone_str,Zone#rpz.serial,Deleted]),
+  Deleted;
 
 delete_db_pkt(mnesia,_Zone) ->
   ok.
@@ -257,7 +292,14 @@ delete_old_db_pkt(Zone) -> %axfr
   delete_old_db_pkt(?DBStorage,Zone).
 
 delete_old_db_pkt(ets,Zone) ->
-  ets:select_delete(rpz_axfr_table,[{{{rpz,Zone#rpz.zone,'$1','_','_'},'_'},[{'<','$1',Zone#rpz.serial}],[true]}]);
+  Deleted = ets:select_delete(rpz_axfr_table,[{{{rpz,Zone#rpz.zone,'$1','_','_'},'_'},[{'<','$1',Zone#rpz.serial}],[true]}]),
+  %Routine (once per zone update) so debug level, but the count is what tells a
+  %"the new generation was purged" incident apart from a normal generation swap:
+  %the count here must cover the PREVIOUS generation only.
+  ?logDebugMSG("Zone ~p: purged ~p cached AXFR packet(s) of serials older than ~p, ~p packet(s) of the current serial kept.~n",
+    [Zone#rpz.zone_str,Deleted,Zone#rpz.serial,
+     ets:select_count(rpz_axfr_table,[{{{rpz,Zone#rpz.zone,Zone#rpz.serial,'_','_'},'_'},[],[true]}])]),
+  Deleted;
 
 delete_old_db_pkt(mnesia,_Zone) ->
   ok.
@@ -378,10 +420,10 @@ write_db_record(ets,Zone,IOCs,axfr) ->
   %%   {{ioc,Zone,IOC,IoCType}, Serial, IOCExp, Mask}
   %% Defensive: accept both 4-tuples {IOC,Exp,Type,Mask} and legacy 3-tuples
   %% {IOC,Exp,Type} (⇒ Mask=0) so residual 3-tuple callers stay safe during staging.
-  NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','_'},'$2','$3','$4'},[],['true']}]), % to debug issue 17
+  _NRbefore=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','_'},'$2','$3','$4'},[],['true']}]), % to debug issue 17
   [ets:insert(rpz_ixfr_table, {{ioc,Zone#rpz.zone,IOC,IoCType},Zone#rpz.serial,IOCExp,Mask}) || {IOC,IOCExp,IoCType,Mask} <- [normalize_ioc_mask(IOCEntry) || IOCEntry <- IOCs], (IOCExp > CTime) or (IOCExp == 0)],
-  NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','_'},'$2','$3','$4'},[],['true']}]), % to debug issue 17
-   ?logDebugMSG("AXFR update ets. Zone ~p. Before ~p After ~p Indicators ~p~n",[Zone#rpz.zone_str, NRbefore, NRafter,length(IOCs)]), % to debug issue 17
+  _NRafter=ets:select_count(rpz_ixfr_table,[{{{ioc,Zone#rpz.zone,'$1','_'},'$2','$3','$4'},[],['true']}]), % to debug issue 17
+   ?logDebugMSG("AXFR update ets. Zone ~p. Before ~p After ~p Indicators ~p~n",[Zone#rpz.zone_str, _NRbefore, _NRafter,length(IOCs)]), % to debug issue 17
 	{ok,0}; %length(IOCs)
 
 write_db_record(mnesia,_Zone,{_IOC,_IOCExp,_IoCType},axfr) ->
@@ -416,8 +458,8 @@ write_db_record(ets,Zone,IOCs,ixfr) when IOCs /= [] ->
   [update_db_record(?DBStorage,Zone#rpz.zone,Zone#rpz.serial,IOC,IOCExp,IoCType,maps:get({IOC,IOCExp,IoCType},IOCMaskMap,0),ets:lookup(rpz_ixfr_table, {ioc,Zone#rpz.zone,IOC,IoCType}),CTime) || {IOC,IOCExp,IoCType} <- IOCNEW],
 	{ok,ordsets:size(IOCNEW)};
 
-write_db_record(ets,Zone,IOCs,ixfr) when IOCs == [] ->
-	?logDebugMSG("Zone ~p incremental request returned no new indicators~n",[Zone#rpz.zone_str]),
+write_db_record(ets,_Zone,IOCs,ixfr) when IOCs == [] ->
+	?logDebugMSG("Zone ~p incremental request returned no new indicators~n",[_Zone#rpz.zone_str]),
 	{ok,0};
 
 write_db_record(mnesia,_Zone,_IOCs,ixfr) ->
@@ -455,8 +497,8 @@ update_db_record(ets, Zone, Serial, IOC, IOCExp, IoCType, Mask, [], CTime) when 
 	%?logDebugMSG("Update ~p ~p ~p ~p ~p ~n",[Serial, IOC, IOCExp, false, CTime]),
 	ets:insert_new(rpz_ixfr_table, {{ioc,Zone,IOC,IoCType},Serial,IOCExp,Mask}); %insert for duplicate_bag
 
-update_db_record(ets, Zone, Serial, IOC, IOCExp, IoCType, _Mask, Update, CTime) -> %ok; %not new but IOCExp =< CTime, e.g. IOCExp=0 and we cached an indicator with a real expiration time (ExpTime)
-	?logDebugMSG("Not expected update ~p ~p ~p ~p ~p ~p ~p ~n",[Zone, Serial, IOC, IOCExp, IoCType, Update, CTime]);
+update_db_record(ets, _Zone, _Serial, _IOC, _IOCExp, _IoCType, _Mask, _Update, _CTime) -> %ok; %not new but IOCExp =< CTime, e.g. IOCExp=0 and we cached an indicator with a real expiration time (ExpTime)
+	?logDebugMSG("Not expected update ~p ~p ~p ~p ~p ~p ~p ~n",[_Zone, _Serial, _IOC, _IOCExp, _IoCType, _Update, _CTime]);
 
 update_db_record(mnesia, _Zone, _Serial, _IOC, _IOCExp, _IoCType, _Mask, _Update, _CTime) -> ok.
 

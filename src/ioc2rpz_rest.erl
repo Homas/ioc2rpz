@@ -21,7 +21,9 @@
 %% TSIG keys stored in `cfg_table' and an IP-based ACL check.
 %% @end
 -module(ioc2rpz_rest).
+-ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+-endif.
 
 -include_lib("ioc2rpz.hrl").
 
@@ -84,7 +86,18 @@ content_types_provided(Req, State) ->
 %% @end
 is_authorized(Req, State) ->
 	#{peer := {IP, Port}} = Req,
-	[[MKeysT,ACL,Srv]] = ets:match(cfg_table,{srv,'_','_','$4','$5','_','$7'}),
+	%The server row is read through ioc2rpz_fun:srv_cfg/0. A missing row used to
+	%badmatch here, which crashed the request handler (HTTP 500) instead of
+	%denying the request - and it crashed it BEFORE the ACL check, on an
+	%unauthenticated code path.
+	case ioc2rpz_fun:srv_cfg() of
+		{error, no_srv_config} ->
+			ioc2rpz_fun:logMessage("No server configuration in cfg_table, denying REST request from ~s~n",[ioc2rpz:ip_to_str(IP)]),
+			ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(145),[ioc2rpz:ip_to_str(IP), Port, cowboy_req:path(Req), ""]),
+			Body = io_lib:format("{status: \"error\", msg: \"Authentication failed\"}\n",[]),
+			Req1=cowboy_req:set_resp_body(Body,Req),
+			{{false, <<"Basic">>}, Req1, State};
+		{ok, {_Server,_Email,MKeysT,ACL,_Cert,Srv}} ->
 	MKeys=lists:flatten([ MKeysT,[ ets:match(cfg_table,{[key_group,X,'_'],'$3'}) || X <- Srv#srv.key_groups ] ]),
 
 	MGMTIP=ioc2rpz_fun:ip_in_list(ioc2rpz:ip_to_str(IP),ACL),
@@ -117,6 +130,7 @@ is_authorized(Req, State) ->
 			Body = io_lib:format("{status: \"error\", msg: \"Authentication failed\"}\n",[]),
 			Req0=cowboy_req:set_resp_body(Body,Req),
 			{{false, <<"Basic">>}, Req0, State}
+	end
 	end.
 
 
@@ -673,6 +687,10 @@ ioc2jsonarr(Resp,[],_) ->
 %%%%
 %%%% EUnit tests
 %%%%
+%%%% Compiled only when TEST is defined (rebar3 eunit / rebar3 as test), so test
+%%%% code and its exports stay out of release beams.
+%%%%
+-ifdef(TEST).
 
 %% Verifies get_tkey_zones/1 (task 11, R1/R4): each zone's per-zone map value is
 %% extended from the original 3-tuple {ZoneStr, IoCType, Wildcards} to the
@@ -958,3 +976,5 @@ parse_feeds_json_bitmap_over63_test() ->
   Req = {<<"bad.example.com">>, <<"tkey">>, Zones},
   Out = lists:flatten(parse_feeds([{<<"rpz.big">>, 100, 0, Mask}], Req, "", json)),
   ?assertEqual("[{\"feed\":<<\"rpz.big\">>, \"wildcard\":true, \"type\":\"fqdn\", \"rpz_serial\": 100, \"ioc_expiration\": 0, \"sources\": [\"s0\",\"s63\",\"s69\"]}]", Out).
+
+-endif.
