@@ -189,7 +189,7 @@
 %% version and the {vsn,...} of ioc2rpz.app.src are derived from this line
 %% (see the {cmd,...} entries in rebar.config and src/ioc2rpz.app.src), so they
 %% cannot drift apart.
--define(ioc2rpz_ver, "1.4.0.6-2026092301").
+-define(ioc2rpz_ver, "1.4.0.7-2026092701").
 
 %% DNS label compression pointer for the query name (QNAME) in responses.
 %% In a standard DNS response, the original QNAME from the question section

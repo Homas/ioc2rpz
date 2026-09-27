@@ -56,9 +56,11 @@ COPY config/ /opt/ioc2rpz/config/
 
 RUN rebar3 eunit && rebar3 release -d false
 
-# Run as a non-root user. The release binds 53/853/443, which are privileged
-# ports, so the container needs NET_BIND_SERVICE (Docker grants it by default in
-# the default capability set) - it does not need to run as root.
+# Non-root user for an opt-in `--user ioc2rpz` (the image itself runs as root
+# since v1.4.0.7 - see the note at the commented-out USER line below). The
+# release binds 53/853/443, which are privileged ports, so a non-root container
+# needs NET_BIND_SERVICE (Docker grants it by default in the default capability
+# set).
 RUN addgroup -S ioc2rpz && adduser -S -G ioc2rpz -h /opt/ioc2rpz ioc2rpz \
     && chown -R ioc2rpz:ioc2rpz /opt/ioc2rpz
 
@@ -86,7 +88,17 @@ ENV NODE_NAME=ioc2rpz
 # distribution is not needed at all, comment out -sname/-setcookie in
 # config/vm.args.
 
-USER ioc2rpz
+# v1.4.0.7: the container runs as ROOT again (as it did up to v1.4.0.4).
+# v1.4.0.5 switched to `USER ioc2rpz`, which broke every deployment whose TLS
+# files are mounted root-owned and mode 0400/0600 - the usual case: the process
+# could not read the key, and because ssl only opens it on the first handshake,
+# the REST/DoT listeners started "fine" and then reset every connection
+# (curl: SSL_ERROR_SYSCALL) with nothing logged. The `ioc2rpz` user is still
+# created above so the proper non-root setup (pinned UID/GID, startup
+# readability check, documented host permissions - see TODO.md) can re-enable
+# it. Until then, `docker run --user ioc2rpz ...` opts in, provided the mounted
+# cfg/ssl files are readable and db/ is writable by that user.
+#USER ioc2rpz
 
 # Liveness check: query the built-in sample zone over TCP on loopback. dig exits
 # 0 for ANY DNS response and 9 when no server could be reached, so this asserts
