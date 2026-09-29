@@ -1,6 +1,6 @@
 #  ioc2rpz™ makes your threat intelligence actionable
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Erlang/OTP](https://img.shields.io/badge/Erlang%2FOTP-24%2B-blue.svg)](https://www.erlang.org/)
+[![Erlang/OTP](https://img.shields.io/badge/Erlang%2FOTP-25%2B-blue.svg)](https://www.erlang.org/)
 [![Docker Hub](https://img.shields.io/docker/pulls/pvmdel/ioc2rpz.svg)](https://hub.docker.com/r/pvmdel/ioc2rpz)
 
 ## Table of Contents
@@ -386,7 +386,7 @@ Erlang automatically picks up replaced certificate files within ~2 minutes. Cert
 
 ### Prerequisites
 
-- **Erlang/OTP 24 or newer** (`erl -version` to check) and a matching [rebar3](https://www.rebar3.org).
+- **Erlang/OTP 25 or newer** (`erl -version` to check) and a matching [rebar3](https://www.rebar3.org).
 - A C toolchain (for building dependencies) and `git`.
 
 ### Build & Run
