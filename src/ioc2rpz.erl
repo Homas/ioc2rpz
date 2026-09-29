@@ -472,7 +472,7 @@ parse_dns_request(Socket, <<DNSId:2/binary, _:1, OptB:7, _:1, OptE:3, _:4, QDCOU
     {ok, QName, QType, QClass, _Other_REC} ->
       QStr=dombin_to_str(QName),
       ioc2rpz_fun:logMessageCEF(ioc2rpz_fun:msg_CEF(102),[ip_to_str(Proto#proto.rip),Proto#proto.rport,?iif(Proto#proto.tls == yes,tls,Proto#proto.proto),QStr, ioc2rpz_fun:q_type(QType), ioc2rpz_fun:q_class(QClass)]),
-      send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?SERVFAIL:4>>, <<QDCOUNT:2,ANCOUNT:2,NSCOUNT:2,ARCOUNT:2>>, Rest, [], Proto);
+      send_REQST(Socket, DNSId, <<1:1,OptB:7, 0:1, OptE:3,?SERVFAIL:4>>, <<QDCOUNT:16,ANCOUNT:16,NSCOUNT/binary,ARCOUNT/binary>>, Rest, [], Proto); %was <<QDCOUNT:2,...,NSCOUNT:2,ARCOUNT:2>>: 2-BIT integer segments, and NSCOUNT/ARCOUNT are binaries, so this raised badarg instead of answering SERVFAIL
     {error, _Reason} ->
       %Unparseable question AND a bad QDCOUNT: answer FORMERR with an empty
       %question section (we cannot echo a question we could not read).
@@ -1289,7 +1289,10 @@ send_sample_zone(Socket, DNSId, OptB, OptE, Questions, MailAddr, NSServ, TSIG, P
   if TSIG /= [] ->
     {ok,TSIGRR,_}=add_TSIG(list_to_binary([DNSId, <<1:1, OptB:7, 0:1, OptE:3, ?NOERROR:4, 1:16,ACount:16,0:16,0:16>>, Questions, SOAREC, NSRec, Rules, SOAREC]),TSIG),
     Pkt1 = list_to_binary([DNSId, <<1:1, OptB:7, 0:1, OptE:3, ?NOERROR:4, 1:16,ACount:16,0:16,1:16>>, Questions, SOAREC, NSRec, Rules, SOAREC, TSIGRR]);
-    true -> Pkt1 = <<DNSId/binary, 1:1, OptB:7, 1:1, OptE:3, ?NOERROR:4, 1:16,ACount:16,0:16,0:16, Questions/binary, SOAREC/binary, NSRec/binary, Rules/binary, SOAREC/binary>>
+    %list_to_binary and not <<... Rules/binary ...>>: Rules is a list of records
+    %(see length(Rules) above), so the binary construction raised badarg and the
+    %sample zone could never be transferred without TSIG.
+    true -> Pkt1 = list_to_binary([DNSId, <<1:1, OptB:7, 1:1, OptE:3, ?NOERROR:4, 1:16,ACount:16,0:16,0:16>>, Questions, SOAREC, NSRec, Rules, SOAREC])
   end,
   ets:delete(T_ZIP_L),
   send_dns(Socket,Pkt1, [Proto,addlen]).

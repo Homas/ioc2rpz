@@ -391,7 +391,12 @@ b_to_lowcase(A) ->
 %% @param LST A list of allowed IP address tuples.
 %% @returns `true' if `IP' is in `LST', `false' otherwise.
 %% @todo Add CIDR prefix matching support.
--spec ip_in_list(inet:ip_address(), [inet:ip_address()]) -> boolean().
+%% Callers pass the address as a string (ioc2rpz:ip_to_str/1, i.e. inet:ntoa/1,
+%% which can also return {error,einval}) and the ACL as parsed from the config.
+%% The previous spec (inet:ip_address() tuples) did not match any caller, and
+%% dialyzer then treated every call as non-returning, which cascaded into
+%% dozens of false "will never be called" warnings.
+-spec ip_in_list(string() | {error, einval}, list()) -> boolean().
 ip_in_list(IP,LST) -> %TODO check CIDR as well
  lists:member(IP,LST).
 

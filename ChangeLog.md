@@ -1,5 +1,12 @@
 # ioc2rpz change log
 [CB] - Changed Behaviour
+## Unreleased
+### Correctness
+- The sample zone can be transferred without TSIG. `send_sample_zone/9` built the response with `Rules/binary` although `Rules` is a list, so that branch always raised `badarg`
+- A parsable request with QDCOUNT other than 1 is answered SERVFAIL as intended. The response header was built with 2-bit integer segments from values that are partly binaries, so it raised `badarg` and the request process crashed instead
+### Build / packaging
+- CI: GitHub Actions now builds the Docker image natively for linux/amd64 and linux/arm64 and publishes one multi-arch manifest to GHCR and (when the `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` secrets are set) Docker Hub: `latest` and the version from `?ioc2rpz_ver` from master, `dev` from dev, and git tags as-is
+- CI: rebar3 is pinned per OTP line (3.21.0 for OTP 24, 3.24.0 for OTP 27); the latest rebar3 no longer runs on OTP 24. Dialyzer is non-blocking until the remaining pre-existing warnings are cleaned up (see `TODO.md`). The `ioc2rpz_fun:ip_in_list/2` spec is corrected, which removes a cascade of false "will never be called" warnings
 ## 2026-09-27 v1.4.0.7
 ### Build / packaging
 - [CB] Docker: the container runs as root again, as it did up to v1.4.0.4. v1.4.0.5 added `USER ioc2rpz` (a system user, currently UID 100 / GID 101), and that broke any deployment whose TLS certificate/key are mounted root-owned with mode 0400/0600 — the usual setup. The process could not read the key, and Erlang `ssl` opens the key file only on the first handshake, not when the listener starts, so the REST (8443) and DoT (853) listeners started normally, logged nothing, and then reset every TLS connection before the handshake (`curl: (35) ... SSL_ERROR_SYSCALL`). Ranch discards the failed handshake without logging it. Plain DNS on 53 was not affected. The `ioc2rpz` user is still created in the image, so `docker run --user ioc2rpz ...` still opts in to non-root, provided the mounted `cfg`/`ssl` files are readable and `db` is writable by that UID. The proper non-root setup (pinned UID/GID, startup readability check for the TLS files) is tracked in `TODO.md`
