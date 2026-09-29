@@ -1,0 +1,229 @@
+name: Docker image
+
+# Builds the container image on GitHub and publishes it.
+#
+#   push to master   -> :latest, :<ver>, :<ver>-<build>, :sha-<short>
+#   push to dev      -> :dev, :sha-<short>
+#   push of a tag    -> :<tag>  (the repo's tags are plain versions, e.g. 1.4.0.7)
+#   other branches / pull requests -> build only, nothing is pushed
+#
+# <ver>-<build> comes from ?ioc2rpz_ver in include/ioc2rpz.hrl
+# (e.g. "1.4.0.7-2026092701"), <ver> is the part before the dash.
+#
+# Registries:
+#   ghcr.io/<owner>/ioc2rpz  - always, uses the built-in GITHUB_TOKEN
+#   Docker Hub               - only when the DOCKERHUB_USERNAME and
+#                              DOCKERHUB_TOKEN secrets are set. Repository
+#                              defaults to pvmdel/ioc2rpz, override with the
+#                              DOCKERHUB_REPO repository variable.
+#
+# linux/amd64 and linux/arm64 are each built on a NATIVE runner and then merged
+# into one multi-arch manifest. The Dockerfile runs `rebar3 eunit` and
+# `rebar3 release`; doing that for arm64 under QEMU emulation is several times
+# slower and the BEAM JIT is not reliable under emulation.
+
+on:
+  push:
+    branches: ['**']
+    tags: ['*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOCKERHUB_REPO: ${{ vars.DOCKERHUB_REPO || 'pvmdel/ioc2rpz' }}
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    outputs:
+      push: ${{ steps.cfg.outputs.push }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        id: cfg
+        env:
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Publish only from master, dev and tags - never from PRs or
+          # feature branches.
+          case "${{ github.event_name }}:${{ github.ref }}" in
+            pull_request:*)                       push=false ;;
+            *:refs/heads/master|*:refs/heads/dev) push=true ;;
+            *:refs/tags/*)                        push=true ;;
+            *)                                    push=false ;;
+          esac
+          ghcr="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ioc2rpz"
+          images="$ghcr"
+          if [ -n "$DH_USER" ] && [ -n "$DH_TOKEN" ]; then
+            images="$images"$'\n'"$DOCKERHUB_REPO"
+            dockerhub=true
+          else
+            dockerhub=false
+          fi
+          echo "push=$push"           >> "$GITHUB_OUTPUT"
+          echo "dockerhub=$dockerhub" >> "$GITHUB_OUTPUT"
+          { echo "images<<EOF"; echo "$images"; echo "EOF"; } >> "$GITHUB_OUTPUT"
+          platform="${{ matrix.platform }}"
+          echo "pair=${platform//\//-}" >> "$GITHUB_OUTPUT"   # linux/arm64 -> linux-arm64
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: steps.cfg.outputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: steps.cfg.outputs.push == 'true' && steps.cfg.outputs.dockerhub == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Labels only here; tags are applied when the manifest is merged.
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.cfg.outputs.images }}
+
+      # Pushed by digest (no tag) so the two platform images can be combined
+      # into one tagged manifest in the merge job.
+      - name: Build (and push by digest)
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.cfg.outputs.images }}
+          outputs: type=image,push-by-digest=true,name-canonical=true,push=${{ steps.cfg.outputs.push }}
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,scope=${{ matrix.platform }},mode=max
+
+      - name: Export digest
+        if: steps.cfg.outputs.push == 'true'
+        run: |
+          mkdir -p "${{ runner.temp }}/digests"
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        if: steps.cfg.outputs.push == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ steps.cfg.outputs.pair }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Publish multi-arch manifest
+    needs: build
+    if: needs.build.outputs.push == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        id: cfg
+        env:
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ghcr="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ioc2rpz"
+          repos="$ghcr"
+          if [ -n "$DH_USER" ] && [ -n "$DH_TOKEN" ]; then
+            repos="$repos $DOCKERHUB_REPO"
+            echo "dockerhub=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dockerhub=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "repos=$repos" >> "$GITHUB_OUTPUT"
+          { echo "images<<EOF"; echo "$repos" | tr ' ' '\n'; echo "EOF"; } >> "$GITHUB_OUTPUT"
+          # "1.4.0.7-2026092701" -> full=1.4.0.7-2026092701, short=1.4.0.7
+          full=$(sed -n 's/.*define(ioc2rpz_ver, *"\([^"]*\)").*/\1/p' include/ioc2rpz.hrl)
+          [ -n "$full" ] || { echo "cannot read ?ioc2rpz_ver from include/ioc2rpz.hrl"; exit 1; }
+          echo "ver_full=$full"    >> "$GITHUB_OUTPUT"
+          echo "ver_short=${full%%-*}" >> "$GITHUB_OUTPUT"
+
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: steps.cfg.outputs.dockerhub == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.cfg.outputs.images }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=${{ steps.cfg.outputs.ver_short }},enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=${{ steps.cfg.outputs.ver_full }},enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
+            type=ref,event=tag
+            type=sha,prefix=sha-,enable=${{ startsWith(github.ref, 'refs/heads/') }}
+
+      # One manifest per registry, each built from the digests pushed to that
+      # same registry (a manifest cannot reference blobs in another registry).
+      - name: Create and push manifest
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          set -euo pipefail
+          for repo in ${{ steps.cfg.outputs.repos }}; do
+            tags=$(jq -r --arg r "$repo:" '.tags[] | select(startswith($r)) | "-t " + .' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+            [ -n "$tags" ] || { echo "no tags for $repo"; exit 1; }
+            # shellcheck disable=SC2046,SC2086
+            docker buildx imagetools create $tags $(printf "$repo@sha256:%s " *)
+          done
+
+      - name: Inspect
+        run: |
+          for repo in ${{ steps.cfg.outputs.repos }}; do
+            tag=$(jq -r --arg r "$repo:" '[.tags[] | select(startswith($r))][0]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+            docker buildx imagetools inspect "$tag"
+          done

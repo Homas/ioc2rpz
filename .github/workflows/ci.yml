@@ -1,0 +1,85 @@
+name: CI
+
+# Nothing ran on push before this workflow existed: .github/ held only
+# FUNDING.yml, so a change that failed to compile, broke a test, or introduced a
+# dialyzer/xref regression could be merged unnoticed.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # rebar.config declares {minimum_otp_vsn, "24.0"}; test the floor and
+        # the current line so neither drifts out of support unnoticed.
+        otp: ['24', '27']
+    name: OTP ${{ matrix.otp }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+          rebar3-version: '3'
+
+      - name: Cache rebar3 build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/rebar3
+            _build
+          key: ${{ runner.os }}-otp${{ matrix.otp }}-rebar3-${{ hashFiles('rebar.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-otp${{ matrix.otp }}-rebar3-
+
+      - name: Compile
+        run: rebar3 compile
+
+      - name: EUnit
+        run: rebar3 eunit
+
+      - name: Xref
+        run: rebar3 xref
+
+      # dialyzer only on the current OTP: the PLT differs per release and the
+      # older line reports findings that are not actionable on modern OTP.
+      - name: Dialyzer
+        if: matrix.otp == '27'
+        run: rebar3 dialyzer
+
+      - name: Release
+        run: rebar3 release -d false
+
+      # Guards the fix for "EUnit tests ship in the production beams": eunit.hrl
+      # defines TEST itself, so an unguarded -include_lib of it silently pulls
+      # every _test/_test_ function into the release beams (and exports it).
+      - name: Assert no test code in release beams
+        run: |
+          set -euo pipefail
+          erl -noshell -eval '
+            Beams = filelib:wildcard("_build/default/lib/ioc2rpz/ebin/*.beam"),
+            Leaked = [ {filename:basename(B), T}
+                       || B <- Beams,
+                          begin
+                            {ok,{_,[{exports,E}]}} = beam_lib:chunks(B,[exports]),
+                            T = [ F || {F,0} <- E,
+                                       (lists:suffix("_test", atom_to_list(F))
+                                        orelse lists:suffix("_test_", atom_to_list(F))
+                                        orelse F =:= test) ],
+                            T =/= []
+                          end ],
+            case Leaked of
+              [] -> io:format("ok: no test exports in release beams~n"), halt(0);
+              _  -> io:format("FAIL: test code in release beams: ~p~n",[Leaked]), halt(1)
+            end.'
+
+# The container image is built (and, for master/dev/tags, published) by
+# .github/workflows/docker.yml.
